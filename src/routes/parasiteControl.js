@@ -1,8 +1,10 @@
 const express = require('express');
 const ParasiteControl = require('../models/ParasiteControl');
+const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -487,6 +489,176 @@ router.get('/export',
         data: { records }
       });
     }
+  })
+);
+
+/**
+ * @swagger
+ * /api/parasite-control/template:
+ *   get:
+ *     summary: Download import template for parasite control records
+ *     tags: [Parasite Control]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Template downloaded successfully
+ */
+router.get('/template',
+  auth,
+  handleTemplate([
+    {
+      serialNo: 'PC001',
+      date: '2024-01-15',
+      clientName: 'محمد أحمد الشمري',
+      clientNationalId: '1234567890',
+      clientPhone: '+966501234567',
+      clientVillage: 'قرية النور',
+      herdLocation: 'مزرعة الشمري',
+      supervisor: 'د. محمد علي',
+      vehicleNo: 'PC1',
+      sheepTotal: 100,
+      sheepYoung: 20,
+      sheepFemale: 60,
+      sheepTreated: 100,
+      goatsTotal: 50,
+      goatsYoung: 10,
+      goatsFemale: 30,
+      goatsTreated: 50,
+      camelTotal: 5,
+      camelYoung: 1,
+      camelFemale: 3,
+      camelTreated: 5,
+      cattleTotal: 10,
+      cattleYoung: 2,
+      cattleFemale: 6,
+      cattleTreated: 10,
+      horseTotal: 3,
+      horseYoung: 0,
+      horseFemale: 2,
+      horseTreated: 3,
+      herdHealthStatus: 'Healthy',
+      insecticideType: 'Ivermectin',
+      insecticideMethod: 'Injection',
+      insecticideVolumeMl: 500,
+      insecticideStatus: 'Effective',
+      insecticideCategory: 'Antiparasitic',
+      requestDate: '2024-01-15',
+      requestSituation: 'Open',
+      remarks: 'ملاحظات إضافية'
+    }
+  ], 'parasite-control-template')
+);
+
+/**
+ * @swagger
+ * /api/parasite-control/import:
+ *   post:
+ *     summary: Import parasite control records from CSV
+ *     tags: [Parasite Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import completed
+ */
+router.post('/import',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  handleImport(ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
+    // Validate required fields
+    if (!row.serialNo || !row.date || !row.clientName) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'required',
+        message: 'Missing required fields: serialNo, date, or clientName'
+      });
+      return;
+    }
+    
+    // Find or create client
+    const client = await findOrCreateClient(row, user._id, ClientModel);
+    if (!client) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'client',
+        message: 'Could not create or find client'
+      });
+      return;
+    }
+    
+    // Create parasite control record
+    const parasiteControlData = {
+      serialNo: row.serialNo,
+      date: new Date(row.date),
+      client: client._id,
+      herdLocation: row.herdLocation || '',
+      supervisor: row.supervisor || '',
+      vehicleNo: row.vehicleNo || '',
+      herdCounts: {
+        sheep: {
+          total: parseInt(row.sheepTotal) || 0,
+          young: parseInt(row.sheepYoung) || 0,
+          female: parseInt(row.sheepFemale) || 0,
+          treated: parseInt(row.sheepTreated) || 0
+        },
+        goats: {
+          total: parseInt(row.goatsTotal) || 0,
+          young: parseInt(row.goatsYoung) || 0,
+          female: parseInt(row.goatsFemale) || 0,
+          treated: parseInt(row.goatsTreated) || 0
+        },
+        camel: {
+          total: parseInt(row.camelTotal) || 0,
+          young: parseInt(row.camelYoung) || 0,
+          female: parseInt(row.camelFemale) || 0,
+          treated: parseInt(row.camelTreated) || 0
+        },
+        cattle: {
+          total: parseInt(row.cattleTotal) || 0,
+          young: parseInt(row.cattleYoung) || 0,
+          female: parseInt(row.cattleFemale) || 0,
+          treated: parseInt(row.cattleTreated) || 0
+        },
+        horse: {
+          total: parseInt(row.horseTotal) || 0,
+          young: parseInt(row.horseYoung) || 0,
+          female: parseInt(row.horseFemale) || 0,
+          treated: parseInt(row.horseTreated) || 0
+        }
+      },
+      herdHealthStatus: row.herdHealthStatus || 'Healthy',
+      insecticide: {
+        type: row.insecticideType || '',
+        method: row.insecticideMethod || '',
+        volumeMl: parseInt(row.insecticideVolumeMl) || 0,
+        status: row.insecticideStatus || '',
+        category: row.insecticideCategory || ''
+      },
+      request: {
+        date: new Date(row.requestDate || row.date),
+        situation: row.requestSituation || 'Open'
+      },
+      remarks: row.remarks || '',
+      createdBy: user._id
+    };
+    
+    const parasiteControl = new ParasiteControlModel(parasiteControlData);
+    await parasiteControl.save();
+    
+    // Populate client data for response
+    await parasiteControl.populate('client', 'name nationalId phone village detailedAddress');
+    return parasiteControl;
   })
 );
 

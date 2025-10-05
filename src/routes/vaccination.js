@@ -1,8 +1,10 @@
 const express = require('express');
 const Vaccination = require('../models/Vaccination');
+const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -503,6 +505,176 @@ router.get('/export',
         data: { records }
       });
     }
+  })
+);
+
+/**
+ * @swagger
+ * /api/vaccination/template:
+ *   get:
+ *     summary: Download import template for vaccination records
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Template downloaded successfully
+ */
+router.get('/template',
+  auth,
+  handleTemplate([
+    {
+      serialNo: 'V001',
+      date: '2024-01-15',
+      clientName: 'محمد أحمد الشمري',
+      clientNationalId: '1234567890',
+      clientPhone: '+966501234567',
+      clientVillage: 'قرية النور',
+      farmLocation: 'مزرعة الشمري',
+      supervisor: 'د. محمد علي',
+      team: 'فريق التحصين الأول',
+      vehicleNo: 'V1',
+      vaccineType: 'لقاح الحمى القلاعية',
+      vaccineCategory: 'Preventive',
+      sheepTotal: 100,
+      sheepYoung: 20,
+      sheepFemale: 60,
+      sheepVaccinated: 100,
+      goatsTotal: 50,
+      goatsYoung: 10,
+      goatsFemale: 30,
+      goatsVaccinated: 50,
+      camelTotal: 5,
+      camelYoung: 1,
+      camelFemale: 3,
+      camelVaccinated: 5,
+      cattleTotal: 10,
+      cattleYoung: 2,
+      cattleFemale: 6,
+      cattleVaccinated: 10,
+      horseTotal: 3,
+      horseYoung: 0,
+      horseFemale: 2,
+      horseVaccinated: 3,
+      herdHealth: 'Healthy',
+      animalsHandling: 'Easy',
+      labours: 'Available',
+      reachableLocation: 'Easy',
+      requestDate: '2024-01-15',
+      requestSituation: 'Open',
+      remarks: 'ملاحظات إضافية'
+    }
+  ], 'vaccination-template')
+);
+
+/**
+ * @swagger
+ * /api/vaccination/import:
+ *   post:
+ *     summary: Import vaccination records from CSV
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import completed
+ */
+router.post('/import',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  handleImport(Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
+    // Validate required fields
+    if (!row.serialNo || !row.date || !row.clientName) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'required',
+        message: 'Missing required fields: serialNo, date, or clientName'
+      });
+      return;
+    }
+    
+    // Find or create client
+    const client = await findOrCreateClient(row, user._id, ClientModel);
+    if (!client) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'client',
+        message: 'Could not create or find client'
+      });
+      return;
+    }
+    
+    // Create vaccination record
+    const vaccinationData = {
+      serialNo: row.serialNo,
+      date: new Date(row.date),
+      client: client._id,
+      farmLocation: row.farmLocation || '',
+      supervisor: row.supervisor || '',
+      team: row.team || '',
+      vehicleNo: row.vehicleNo || '',
+      vaccineType: row.vaccineType || '',
+      vaccineCategory: row.vaccineCategory || 'Preventive',
+      herdCounts: {
+        sheep: {
+          total: parseInt(row.sheepTotal) || 0,
+          young: parseInt(row.sheepYoung) || 0,
+          female: parseInt(row.sheepFemale) || 0,
+          vaccinated: parseInt(row.sheepVaccinated) || 0
+        },
+        goats: {
+          total: parseInt(row.goatsTotal) || 0,
+          young: parseInt(row.goatsYoung) || 0,
+          female: parseInt(row.goatsFemale) || 0,
+          vaccinated: parseInt(row.goatsVaccinated) || 0
+        },
+        camel: {
+          total: parseInt(row.camelTotal) || 0,
+          young: parseInt(row.camelYoung) || 0,
+          female: parseInt(row.camelFemale) || 0,
+          vaccinated: parseInt(row.camelVaccinated) || 0
+        },
+        cattle: {
+          total: parseInt(row.cattleTotal) || 0,
+          young: parseInt(row.cattleYoung) || 0,
+          female: parseInt(row.cattleFemale) || 0,
+          vaccinated: parseInt(row.cattleVaccinated) || 0
+        },
+        horse: {
+          total: parseInt(row.horseTotal) || 0,
+          young: parseInt(row.horseYoung) || 0,
+          female: parseInt(row.horseFemale) || 0,
+          vaccinated: parseInt(row.horseVaccinated) || 0
+        }
+      },
+      herdHealth: row.herdHealth || 'Healthy',
+      animalsHandling: row.animalsHandling || 'Easy',
+      labours: row.labours || 'Available',
+      reachableLocation: row.reachableLocation || 'Easy',
+      request: {
+        date: new Date(row.requestDate || row.date),
+        situation: row.requestSituation || 'Open'
+      },
+      remarks: row.remarks || '',
+      createdBy: user._id
+    };
+    
+    const vaccination = new VaccinationModel(vaccinationData);
+    await vaccination.save();
+    
+    // Populate client data for response
+    await vaccination.populate('client', 'name nationalId phone village detailedAddress');
+    return vaccination;
   })
 );
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const MobileClinic = require('../models/MobileClinic');
+const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
@@ -421,5 +422,338 @@ router.delete('/:id',
   })
 );
 
+/**
+ * @swagger
+ * /api/mobile-clinics/export:
+ *   get:
+ *     summary: Export mobile clinic records
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *         description: Export format
+ *       - in: query
+ *         name: interventionCategory
+ *         schema:
+ *           type: string
+ *           enum: [Emergency, Routine, Preventive, Follow-up]
+ *         description: Filter by intervention category
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ */
+router.get('/export',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (interventionCategory) filter.interventionCategory = interventionCategory;
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const records = await MobileClinic.find(filter)
+      .populate('client', 'name nationalId phone village')
+      .sort({ date: -1 });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      const fields = [
+        'serialNo',
+        'date',
+        { label: 'Client Name', value: 'client.name' },
+        { label: 'Client ID', value: 'client.nationalId' },
+        { label: 'Client Phone', value: 'client.phone' },
+        'farmLocation',
+        'supervisor',
+        'vehicleNo',
+        { label: 'Total Animals', value: 'totalAnimals' },
+        'interventionCategory',
+        'diagnosis',
+        'treatment',
+        { label: 'Request Status', value: 'request.situation' },
+        'followUpRequired',
+        'remarks',
+        'createdAt'
+      ];
+      
+      const parser = new Parser({ fields });
+      const csv = parser.parse(records);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
+      res.send(csv);
+    } else {
+      res.json({
+        success: true,
+        data: records
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/mobile-clinics/template:
+ *   get:
+ *     summary: Download import template for mobile clinic records
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Template downloaded successfully
+ */
+router.get('/template',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { Parser } = require('json2csv');
+    
+    // Template with sample data and required columns
+    const templateData = [
+      {
+        serialNo: 'MC-001',
+        date: '2024-01-15',
+        clientName: 'محمد أحمد الشمري',
+        clientNationalId: '1234567890',
+        clientPhone: '+966501234567',
+        clientVillage: 'قرية النور',
+        farmLocation: 'مزرعة الشمري',
+        supervisor: 'د. محمد علي',
+        vehicleNo: 'MC1',
+        sheep: 50,
+        goats: 30,
+        camel: 5,
+        cattle: 10,
+        horse: 2,
+        diagnosis: 'التهاب رئوي',
+        interventionCategory: 'Emergency',
+        treatment: 'مضادات حيوية وأدوية مضادة للالتهاب',
+        requestDate: '2024-01-15',
+        requestSituation: 'Open',
+        followUpRequired: 'true',
+        remarks: 'ملاحظات إضافية'
+      }
+    ];
+    
+    const fields = Object.keys(templateData[0]);
+    const parser = new Parser({ fields });
+    const csv = parser.parse(templateData);
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics-template.csv');
+    res.send(csv);
+  })
+);
+
+/**
+ * @swagger
+ * /api/mobile-clinics/import:
+ *   post:
+ *     summary: Import mobile clinic records from CSV
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import completed
+ */
+router.post('/import',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  asyncHandler(async (req, res) => {
+    const multer = require('multer');
+    const csv = require('csv-parser');
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Configure multer for file upload
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        cb(null, `import-${Date.now()}-${file.originalname}`);
+      }
+    });
+    
+    const upload = multer({ 
+      storage,
+      fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only CSV files are allowed'));
+        }
+      },
+      limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    }).single('file');
+    
+    upload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.message
+        });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No file uploaded'
+        });
+      }
+      
+      const results = [];
+      const errors = [];
+      let rowNumber = 0;
+      
+      try {
+        // Parse CSV file
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(req.file.path)
+            .pipe(csv())
+            .on('data', (data) => {
+              rowNumber++;
+              results.push({ ...data, rowNumber });
+            })
+            .on('end', resolve)
+            .on('error', reject);
+        });
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const importedRecords = [];
+        
+        // Process each row
+        for (const row of results) {
+          try {
+            // Validate required fields
+            if (!row.serialNo || !row.date || !row.clientName) {
+              errors.push({
+                row: row.rowNumber,
+                field: 'required',
+                message: 'Missing required fields: serialNo, date, or clientName'
+              });
+              errorCount++;
+              continue;
+            }
+            
+            // Create or find client
+            let client;
+            if (row.clientNationalId) {
+              client = await Client.findOne({ nationalId: row.clientNationalId });
+            }
+            
+            if (!client) {
+              // Create new client
+              client = new Client({
+                name: row.clientName,
+                nationalId: row.clientNationalId || `TEMP-${Date.now()}`,
+                phone: row.clientPhone || '',
+                village: row.clientVillage || '',
+                detailedAddress: row.clientDetailedAddress || '',
+                status: 'نشط',
+                animals: [],
+                availableServices: ['mobile_clinic'],
+                createdBy: req.user._id
+              });
+              await client.save();
+            }
+            
+            // Create mobile clinic record
+            const mobileClinicData = {
+              serialNo: row.serialNo,
+              date: new Date(row.date),
+              client: client._id,
+              farmLocation: row.farmLocation || '',
+              supervisor: row.supervisor || '',
+              vehicleNo: row.vehicleNo || '',
+              animalCounts: {
+                sheep: parseInt(row.sheep) || 0,
+                goats: parseInt(row.goats) || 0,
+                camel: parseInt(row.camel) || 0,
+                cattle: parseInt(row.cattle) || 0,
+                horse: parseInt(row.horse) || 0
+              },
+              diagnosis: row.diagnosis || '',
+              interventionCategory: row.interventionCategory || 'Routine',
+              treatment: row.treatment || '',
+              request: {
+                date: new Date(row.requestDate || row.date),
+                situation: row.requestSituation || 'Open'
+              },
+              followUpRequired: row.followUpRequired === 'true',
+              remarks: row.remarks || '',
+              createdBy: req.user._id
+            };
+            
+            const mobileClinic = new MobileClinic(mobileClinicData);
+            await mobileClinic.save();
+            
+            // Populate client data for response
+            await mobileClinic.populate('client', 'name nationalId phone village detailedAddress');
+            importedRecords.push(mobileClinic);
+            successCount++;
+            
+          } catch (error) {
+            errors.push({
+              row: row.rowNumber,
+              field: 'validation',
+              message: error.message
+            });
+            errorCount++;
+          }
+        }
+        
+        // Clean up uploaded file
+        fs.unlinkSync(req.file.path);
+        
+        res.json({
+          success: errorCount === 0,
+          totalRows: results.length,
+          successRows: successCount,
+          errorRows: errorCount,
+          errors: errors,
+          importedRecords: importedRecords
+        });
+        
+      } catch (error) {
+        // Clean up uploaded file on error
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        
+        res.status(500).json({
+          success: false,
+          message: 'Error processing file: ' + error.message
+        });
+      }
+    });
+  })
+);
 
 module.exports = router;
