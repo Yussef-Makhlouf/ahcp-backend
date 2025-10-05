@@ -1,0 +1,273 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+require('dotenv').config();
+
+// Import routes
+const authRoutes = require('./routes/auth');
+const parasiteControlRoutes = require('./routes/parasiteControl');
+const vaccinationRoutes = require('./routes/vaccination');
+const mobileClinicsRoutes = require('./routes/mobileClinics');
+const equineHealthRoutes = require('./routes/equineHealth');
+const laboratoriesRoutes = require('./routes/laboratories');
+const clientsRoutes = require('./routes/clients');
+const reportsRoutes = require('./routes/reports');
+const uploadRoutes = require('./routes/upload');
+
+// Import middleware
+const { errorHandler } = require('./middleware/errorHandler');
+const notFound = require('./middleware/notFound');
+const { auth: authMiddleware } = require('./middleware/auth');
+const devAuth = require('./middleware/dev-auth');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Security middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', limiter);
+
+// CORS configuration - نهائي ومحسن
+const corsOptions = {
+  origin: function (origin, callback) {
+    // السماح للطلبات بدون origin (مثل mobile apps أو Postman)
+    if (!origin) return callback(null, true);
+    
+    // قائمة الأصول المسموحة
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://localhost:8080',
+      'http://127.0.0.1:8080'
+    ];
+    
+    // في بيئة التطوير، السماح لجميع الأصول
+    if (process.env.NODE_ENV === 'development' || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // مؤقتاً للتطوير
+    }
+  },
+  credentials: false, // تجنب مشاكل credentials في التطوير
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Accept', 
+    'Origin',
+    'Cache-Control',
+    'Pragma',
+    'Expires',
+    'X-CSRF-Token',
+    'X-Requested-With'
+  ],
+  exposedHeaders: [
+    'Content-Length',
+    'Content-Type',
+    'Content-Disposition'
+  ],
+  preflightContinue: false,
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
+
+// Middleware إضافي للـ CORS - تأكيد نهائي
+app.use((req, res, next) => {
+  // تعيين headers الأساسية
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS,HEAD');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma, Expires, X-CSRF-Token');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Content-Disposition');
+  res.header('Access-Control-Max-Age', '86400');
+  
+  // التعامل مع preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
+
+// Production mode - تفعيل المصادقة الكاملة
+console.log('🔒 Production Mode: Authentication enabled');
+
+// Compression middlewarea
+app.use(compression());
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan('combined'));
+}
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static files
+app.use('/uploads', express.static('uploads'));
+
+// Swagger documentation setup
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'AHCP API Documentation',
+      version: '1.0.0',
+      description: 'Animal Health Care Program - Complete API Documentation',
+      contact: {
+        name: 'AHCP Development Team',
+        email: 'dev@ahcp.com'
+      }
+    },
+    servers: [
+      {
+        url: `http://localhost:${PORT}`,
+        description: 'Development server'
+      }
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    }
+  },
+  apis: ['./src/routes/*.js', './src/models/*.js'],
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
+
+// API Documentation
+if (process.env.API_DOCS_ENABLED === 'true') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'AHCP API Documentation'
+  }));
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV,
+    version: '1.0.0'
+  });
+});
+
+// API routes
+app.use('/api/auth', authRoutes);
+
+// استخدام نظام المصادقة المبسط للتطوير
+app.use('/api/parasite-control', devAuth, parasiteControlRoutes);
+app.use('/api/vaccination', devAuth, vaccinationRoutes);
+app.use('/api/mobile-clinics', devAuth, mobileClinicsRoutes);
+app.use('/api/equine-health', devAuth, equineHealthRoutes);
+app.use('/api/laboratories', devAuth, laboratoriesRoutes);
+app.use('/api/clients', devAuth, clientsRoutes);
+app.use('/api/reports', devAuth, reportsRoutes);
+app.use('/api/upload', devAuth, uploadRoutes);
+
+// Welcome message
+app.get('/', (req, res) => {
+  res.json({
+    message: 'مرحباً بك في نظام إدارة الصحة الحيوانية - AHCP API',
+    version: '1.0.0',
+    documentation: process.env.API_DOCS_ENABLED === 'true' ? '/api-docs' : 'Documentation disabled',
+    endpoints: {
+      health: '/health',
+      auth: '/api/auth',
+      parasiteControl: '/api/parasite-control',
+      vaccination: '/api/vaccination',
+      mobileClinics: '/api/mobile-clinics',
+      equineHealth: '/api/equine-health',
+      laboratories: '/api/laboratories',
+      clients: '/api/clients',
+      reports: '/api/reports',
+      upload: '/api/upload'
+    }
+  });
+});
+
+// Error handling middleware
+app.use(notFound);
+app.use(errorHandler);
+
+// Database connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ahcp_database', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => {
+  console.log('✅ Connected to MongoDB successfully');
+  console.log(`📊 Database: ${mongoose.connection.name}`);
+})
+.catch((error) => {
+  console.error('❌ MongoDB connection error:', error.message);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  try {
+    await mongoose.connection.close();
+    console.log('MongoDB connection closed.');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error closing MongoDB connection:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received. Shutting down gracefully...');
+  try {
+    await mongoose.connection.close();
+    console.log('MongoDB connection closed.');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error closing MongoDB connection:', error);
+    process.exit(1);
+  }
+});
+
+// Start server
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`🚀 AHCP Backend Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
+    console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+  });
+}
+
+module.exports = app;

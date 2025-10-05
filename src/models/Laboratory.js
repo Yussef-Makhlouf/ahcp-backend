@@ -1,0 +1,461 @@
+const mongoose = require('mongoose');
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Laboratory:
+ *       type: object
+ *       required:
+ *         - sampleCode
+ *         - sampleType
+ *         - collector
+ *         - date
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: Record ID
+ *         sampleCode:
+ *           type: string
+ *           description: Unique sample code
+ *         sampleType:
+ *           type: string
+ *           description: Type of sample collected
+ *         collector:
+ *           type: string
+ *           description: Name of sample collector
+ *         date:
+ *           type: string
+ *           format: date
+ *           description: Date of sample collection
+ *         client:
+ *           type: string
+ *           description: Client ID reference
+ *         farmLocation:
+ *           type: string
+ *           description: Location where sample was collected
+ *         coordinates:
+ *           type: object
+ *           properties:
+ *             latitude:
+ *               type: number
+ *             longitude:
+ *               type: number
+ *         speciesCounts:
+ *           type: object
+ *           properties:
+ *             sheep:
+ *               type: number
+ *             goats:
+ *               type: number
+ *             camel:
+ *               type: number
+ *             cattle:
+ *               type: number
+ *             horse:
+ *               type: number
+ *         testType:
+ *           type: string
+ *           description: Type of laboratory test
+ *         testResults:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               parameter:
+ *                 type: string
+ *               result:
+ *                 type: string
+ *               normalRange:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *         positiveCases:
+ *           type: number
+ *           description: Number of positive test results
+ *         negativeCases:
+ *           type: number
+ *           description: Number of negative test results
+ *         testStatus:
+ *           type: string
+ *           enum: [Pending, In Progress, Completed, Failed]
+ *         remarks:
+ *           type: string
+ *           description: Additional remarks
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ */
+
+const testResultSchema = new mongoose.Schema({
+  parameter: {
+    type: String,
+    required: [true, 'Test parameter is required'],
+    trim: true,
+    maxlength: [100, 'Parameter name cannot exceed 100 characters']
+  },
+  result: {
+    type: String,
+    required: [true, 'Test result is required'],
+    trim: true,
+    maxlength: [200, 'Result cannot exceed 200 characters']
+  },
+  normalRange: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Normal range cannot exceed 100 characters']
+  },
+  status: {
+    type: String,
+    required: [true, 'Result status is required'],
+    enum: {
+      values: ['Normal', 'Abnormal', 'Positive', 'Negative', 'Inconclusive'],
+      message: 'Status must be one of: Normal, Abnormal, Positive, Negative, Inconclusive'
+    }
+  },
+  unit: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Unit cannot exceed 20 characters']
+  }
+}, { _id: false });
+
+const laboratorySchema = new mongoose.Schema({
+  sampleCode: {
+    type: String,
+    required: [true, 'Sample code is required'],
+    unique: true,
+    trim: true,
+    maxlength: [20, 'Sample code cannot exceed 20 characters']
+  },
+  sampleType: {
+    type: String,
+    required: [true, 'Sample type is required'],
+    enum: {
+      values: ['Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin'],
+      message: 'Invalid sample type'
+    }
+  },
+  collector: {
+    type: String,
+    required: [true, 'Collector name is required'],
+    trim: true,
+    maxlength: [100, 'Collector name cannot exceed 100 characters']
+  },
+  date: {
+    type: Date,
+    required: [true, 'Collection date is required'],
+    validate: {
+      validator: function(date) {
+        return date <= new Date();
+      },
+      message: 'Collection date cannot be in the future'
+    }
+  },
+  client: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client',
+    required: [true, 'Client reference is required']
+  },
+  farmLocation: {
+    type: String,
+    required: [true, 'Farm location is required'],
+    trim: true,
+    maxlength: [200, 'Location cannot exceed 200 characters']
+  },
+  coordinates: {
+    latitude: {
+      type: Number,
+      min: [-90, 'Latitude must be between -90 and 90'],
+      max: [90, 'Latitude must be between -90 and 90']
+    },
+    longitude: {
+      type: Number,
+      min: [-180, 'Longitude must be between -180 and 180'],
+      max: [180, 'Longitude must be between -180 and 180']
+    }
+  },
+  speciesCounts: {
+    sheep: {
+      type: Number,
+      min: [0, 'Sheep count cannot be negative'],
+      default: 0
+    },
+    goats: {
+      type: Number,
+      min: [0, 'Goats count cannot be negative'],
+      default: 0
+    },
+    camel: {
+      type: Number,
+      min: [0, 'Camel count cannot be negative'],
+      default: 0
+    },
+    cattle: {
+      type: Number,
+      min: [0, 'Cattle count cannot be negative'],
+      default: 0
+    },
+    horse: {
+      type: Number,
+      min: [0, 'Horse count cannot be negative'],
+      default: 0
+    }
+  },
+  testType: {
+    type: String,
+    required: [true, 'Test type is required'],
+    enum: {
+      values: ['Parasitology', 'Bacteriology', 'Virology', 'Serology', 'Biochemistry', 'Hematology', 'Pathology'],
+      message: 'Invalid test type'
+    }
+  },
+  testResults: [testResultSchema],
+  positiveCases: {
+    type: Number,
+    required: [true, 'Positive cases count is required'],
+    min: [0, 'Positive cases cannot be negative'],
+    default: 0
+  },
+  negativeCases: {
+    type: Number,
+    required: [true, 'Negative cases count is required'],
+    min: [0, 'Negative cases cannot be negative'],
+    default: 0
+  },
+  testStatus: {
+    type: String,
+    required: [true, 'Test status is required'],
+    enum: {
+      values: ['Pending', 'In Progress', 'Completed', 'Failed'],
+      message: 'Test status must be one of: Pending, In Progress, Completed, Failed'
+    },
+    default: 'Pending'
+  },
+  priority: {
+    type: String,
+    enum: {
+      values: ['Low', 'Normal', 'High', 'Urgent'],
+      message: 'Priority must be one of: Low, Normal, High, Urgent'
+    },
+    default: 'Normal'
+  },
+  expectedCompletionDate: {
+    type: Date,
+    validate: {
+      validator: function(date) {
+        return !date || date >= this.date;
+      },
+      message: 'Expected completion date cannot be before collection date'
+    }
+  },
+  actualCompletionDate: {
+    type: Date,
+    validate: {
+      validator: function(date) {
+        return !date || date >= this.date;
+      },
+      message: 'Actual completion date cannot be before collection date'
+    }
+  },
+  laboratoryTechnician: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Technician name cannot exceed 100 characters']
+  },
+  equipment: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Equipment name cannot exceed 100 characters']
+  },
+  remarks: {
+    type: String,
+    trim: true,
+    maxlength: [1000, 'Remarks cannot exceed 1000 characters']
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Indexes for better performance
+laboratorySchema.index({ sampleCode: 1 });
+laboratorySchema.index({ date: -1 });
+laboratorySchema.index({ client: 1 });
+laboratorySchema.index({ collector: 1 });
+laboratorySchema.index({ testType: 1 });
+laboratorySchema.index({ testStatus: 1 });
+laboratorySchema.index({ priority: 1 });
+laboratorySchema.index({ sampleType: 1 });
+laboratorySchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
+
+// Virtual for total samples
+laboratorySchema.virtual('totalSamples').get(function() {
+  return this.positiveCases + this.negativeCases;
+});
+
+// Virtual for total animals sampled
+laboratorySchema.virtual('totalAnimals').get(function() {
+  const counts = this.speciesCounts;
+  return (counts.sheep || 0) + 
+         (counts.goats || 0) + 
+         (counts.camel || 0) + 
+         (counts.cattle || 0) + 
+         (counts.horse || 0);
+});
+
+// Virtual for positive rate percentage
+laboratorySchema.virtual('positiveRate').get(function() {
+  const total = this.totalSamples;
+  return total > 0 ? Math.round((this.positiveCases / total) * 100) : 0;
+});
+
+// Virtual for test completion status
+laboratorySchema.virtual('isCompleted').get(function() {
+  return this.testStatus === 'Completed';
+});
+
+// Virtual for test duration in days
+laboratorySchema.virtual('testDuration').get(function() {
+  if (this.actualCompletionDate) {
+    const diffTime = Math.abs(this.actualCompletionDate - this.date);
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }
+  return null;
+});
+
+// Static method to find records by date range
+laboratorySchema.statics.findByDateRange = function(startDate, endDate) {
+  return this.find({
+    date: {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    }
+  }).populate('client', 'name nationalId phone village');
+};
+
+// Static method to find records by test type
+laboratorySchema.statics.findByTestType = function(testType) {
+  return this.find({ testType }).populate('client', 'name nationalId phone village');
+};
+
+// Static method to find pending tests
+laboratorySchema.statics.findPending = function() {
+  return this.find({ testStatus: 'Pending' })
+    .populate('client', 'name nationalId phone village')
+    .sort({ priority: -1, date: 1 });
+};
+
+// Static method to find overdue tests
+laboratorySchema.statics.findOverdue = function() {
+  return this.find({
+    testStatus: { $in: ['Pending', 'In Progress'] },
+    expectedCompletionDate: { $lt: new Date() }
+  }).populate('client', 'name nationalId phone village');
+};
+
+// Static method to get statistics
+laboratorySchema.statics.getStatistics = async function(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: null,
+        totalRecords: { $sum: 1 },
+        totalSamples: { $sum: { $add: ['$positiveCases', '$negativeCases'] } },
+        totalPositive: { $sum: '$positiveCases' },
+        totalNegative: { $sum: '$negativeCases' },
+        pendingTests: {
+          $sum: { $cond: [{ $eq: ['$testStatus', 'Pending'] }, 1, 0] }
+        },
+        inProgressTests: {
+          $sum: { $cond: [{ $eq: ['$testStatus', 'In Progress'] }, 1, 0] }
+        },
+        completedTests: {
+          $sum: { $cond: [{ $eq: ['$testStatus', 'Completed'] }, 1, 0] }
+        },
+        failedTests: {
+          $sum: { $cond: [{ $eq: ['$testStatus', 'Failed'] }, 1, 0] }
+        }
+      }
+    }
+  ];
+  
+  const result = await this.aggregate(pipeline);
+  return result[0] || {
+    totalRecords: 0,
+    totalSamples: 0,
+    totalPositive: 0,
+    totalNegative: 0,
+    pendingTests: 0,
+    inProgressTests: 0,
+    completedTests: 0,
+    failedTests: 0
+  };
+};
+
+// Static method to get test type statistics
+laboratorySchema.statics.getTestTypeStats = async function(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: '$testType',
+        count: { $sum: 1 },
+        totalSamples: { $sum: { $add: ['$positiveCases', '$negativeCases'] } },
+        positiveRate: {
+          $avg: {
+            $cond: [
+              { $gt: [{ $add: ['$positiveCases', '$negativeCases'] }, 0] },
+              { $multiply: [{ $divide: ['$positiveCases', { $add: ['$positiveCases', '$negativeCases'] }] }, 100] },
+              0
+            ]
+          }
+        }
+      }
+    },
+    { $sort: { count: -1 } }
+  ];
+  
+  return await this.aggregate(pipeline);
+};
+
+// Pre-save middleware to update updatedBy
+laboratorySchema.pre('save', function(next) {
+  if (this.isModified() && !this.isNew) {
+    this.updatedBy = this.constructor.currentUser;
+  }
+  next();
+});
+
+// Pre-save validation for test results consistency
+laboratorySchema.pre('save', function(next) {
+  const totalCases = this.positiveCases + this.negativeCases;
+  if (this.testResults.length > 0 && totalCases === 0) {
+    return next(new Error('Test results exist but no positive/negative cases recorded'));
+  }
+  next();
+});
+
+// Pre-save middleware to set completion date
+laboratorySchema.pre('save', function(next) {
+  if (this.isModified('testStatus') && this.testStatus === 'Completed' && !this.actualCompletionDate) {
+    this.actualCompletionDate = new Date();
+  }
+  next();
+});
+
+module.exports = mongoose.model('Laboratory', laboratorySchema);
