@@ -15,31 +15,63 @@ const Laboratory = require('../models/Laboratory');
 const sampleUsers = [
   {
     name: 'مدير النظام',
-    email: 'admin@ahcp.com',
-    password: 'admin123',
+    email: 'admin@ahcp.gov.sa',
+    password: 'Admin@123456',
     role: 'super_admin',
     section: 'الإدارة العامة',
     isActive: true
   },
   {
-    name: 'مشرف مكافحة الطفيليات',
-    email: 'parasite@ahcp.com',
+    name: 'د. محمد علي الأحمد',
+    email: 'parasite@ahcp.gov.sa',
     password: 'parasite123',
     role: 'section_supervisor',
     section: 'مكافحة الطفيليات',
     isActive: true
   },
   {
-    name: 'مشرف التحصينات',
-    email: 'vaccination@ahcp.com',
+    name: 'د. سارة محمود الزهراني',
+    email: 'vaccination@ahcp.gov.sa',
     password: 'vaccination123',
     role: 'section_supervisor',
     section: 'التحصينات',
     isActive: true
   },
   {
+    name: 'د. أحمد حسن الشمري',
+    email: 'clinic@ahcp.gov.sa',
+    password: 'clinic123',
+    role: 'section_supervisor',
+    section: 'العيادة المتنقلة',
+    isActive: true
+  },
+  {
+    name: 'د. فاطمة عبدالله القحطاني',
+    email: 'laboratory@ahcp.gov.sa',
+    password: 'lab123',
+    role: 'section_supervisor',
+    section: 'المختبرات',
+    isActive: true
+  },
+  {
+    name: 'د. خالد إبراهيم العتيبي',
+    email: 'equine@ahcp.gov.sa',
+    password: 'equine123',
+    role: 'section_supervisor',
+    section: 'صحة الخيول',
+    isActive: true
+  },
+  {
+    name: 'د. نورا سعد الحربي',
+    email: 'parasite2@ahcp.gov.sa',
+    password: 'parasite456',
+    role: 'section_supervisor',
+    section: 'مكافحة الطفيليات',
+    isActive: true
+  },
+  {
     name: 'عامل ميداني',
-    email: 'field@ahcp.com',
+    email: 'field@ahcp.gov.sa',
     password: 'field123',
     role: 'field_worker',
     section: 'العمل الميداني',
@@ -336,7 +368,7 @@ const sampleParasiteControl = [
     date: new Date('2024-09-07'),
     herdLocation: 'مزرعة الأحمد، طريق الخرج',
     coordinates: { latitude: 24.7136, longitude: 46.6753 },
-    supervisor: 'Ibrahim',
+    supervisor: 'د. محمد علي الأحمد',
     vehicleNo: 'P1',
     herdCounts: {
       sheep: { total: 150, young: 45, female: 90, treated: 150 },
@@ -370,7 +402,7 @@ const sampleParasiteControl = [
     date: new Date('2024-09-07'),
     herdLocation: 'مزرعة السعد، بريدة',
     coordinates: { latitude: 26.3260, longitude: 43.9750 },
-    supervisor: 'Ahmed',
+    supervisor: 'د. نورا سعد الحربي',
     vehicleNo: 'P2',
     herdCounts: {
       sheep: { total: 120, young: 30, female: 75, treated: 0 },
