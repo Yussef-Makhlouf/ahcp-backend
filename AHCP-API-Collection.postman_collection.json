@@ -1,0 +1,1606 @@
+{
+	"info": {
+		"_postman_id": "ahcp-api-collection",
+		"name": "AHCP - Animal Health Care Program API",
+		"description": "Complete API collection for AHCP Backend - Animal Health Care Program Management System",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "ahcp-backend"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{authToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3001",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"محمد أحمد\",\n  \"email\": \"mohamed@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"field_worker\",\n  \"section\": \"قسم التحصين\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "register"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"authToken\", jsonData.data.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"mohamed@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "me"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "profile"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"محمد أحمد المحدث\",\n  \"email\": \"mohamed.updated@example.com\",\n  \"section\": \"قسم التحصين المحدث\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/update-profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "update-profile"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPassword\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/change-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "change-password"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Users (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/users?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "users"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "role",
+									"value": "field_worker",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "محمد",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Toggle User Status (Admin)",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/users/:id/toggle-status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "users", ":id", "toggle-status"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "USER_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Parasite Control",
+			"item": [
+				{
+					"name": "Get All Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								},
+								{
+									"key": "supervisor",
+									"value": "محمد",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "PC001",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", "statistics"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"PC001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"herdLocation\": \"مزرعة الشمري\",\n  \"supervisor\": \"د. محمد علي\",\n  \"vehicleNo\": \"PC1\",\n  \"herdCounts\": {\n    \"sheep\": {\n      \"total\": 100,\n      \"young\": 20,\n      \"female\": 60,\n      \"treated\": 100\n    },\n    \"goats\": {\n      \"total\": 50,\n      \"young\": 10,\n      \"female\": 30,\n      \"treated\": 50\n    }\n  },\n  \"herdHealthStatus\": \"Healthy\",\n  \"insecticide\": {\n    \"type\": \"Ivermectin\",\n    \"method\": \"Injection\",\n    \"volumeMl\": 500,\n    \"status\": \"Effective\",\n    \"category\": \"Antiparasitic\"\n  },\n  \"request\": {\n    \"date\": \"2024-01-15\",\n    \"situation\": \"Open\"\n  },\n  \"remarks\": \"ملاحظات إضافية\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Record",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"PC001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"herdLocation\": \"مزرعة الشمري المحدثة\",\n  \"supervisor\": \"د. محمد علي\",\n  \"vehicleNo\": \"PC1\",\n  \"herdCounts\": {\n    \"sheep\": {\n      \"total\": 110,\n      \"young\": 25,\n      \"female\": 65,\n      \"treated\": 110\n    }\n  },\n  \"remarks\": \"تحديث البيانات\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/export?format=json",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Template",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/template",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", "template"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Import Records",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parasite-control/import",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "parasite-control", "import"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Vaccination",
+			"item": [
+				{
+					"name": "Get All Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								},
+								{
+									"key": "vaccineType",
+									"value": "لقاح الحمى القلاعية",
+									"disabled": true
+								},
+								{
+									"key": "vaccineCategory",
+									"value": "Preventive",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", "statistics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"V001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"farmLocation\": \"مزرعة الشمري\",\n  \"supervisor\": \"د. محمد علي\",\n  \"team\": \"فريق التحصين الأول\",\n  \"vehicleNo\": \"V1\",\n  \"vaccineType\": \"لقاح الحمى القلاعية\",\n  \"vaccineCategory\": \"Preventive\",\n  \"herdCounts\": {\n    \"sheep\": {\n      \"total\": 100,\n      \"young\": 20,\n      \"female\": 60,\n      \"vaccinated\": 100\n    },\n    \"goats\": {\n      \"total\": 50,\n      \"young\": 10,\n      \"female\": 30,\n      \"vaccinated\": 50\n    }\n  },\n  \"herdHealth\": \"Healthy\",\n  \"animalsHandling\": \"Easy\",\n  \"labours\": \"Available\",\n  \"reachableLocation\": \"Easy\",\n  \"request\": {\n    \"date\": \"2024-01-15\",\n    \"situation\": \"Open\"\n  },\n  \"remarks\": \"ملاحظات إضافية\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Record",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"V001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"remarks\": \"تحديث البيانات\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Vaccine Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/vaccine-types",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", "vaccine-types"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/export?format=json",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Template",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/template",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", "template"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Import Records",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/vaccination/import",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "vaccination", "import"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Mobile Clinics",
+			"item": [
+				{
+					"name": "Get All Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "interventionCategory",
+									"value": "Emergency",
+									"disabled": true
+								},
+								{
+									"key": "followUpRequired",
+									"value": "true",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", "statistics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Follow-up Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/follow-up",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", "follow-up"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"MC-001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"farmLocation\": \"مزرعة الشمري\",\n  \"supervisor\": \"د. محمد علي\",\n  \"vehicleNo\": \"MC1\",\n  \"animalCounts\": {\n    \"sheep\": 50,\n    \"goats\": 30,\n    \"camel\": 5,\n    \"cattle\": 10,\n    \"horse\": 2\n  },\n  \"diagnosis\": \"التهاب رئوي\",\n  \"interventionCategory\": \"Emergency\",\n  \"treatment\": \"مضادات حيوية وأدوية مضادة للالتهاب\",\n  \"request\": {\n    \"date\": \"2024-01-15\",\n    \"situation\": \"Open\"\n  },\n  \"followUpRequired\": true,\n  \"remarks\": \"ملاحظات إضافية\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Record",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"MC-001\",\n  \"followUpCompleted\": true,\n  \"remarks\": \"تم المتابعة بنجاح\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/export?format=json",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Template",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/template",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", "template"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Import Records",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/mobile-clinics/import",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "mobile-clinics", "import"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Equine Health",
+			"item": [
+				{
+					"name": "Get All Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "interventionCategory",
+									"value": "Routine",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health", "statistics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"EH-001\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"farmLocation\": \"مزرعة الخيول\",\n  \"supervisor\": \"د. محمد علي\",\n  \"vehicleNo\": \"EH1\",\n  \"interventionCategory\": \"Routine\",\n  \"diagnosis\": \"فحص دوري\",\n  \"treatment\": \"لا يوجد\",\n  \"remarks\": \"ملاحظات إضافية\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Record",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serialNo\": \"EH-001\",\n  \"remarks\": \"تحديث البيانات\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/equine-health/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "equine-health", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Laboratories",
+			"item": [
+				{
+					"name": "Get All Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "testStatus",
+									"value": "Pending",
+									"disabled": true
+								},
+								{
+									"key": "priority",
+									"value": "High",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", "statistics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Pending Tests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/pending",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", "pending"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Overdue Tests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/overdue",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", "overdue"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sampleCode\": \"LAB-001\",\n  \"sampleType\": \"Blood\",\n  \"collector\": \"د. محمد علي\",\n  \"date\": \"2024-01-15\",\n  \"client\": \"CLIENT_ID_HERE\",\n  \"farmLocation\": \"مزرعة الشمري\",\n  \"testType\": \"Brucellosis\",\n  \"totalSamples\": 50,\n  \"testStatus\": \"Pending\",\n  \"priority\": \"High\",\n  \"laboratoryTechnician\": \"أحمد محمود\",\n  \"remarks\": \"ملاحظات إضافية\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Record",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sampleCode\": \"LAB-001\",\n  \"testStatus\": \"Completed\",\n  \"positiveCases\": 5,\n  \"negativeCases\": 45\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Test Results",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"testResults\": [\n    {\n      \"sampleId\": \"S001\",\n      \"result\": \"Positive\",\n      \"notes\": \"ملاحظات\"\n    }\n  ],\n  \"positiveCases\": 5,\n  \"negativeCases\": 45,\n  \"testStatus\": \"Completed\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/:id/results",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", ":id", "results"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Record",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "RECORD_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/laboratories/export?format=json",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "laboratories", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Clients",
+			"item": [
+				{
+					"name": "Get All Clients",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "نشط",
+									"disabled": true
+								},
+								{
+									"key": "village",
+									"value": "قرية النور",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "محمد",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", "statistics"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Client by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Client",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"محمد أحمد الشمري\",\n  \"nationalId\": \"1234567890\",\n  \"phone\": \"+966501234567\",\n  \"email\": \"mohamed@example.com\",\n  \"village\": \"قرية النور\",\n  \"detailedAddress\": \"العنوان التفصيلي\",\n  \"status\": \"نشط\",\n  \"animals\": [\n    {\n      \"animalType\": \"Sheep\",\n      \"animalCount\": 100,\n      \"breed\": \"نعيمي\"\n    }\n  ],\n  \"availableServices\": [\"parasite_control\", \"vaccination\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/clients",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Client",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"محمد أحمد الشمري المحدث\",\n  \"phone\": \"+966501234568\",\n  \"status\": \"نشط\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Client",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add Animal to Client",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"animalType\": \"Goats\",\n  \"animalCount\": 50,\n  \"breed\": \"محلي\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id/animals",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id", "animals"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Client Animal",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"animalType\": \"Sheep\",\n  \"animalCount\": 120,\n  \"breed\": \"نعيمي محسن\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id/animals/:animalIndex",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id", "animals", ":animalIndex"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								},
+								{
+									"key": "animalIndex",
+									"value": "0"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Remove Animal from Client",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/:id/animals/:animalIndex",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", ":id", "animals", ":animalIndex"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "CLIENT_ID_HERE"
+								},
+								{
+									"key": "animalIndex",
+									"value": "0"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Clients",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/clients/export?format=json",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "clients", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Reports",
+			"item": [
+				{
+					"name": "Get Dashboard Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/reports/dashboard",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "reports", "dashboard"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Monthly Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/reports/monthly?year=2024&month=1",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "reports", "monthly"],
+							"query": [
+								{
+									"key": "year",
+									"value": "2024"
+								},
+								{
+									"key": "month",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Comprehensive Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/reports/export?format=json&type=all",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "reports", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "json"
+								},
+								{
+									"key": "type",
+									"value": "all"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Upload",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "upload"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health Check",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/health",
+					"host": ["{{baseUrl}}"],
+					"path": ["health"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "API Root",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/",
+					"host": ["{{baseUrl}}"],
+					"path": [""]
+				}
+			},
+			"response": []
+		}
+	]
+}

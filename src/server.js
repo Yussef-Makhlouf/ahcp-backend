@@ -120,7 +120,7 @@ console.log('🔒 Production Mode: Authentication enabled');
 // Compression middlewarea
 app.use(compression());
 if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('combined'));
+  app.use(morgan('dev'));
 }
 
 // Body parsing middleware
