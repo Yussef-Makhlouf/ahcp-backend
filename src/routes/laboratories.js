@@ -1,8 +1,10 @@
 const express = require('express');
 const Laboratory = require('../models/Laboratory');
+const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { handleExport, handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -153,25 +155,58 @@ router.get('/statistics',
         date: { $gte: currentMonth }
       });
 
-      // الحالات الإيجابية والسلبية
-      const positiveCases = await Laboratory.countDocuments({
+      // الحالات الإيجابية والسلبية - جمع من الحقول المباشرة
+      const aggregationResult = await Laboratory.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalPositiveCases: { $sum: '$positiveCases' },
+            totalNegativeCases: { $sum: '$negativeCases' },
+            totalTestSamples: { $sum: { $add: ['$positiveCases', '$negativeCases'] } }
+          }
+        }
+      ]);
+
+      const result = aggregationResult[0] || { 
+        totalPositiveCases: 0, 
+        totalNegativeCases: 0, 
+        totalTestSamples: 0 
+      };
+
+      const positiveCases = result.totalPositiveCases;
+      const negativeCases = result.totalNegativeCases;
+      const totalTestSamples = result.totalTestSamples;
+      
+      const positivityRate = totalTestSamples > 0 ? 
+        parseFloat(((positiveCases / totalTestSamples) * 100).toFixed(2)) : 0;
+
+      // إحصائيات إضافية
+      const pendingTests = await Laboratory.countDocuments({
         ...filter,
-        'testResults.result': 'Positive'
+        testStatus: 'Pending'
       });
 
-      const negativeCases = await Laboratory.countDocuments({
+      const completedTests = await Laboratory.countDocuments({
         ...filter,
-        'testResults.result': 'Negative'
+        testStatus: 'Completed'
       });
 
-      const positivityRate = totalSamples > 0 ? ((positiveCases / totalSamples) * 100).toFixed(2) : 0;
+      const inProgressTests = await Laboratory.countDocuments({
+        ...filter,
+        testStatus: 'In Progress'
+      });
 
       const statistics = {
         totalSamples,
         samplesThisMonth,
         positiveCases,
         negativeCases,
-        positivityRate: parseFloat(positivityRate)
+        positivityRate,
+        pendingTests,
+        completedTests,
+        inProgressTests,
+        totalTestSamples
       };
 
       res.json({
@@ -594,6 +629,224 @@ router.delete('/:id',
       success: true,
       message: 'Laboratory record deleted successfully'
     });
+  })
+);
+
+
+/**
+ * @swagger
+ * /api/laboratories/template:
+ *   get:
+ *     summary: Download laboratory import template
+ *     tags: [Laboratory]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Template downloaded successfully
+ */
+router.get('/template',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  handleTemplate([
+    {
+      sampleCode: 'LAB-001',
+      sampleType: 'Blood',
+      collector: 'د. أحمد محمد',
+      date: '2024-01-15',
+      clientName: 'محمد أحمد الشمري',
+      clientNationalId: '1234567890',
+      clientPhone: '+966501234567',
+      farmLocation: 'مزرعة الشمري',
+      testType: 'Parasitology',
+      positiveCases: 2,
+      negativeCases: 8,
+      testStatus: 'Completed',
+      priority: 'Normal',
+      remarks: 'فحص روتيني للطفيليات'
+    }
+  ], 'laboratories-template')
+);
+
+/**
+ * @swagger
+ * /api/laboratories/import:
+ *   post:
+ *     summary: Import laboratory records from CSV
+ *     tags: [Laboratory]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Records imported successfully
+ */
+router.post('/import',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  handleImport(Laboratory, Client, async (row, userId, ClientModel, LaboratoryModel, errors) => {
+    try {
+      // التحقق من الحقول المطلوبة
+      const requiredFields = ['sampleCode', 'sampleType', 'collector', 'date', 'clientName', 'testType'];
+      for (const field of requiredFields) {
+        if (!row[field] || row[field].trim() === '') {
+          errors.push({
+            row: row.rowNumber,
+            field: field,
+            message: `الحقل ${field} مطلوب`
+          });
+          return null;
+        }
+      }
+
+      // التحقق من تاريخ صحيح
+      const date = new Date(row.date);
+      if (isNaN(date.getTime())) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'date',
+          message: 'تنسيق التاريخ غير صحيح (يجب أن يكون YYYY-MM-DD)'
+        });
+        return null;
+      }
+
+      // التحقق من أن التاريخ ليس في المستقبل
+      if (date > new Date()) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'date',
+          message: 'تاريخ جمع العينة لا يمكن أن يكون في المستقبل'
+        });
+        return null;
+      }
+
+      // التحقق من نوع العينة
+      const validSampleTypes = ['Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin'];
+      if (!validSampleTypes.includes(row.sampleType)) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'sampleType',
+          message: `نوع العينة غير صحيح. الأنواع المدعومة: ${validSampleTypes.join(', ')}`
+        });
+        return null;
+      }
+
+      // التحقق من نوع الفحص
+      const validTestTypes = ['Parasitology', 'Bacteriology', 'Virology', 'Serology', 'Biochemistry', 'Hematology', 'Pathology'];
+      if (!validTestTypes.includes(row.testType)) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'testType',
+          message: `نوع الفحص غير صحيح. الأنواع المدعومة: ${validTestTypes.join(', ')}`
+        });
+        return null;
+      }
+
+      // التحقق من حالة الفحص
+      const validStatuses = ['Pending', 'In Progress', 'Completed', 'Failed'];
+      if (row.testStatus && !validStatuses.includes(row.testStatus)) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'testStatus',
+          message: `حالة الفحص غير صحيحة. الحالات المدعومة: ${validStatuses.join(', ')}`
+        });
+        return null;
+      }
+
+      // التحقق من الأولوية
+      const validPriorities = ['Low', 'Normal', 'High', 'Urgent'];
+      if (row.priority && !validPriorities.includes(row.priority)) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'priority',
+          message: `الأولوية غير صحيحة. الأولويات المدعومة: ${validPriorities.join(', ')}`
+        });
+        return null;
+      }
+
+      // التحقق من الحالات الإيجابية والسلبية
+      const positiveCases = parseInt(row.positiveCases) || 0;
+      const negativeCases = parseInt(row.negativeCases) || 0;
+
+      if (positiveCases < 0) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'positiveCases',
+          message: 'عدد الحالات الإيجابية لا يمكن أن يكون سالباً'
+        });
+        return null;
+      }
+
+      if (negativeCases < 0) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'negativeCases',
+          message: 'عدد الحالات السلبية لا يمكن أن يكون سالباً'
+        });
+        return null;
+      }
+
+      // التحقق من وجود رمز العينة مسبقاً
+      const existingRecord = await LaboratoryModel.findOne({ sampleCode: row.sampleCode });
+      if (existingRecord) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'sampleCode',
+          message: `رمز العينة ${row.sampleCode} موجود مسبقاً`
+        });
+        return null;
+      }
+
+      // إيجاد أو إنشاء العميل
+      const client = await findOrCreateClient(row, userId, ClientModel);
+      if (!client) {
+        errors.push({
+          row: row.rowNumber,
+          field: 'client',
+          message: 'فشل في إنشاء أو العثور على العميل'
+        });
+        return null;
+      }
+
+      // إنشاء السجل الجديد
+      const newRecord = new LaboratoryModel({
+        sampleCode: row.sampleCode.trim(),
+        sampleType: row.sampleType.trim(),
+        collector: row.collector.trim(),
+        date: date,
+        client: client._id,
+        farmLocation: row.farmLocation?.trim() || 'غير محدد',
+        testType: row.testType.trim(),
+        positiveCases: positiveCases,
+        negativeCases: negativeCases,
+        testStatus: row.testStatus?.trim() || 'Pending',
+        priority: row.priority?.trim() || 'Normal',
+        remarks: row.remarks?.trim() || '',
+        createdBy: userId
+      });
+
+      const savedRecord = await newRecord.save();
+      
+      // إرجاع السجل مع بيانات العميل للعرض
+      return await LaboratoryModel.findById(savedRecord._id).populate('client', 'name nationalId phone');
+
+    } catch (error) {
+      console.error('Error processing laboratory row:', error);
+      errors.push({
+        row: row.rowNumber,
+        field: 'processing',
+        message: `خطأ في معالجة السجل: ${error.message}`
+      });
+      return null;
+    }
   })
 );
 
