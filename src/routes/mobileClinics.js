@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const {  authorizeSection } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -297,6 +298,7 @@ router.get('/:id',
  */
 router.post('/',
   auth,
+  authorizeSection('Mobile Clinic'),
   asyncHandler(async (req, res) => {
     // Check if serial number already exists
     const existingRecord = await MobileClinic.findOne({ serialNo: req.body.serialNo });
@@ -353,6 +355,7 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorizeSection('Mobile Clinic'),
   asyncHandler(async (req, res) => {
     const record = await MobileClinic.findById(req.params.id);
     
@@ -401,6 +404,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
+  authorizeSection('Mobile Clinic'),
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
     const record = await MobileClinic.findById(req.params.id);
@@ -515,6 +519,7 @@ router.get('/export',
  */
 router.get('/template',
   auth,
+  authorizeSection('Mobile Clinic'),
   asyncHandler(async (req, res) => {
     const { Parser } = require('json2csv');
     

@@ -3,6 +3,7 @@ const EquineHealth = require('../models/EquineHealth');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { authorizeSection } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ router.get('/',
 
     // Get records
     const records = await EquineHealth.find(filter)
-      .populate('client', 'name nationalId phone village')
+      .populate('client', 'name nationalId phone village detailedAddress')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ date: -1 });
@@ -155,7 +156,8 @@ router.get('/:id',
  */
 router.post('/',
   auth,
-  asyncHandler(async (req, res) => {
+  authorizeSection('Equine Health'),
+    asyncHandler(async (req, res) => {
     // Check if serial number already exists
     const existingRecord = await EquineHealth.findOne({ serialNo: req.body.serialNo });
     if (existingRecord) {
@@ -172,7 +174,7 @@ router.post('/',
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
@@ -211,6 +213,7 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorizeSection('Equine Health'),
   asyncHandler(async (req, res) => {
     const record = await EquineHealth.findById(req.params.id);
     
@@ -226,7 +229,7 @@ router.put('/:id',
     Object.assign(record, req.body);
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
@@ -259,6 +262,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
+  authorizeSection('Equine Health'),
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
     const record = await EquineHealth.findById(req.params.id);

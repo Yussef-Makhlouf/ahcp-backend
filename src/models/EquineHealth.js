@@ -252,7 +252,7 @@ const equineHealthSchema = new mongoose.Schema({
     }
   },
   client: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.Mixed, // Changed to Mixed to allow object or ObjectId
     ref: 'Client',
     required: [true, 'Client reference is required']
   },

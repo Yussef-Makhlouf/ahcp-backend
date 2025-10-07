@@ -5,6 +5,7 @@ const { validate, validateQuery, schemas } = require('../middleware/validation')
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
+const { authorizeSection } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -257,6 +258,7 @@ router.get('/:id',
  */
 router.post('/',
   auth,
+  authorizeSection('Vaccination'),
   validate(schemas.vaccinationCreate),
   asyncHandler(async (req, res) => {
     // Check if serial number already exists
@@ -314,6 +316,7 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorizeSection('Vaccination'),
   validate(schemas.vaccinationCreate),
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id);
@@ -378,6 +381,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
+  authorizeSection('Vaccination'),
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id);
@@ -591,6 +595,7 @@ router.get('/template',
  */
 router.post('/import',
   auth,
+  authorizeSection('Vaccination'),
   authorize('super_admin', 'section_supervisor'),
   handleImport(Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
     // Validate required fields

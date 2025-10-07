@@ -90,7 +90,13 @@ const userSchema = new mongoose.Schema({
   section: {
     type: String,
     trim: true,
-    maxlength: [100, 'Section name cannot exceed 100 characters']
+    enum: {
+      values: ['Mobile Clinic', 'Vaccination', 'Parasite Control', 'Equine Health', 'Laboratory', 'Administration'],
+      message: 'Section must be one of: Mobile Clinic, Vaccination, Parasite Control, Equine Health, Laboratory, Administration'
+    },
+    required: function() {
+      return this.role === 'section_supervisor';
+    }
   },
   avatar: {
     type: String,

@@ -2,7 +2,8 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
-const { Parser } = require('json2csv');
+const json2csv = require('json2csv');
+const Parser = json2csv.Parser || json2csv;
 
 /**
  * Configure multer for file uploads
@@ -158,7 +159,7 @@ const handleImport = (Model, ClientModel, processRowFunction) => {
         // Process each row
         for (const row of results) {
           try {
-            const record = await processRowFunction(row, req.user, ClientModel, Model, errors);
+            const record = await processRowFunction(row, req.user._id, ClientModel, Model, errors);
             if (record) {
               importedRecords.push(record);
               successCount++;

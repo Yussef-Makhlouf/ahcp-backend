@@ -23,7 +23,7 @@ const uploadRoutes = require('./routes/upload');
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
-const { auth: authMiddleware } = require('./middleware/auth');
+const { auth: authMiddleware, authorizeSection } = require('./middleware/auth');
 const devAuth = require('./middleware/dev-auth');
 
 const app = express();
@@ -185,16 +185,23 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+// Protected section routes with authentication and section-based authorization
+// Each section is only accessible by users assigned to that section OR super_admin
+// Note: parasite-control has section authorization applied per-route (except GET all and GET one)
+app.use('/api/parasite-control', authMiddleware, parasiteControlRoutes);
+// app.use('/api/vaccination', authMiddleware, authorizeSection('Vaccination'), vaccinationRoutes);
+app.use('/api/vaccination', authMiddleware, vaccinationRoutes);
+// app.use('/api/mobile-clinics', authMiddleware, authorizeSection('Mobile Clinic'), mobileClinicsRoutes);
+app.use('/api/mobile-clinics', authMiddleware,  mobileClinicsRoutes);
+// app.use('/api/equine-health', authMiddleware, authorizeSection('Equine Health'), equineHealthRoutes);
+app.use('/api/equine-health', authMiddleware,  equineHealthRoutes);
+// app.use('/api/laboratories', authMiddleware, authorizeSection('Laboratory'), laboratoriesRoutes);
+app.use('/api/laboratories', authMiddleware, laboratoriesRoutes);
 
-// استخدام نظام المصادقة المبسط للتطوير
-app.use('/api/parasite-control', devAuth, parasiteControlRoutes);
-app.use('/api/vaccination', devAuth, vaccinationRoutes);
-app.use('/api/mobile-clinics', devAuth, mobileClinicsRoutes);
-app.use('/api/equine-health', devAuth, equineHealthRoutes);
-app.use('/api/laboratories', devAuth, laboratoriesRoutes);
-app.use('/api/clients', devAuth, clientsRoutes);
-app.use('/api/reports', devAuth, reportsRoutes);
-app.use('/api/upload', devAuth, uploadRoutes);
+// Clients and reports are accessible by all authenticated users
+app.use('/api/clients', authMiddleware, clientsRoutes);
+app.use('/api/reports', authMiddleware, reportsRoutes);
+app.use('/api/upload', authMiddleware, uploadRoutes);
 
 // Welcome message
 app.get('/', (req, res) => {

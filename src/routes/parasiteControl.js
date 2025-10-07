@@ -2,11 +2,23 @@ const express = require('express');
 const ParasiteControl = require('../models/ParasiteControl');
 const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, authorizeSection, authorizeRoleAndSection } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
+
+/**
+ * NOTE: Authentication is applied at the server level in server.js
+ * Section-based authorization is applied per-route (except GET all and GET one)
+ * 
+ * app.use('/api/parasite-control', authMiddleware, parasiteControlRoutes);
+ * 
+ * This means:
+ * - All routes require authentication (valid JWT token)
+ * - GET all (/) and GET one (/:id) are accessible by all authenticated users
+ * - All other routes require section "Parasite Control" OR role "super_admin"
+ */
 
 /**
  * @swagger
@@ -52,9 +64,12 @@ const router = express.Router();
  *         description: Records retrieved successfully
  */
 router.get('/',
-  auth,
+  // Auth applied at server level - accessible by all authenticated users
+  // No section authorization - this route is public to all authenticated users
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
+    // req.user is available here from auth middleware
+    // This route is accessible by all authenticated users (no section restriction)
     const { page = 1, limit = 10, startDate, endDate, supervisor, search } = req.query;
     const skip = (page - 1) * limit;
 
@@ -200,6 +215,8 @@ router.get('/statistics',
  *         description: Record not found
  */
 router.get('/:id',
+  // Auth applied at server level - accessible by all authenticated users
+  // No section authorization - this route is public to all authenticated users
   auth,
   asyncHandler(async (req, res) => {
     const record = await ParasiteControl.findById(req.params.id)
@@ -244,6 +261,7 @@ router.get('/:id',
  */
 router.post('/',
   auth,
+  authorizeSection('Parasite Control'),
   validate(schemas.parasiteControlCreate),
   asyncHandler(async (req, res) => {
     // Check if serial number already exists
@@ -262,7 +280,7 @@ router.post('/',
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
@@ -301,6 +319,7 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorizeSection('Parasite Control'),
   validate(schemas.parasiteControlCreate),
   asyncHandler(async (req, res) => {
     const record = await ParasiteControl.findById(req.params.id);
@@ -332,7 +351,7 @@ router.put('/:id',
     Object.assign(record, req.body);
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
@@ -365,6 +384,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
+  authorizeSection('Parasite Control'),
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
     const record = await ParasiteControl.findById(req.params.id);
@@ -574,6 +594,7 @@ router.get('/template',
  */
 router.post('/import',
   auth,
+  authorizeSection('Parasite Control'),
   authorize('super_admin', 'section_supervisor'),
   handleImport(ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
     // Validate required fields
