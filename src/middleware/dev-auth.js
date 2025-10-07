@@ -1,51 +1,63 @@
 // Middleware للمصادقة في بيئة التطوير
-const devAuth = (req, res, next) => {
-  // في بيئة التطوير، نسمح بالوصول بدون مصادقة
-  if (process.env.NODE_ENV === 'development') {
-    // إنشاء مستخدم وهمي للتطوير
-    req.user = {
-      id: 'dev-user-1',
-      name: 'مدير النظام',
-      email: 'admin@ahcp.gov.sa',
-      role: 'super_admin',
-      section: null
-    };
-    return next();
-  }
-  
-  // في بيئة الإنتاج، استخدم المصادقة الحقيقية
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Access denied. No token provided.',
-      error: 'MISSING_TOKEN'
-    });
-  }
-  
-  const token = authHeader.substring(7);
-  
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const devAuth = async (req, res, next) => {
   try {
-    // هنا يمكن إضافة التحقق من JWT في المستقبل
-    // const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // req.user = decoded;
+    // التحقق من وجود token في header
+    const authHeader = req.headers.authorization;
     
-    // للآن، نستخدم مستخدم وهمي
-    req.user = {
-      id: 'user-1',
-      name: 'مستخدم النظام',
-      email: 'user@ahcp.gov.sa',
-      role: 'super_admin',
-      section: null
-    };
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Please login first.',
+        error: 'AUTHENTICATION_REQUIRED'
+      });
+    }
+
+    const token = authHeader.substring(7); // إزالة "Bearer " من البداية
     
-    next();
+    try {
+      // التحقق من صحة token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // البحث عن المستخدم
+      const user = await User.findById(decoded.id);
+      
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found.',
+          error: 'USER_NOT_FOUND'
+        });
+      }
+      
+      if (!user.isActive) {
+        return res.status(401).json({
+          success: false,
+          message: 'Account is deactivated.',
+          error: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+      
+      // إضافة المستخدم إلى request
+      req.user = user;
+      next();
+      
+    } catch (jwtError) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token.',
+        error: 'INVALID_TOKEN'
+      });
+    }
+    
   } catch (error) {
-    return res.status(401).json({
+    console.error('Auth middleware error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Invalid token.',
-      error: 'INVALID_TOKEN'
+      message: 'Authentication error.',
+      error: 'AUTH_ERROR'
     });
   }
 };

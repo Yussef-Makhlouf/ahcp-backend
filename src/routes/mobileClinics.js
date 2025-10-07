@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
@@ -378,6 +379,8 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorize('super_admin', 'section_supervisor'),
+  checkSectionAccessWithMessage('العيادات المتنقلة'),
   asyncHandler(async (req, res) => {
     const record = await MobileClinic.findById(req.params.id);
     

@@ -47,30 +47,10 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS configuration - نهائي ومحسن
+// CORS configuration - السماح لجميع الأصول
 const corsOptions = {
-  origin: function (origin, callback) {
-    // السماح للطلبات بدون origin (مثل mobile apps أو Postman)
-    if (!origin) return callback(null, true);
-    
-    // قائمة الأصول المسموحة
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-      'http://localhost:8080',
-      'http://127.0.0.1:8080'
-    ];
-    
-    // في بيئة التطوير، السماح لجميع الأصول
-    if (process.env.NODE_ENV === 'development' || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(null, true); // مؤقتاً للتطوير
-    }
-  },
-  credentials: false, // تجنب مشاكل credentials في التطوير
+  origin: '*', // السماح لجميع الأصول
+  credentials: false, // تجنب مشاكل credentials
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
   allowedHeaders: [
     'Content-Type', 
@@ -96,10 +76,10 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Middleware إضافي للـ CORS - تأكيد نهائي
+// Middleware إضافي للـ CORS - السماح لجميع الأصول
 app.use((req, res, next) => {
-  // تعيين headers الأساسية
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  // تعيين headers الأساسية - السماح لجميع الأصول
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS,HEAD');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma, Expires, X-CSRF-Token');
   res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Content-Disposition');

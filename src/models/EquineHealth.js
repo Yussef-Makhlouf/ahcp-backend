@@ -487,9 +487,9 @@ equineHealthSchema.pre('save', function(next) {
   next();
 });
 
-// Pre-save validation for horse details count
+// Pre-save validation for horse details count (only if horseDetails is provided)
 equineHealthSchema.pre('save', function(next) {
-  if (this.horseDetails.length !== this.horseCount) {
+  if (this.horseDetails && this.horseDetails.length > 0 && this.horseDetails.length !== this.horseCount) {
     return next(new Error('Horse details count must match horse count'));
   }
   next();

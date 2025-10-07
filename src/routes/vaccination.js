@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
@@ -365,6 +366,8 @@ router.post('/',
  */
 router.put('/:id',
   auth,
+  authorize('super_admin', 'section_supervisor'),
+  checkSectionAccessWithMessage('التطعيمات'),
   validate(schemas.vaccinationCreate),
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id);

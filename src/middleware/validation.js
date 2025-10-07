@@ -259,13 +259,15 @@ const schemas = {
     remarks: Joi.string().max(1000).optional()
   }),
 
-  // Laboratory schemas
+  // Laboratory schemas - Updated to match table structure
   laboratoryCreate: Joi.object({
-    sampleCode: Joi.string().max(20).required(),
-    sampleType: Joi.string().valid('Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin').required(),
-    collector: Joi.string().max(100).required(),
+    serialNo: Joi.number().integer().min(0).required(),
     date: Joi.date().max('now').required(),
-    client: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    sampleCode: Joi.string().max(20).required(),
+    clientName: Joi.string().max(100).required(),
+    clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
+    clientBirthDate: Joi.date().optional(),
+    clientPhone: Joi.string().pattern(/^\d{9}$/).required(),
     farmLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
@@ -276,15 +278,14 @@ const schemas = {
       goats: Joi.number().min(0).default(0),
       camel: Joi.number().min(0).default(0),
       cattle: Joi.number().min(0).default(0),
-      horse: Joi.number().min(0).default(0)
-    }).optional(),
-    testType: Joi.string().valid('Parasitology', 'Bacteriology', 'Virology', 'Serology', 'Biochemistry', 'Hematology', 'Pathology').required(),
+      horse: Joi.number().min(0).default(0),
+      other: Joi.string().max(100).allow('').optional()
+    }).required(),
+    collector: Joi.string().max(100).required(),
+    sampleType: Joi.string().valid('Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin').required(),
+    sampleNumber: Joi.string().max(20).required(),
     positiveCases: Joi.number().min(0).default(0),
     negativeCases: Joi.number().min(0).default(0),
-    priority: Joi.string().valid('Low', 'Normal', 'High', 'Urgent').default('Normal'),
-    expectedCompletionDate: Joi.date().optional(),
-    laboratoryTechnician: Joi.string().max(100).optional(),
-    equipment: Joi.string().max(100).optional(),
     remarks: Joi.string().max(1000).optional()
   }),
 

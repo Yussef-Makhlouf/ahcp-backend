@@ -5,10 +5,4 @@ set PORT=3001
 set MONGODB_URI=mongodb://localhost:27017/ahcp_database
 set JWT_SECRET=ahcp_super_secret_key_2024_development_only
 set JWT_EXPIRES_IN=7d
-set API_DOCS_ENABLED=true
-set RATE_LIMIT_WINDOW_MS=900000
-set RATE_LIMIT_MAX_REQUESTS=100
-set CORS_ORIGIN=*
-echo Environment variables set.
-echo Starting server...
 node src/server.js

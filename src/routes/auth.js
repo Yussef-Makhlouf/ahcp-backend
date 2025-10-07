@@ -701,7 +701,7 @@ router.get('/supervisors/by-section/:section',
       
       // Get supervisors for specific section with flexible matching
       const query = {
-        role: { $in: ['super_admin', 'section_supervisor'] },
+        role: 'section_supervisor', // Only section supervisors, no super_admin
         isActive: true
       };
 
@@ -709,12 +709,11 @@ router.get('/supervisors/by-section/:section',
       if (section && section !== 'all') {
         query.$or = [
           { section: section }, // Exact match
-          { section: { $regex: section, $options: 'i' } }, // Case insensitive contains
-          { role: 'super_admin' } // Super admins can supervise all sections
+          { section: { $regex: section, $options: 'i' } } // Case insensitive contains
         ];
       }
 
-      const supervisors = await User.find(
+      let supervisors = await User.find(
         query,
         'name email role section',
         {
@@ -723,6 +722,22 @@ router.get('/supervisors/by-section/:section',
         }
       );
       
+      // إذا لم نجد مشرفين للقسم المحدد، نجلب المشرفين العامين كـ fallback
+      if (supervisors.length === 0 && section && section !== 'all') {
+        console.log(`⚠️ No supervisors found for section: ${section}, falling back to super_admin`);
+        supervisors = await User.find(
+          {
+            role: 'super_admin',
+            isActive: true
+          },
+          'name email role section',
+          {
+            sort: { name: 1 },
+            lean: true
+          }
+        );
+      }
+      
       console.log(`✅ Found ${supervisors.length} supervisors for section: ${section}`);
       
       res.json({
@@ -730,7 +745,8 @@ router.get('/supervisors/by-section/:section',
         data: supervisors,
         section: section,
         count: supervisors.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        fallback: supervisors.length > 0 && supervisors[0]?.role === 'super_admin'
       });
     } catch (error) {
       console.error('❌ Error fetching supervisors by section:', error);
@@ -740,6 +756,33 @@ router.get('/supervisors/by-section/:section',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/logout',
+  auth,
+  asyncHandler(async (req, res) => {
+    // في نظام JWT، لا نحتاج لتنفيذ خاص على الخادم للـ logout
+    // يمكن إضافة token إلى blacklist إذا أردنا ذلك
+    
+    res.json({
+      success: true,
+      message: 'تم تسجيل الخروج بنجاح'
+    });
   })
 );
 
