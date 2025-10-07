@@ -217,7 +217,15 @@ router.get('/:id',
 
     res.json({
       success: true,
-      data: { record }
+      data: {
+        records: [record],
+        pagination: {
+          page: 1,
+          limit: 1,
+          total: 1,
+          pages: 1
+        }
+      }
     });
   })
 );
@@ -256,18 +264,85 @@ router.post('/',
       });
     }
 
+    // Handle client - find or create
+    console.log('🔍 Client data received:', req.body.client);
+    console.log('🔍 Client type:', typeof req.body.client);
+    
+    let clientId;
+    if (typeof req.body.client === 'object' && req.body.client.name) {
+      // Client object provided, find or create
+      const Client = require('../models/Client');
+      
+      // Try to find existing client by nationalId
+      let client = null;
+      if (req.body.client.nationalId) {
+        client = await Client.findOne({ nationalId: req.body.client.nationalId });
+      }
+      
+      // If not found, create new client
+      if (!client) {
+        client = new Client({
+          name: req.body.client.name,
+          nationalId: req.body.client.nationalId || `AUTO_${Date.now()}`,
+          phone: req.body.client.phone || '',
+          village: req.body.client.village || '',
+          detailedAddress: req.body.client.detailedAddress || '',
+          status: 'نشط',
+          animals: [],
+          availableServices: [],
+          createdBy: req.user._id
+        });
+        await client.save();
+      }
+      
+      clientId = client._id;
+      console.log('✅ Client created/found with ID:', clientId);
+    } else if (typeof req.body.client === 'string' && req.body.client.trim()) {
+      // Client name provided, create simple client
+      const Client = require('../models/Client');
+      const client = new Client({
+        name: req.body.client.trim(),
+        nationalId: `AUTO_${Date.now()}`,
+        phone: '',
+        village: '',
+        detailedAddress: '',
+        status: 'نشط',
+        animals: [],
+        availableServices: [],
+        createdBy: req.user._id
+      });
+      await client.save();
+      clientId = client._id;
+      console.log('✅ Simple client created with ID:', clientId);
+    } else {
+      // Client ID provided (ObjectId)
+      clientId = req.body.client;
+      console.log('✅ Using existing client ID:', clientId);
+    }
+    
+    console.log('🔍 Final clientId before saving:', clientId);
+
     const record = new ParasiteControl({
       ...req.body,
+      client: clientId,
       createdBy: req.user._id
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
       message: 'Parasite control record created successfully',
-      data: { record }
+      data: {
+        records: [record],
+        pagination: {
+          page: 1,
+          limit: 1,
+          total: 1,
+          pages: 1
+        }
+      }
     });
   })
 );
@@ -301,7 +376,7 @@ router.post('/',
  */
 router.put('/:id',
   auth,
-  validate(schemas.parasiteControlCreate),
+  validate(schemas.parasiteControlUpdate),
   asyncHandler(async (req, res) => {
     const record = await ParasiteControl.findById(req.params.id);
     
@@ -328,16 +403,87 @@ router.put('/:id',
       }
     }
 
+    // Handle client - find or create
+    console.log('🔍 PUT - Client data received:', req.body.client);
+    console.log('🔍 PUT - Client type:', typeof req.body.client);
+    
+    let updateData = { ...req.body };
+    let clientId;
+    
+    if (typeof req.body.client === 'object' && req.body.client.name) {
+      // Client object provided, find or create
+      const Client = require('../models/Client');
+      
+      // Try to find existing client by nationalId
+      let client = null;
+      if (req.body.client.nationalId) {
+        client = await Client.findOne({ nationalId: req.body.client.nationalId });
+      }
+      
+      // If not found, create new client
+      if (!client) {
+        client = new Client({
+          name: req.body.client.name,
+          nationalId: req.body.client.nationalId || `AUTO_${Date.now()}`,
+          phone: req.body.client.phone || '',
+          village: req.body.client.village || '',
+          detailedAddress: req.body.client.detailedAddress || '',
+          status: 'نشط',
+          animals: [],
+          availableServices: [],
+          createdBy: req.user._id
+        });
+        await client.save();
+      }
+      
+      clientId = client._id;
+      updateData.client = clientId;
+      console.log('✅ PUT - Client created/found with ID:', clientId);
+    } else if (typeof req.body.client === 'string' && req.body.client.trim()) {
+      // Client name provided, create simple client
+      const Client = require('../models/Client');
+      const client = new Client({
+        name: req.body.client.trim(),
+        nationalId: `AUTO_${Date.now()}`,
+        phone: '',
+        village: '',
+        detailedAddress: '',
+        status: 'نشط',
+        animals: [],
+        availableServices: [],
+        createdBy: req.user._id
+      });
+      await client.save();
+      clientId = client._id;
+      updateData.client = clientId;
+      console.log('✅ PUT - Simple client created with ID:', clientId);
+    } else {
+      // Client ID provided (ObjectId)
+      clientId = req.body.client;
+      updateData.client = clientId;
+      console.log('✅ PUT - Using existing client ID:', clientId);
+    }
+    
+    console.log('🔍 PUT - Final clientId before updating:', clientId);
+
     // Update record
-    Object.assign(record, req.body);
+    Object.assign(record, updateData);
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
       message: 'Parasite control record updated successfully',
-      data: { record }
+      data: {
+        records: [record],
+        pagination: {
+          page: 1,
+          limit: 1,
+          total: 1,
+          pages: 1
+        }
+      }
     });
   })
 );

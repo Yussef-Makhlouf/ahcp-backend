@@ -699,13 +699,23 @@ router.get('/supervisors/by-section/:section',
       
       console.log(`🔍 Fetching supervisors for section: ${section}`);
       
-      // Get supervisors for specific section
+      // Get supervisors for specific section with flexible matching
+      const query = {
+        role: { $in: ['super_admin', 'section_supervisor'] },
+        isActive: true
+      };
+
+      // Add section filter - support both exact match and contains
+      if (section && section !== 'all') {
+        query.$or = [
+          { section: section }, // Exact match
+          { section: { $regex: section, $options: 'i' } }, // Case insensitive contains
+          { role: 'super_admin' } // Super admins can supervise all sections
+        ];
+      }
+
       const supervisors = await User.find(
-        {
-          role: { $in: ['super_admin', 'section_supervisor'] },
-          section: section,
-          isActive: true
-        },
+        query,
         'name email role section',
         {
           sort: { name: 1 },

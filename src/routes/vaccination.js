@@ -217,8 +217,8 @@ router.get('/:id',
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id)
       .populate('client', 'name nationalId phone village detailedAddress')
-      .populate('createdBy', 'name email role')
-      .populate('updatedBy', 'name email role');
+      // .populate('createdBy', 'name email role')
+      // .populate('updatedBy', 'name email role');
 
     if (!record) {
       return res.status(404).json({
@@ -269,18 +269,69 @@ router.post('/',
       });
     }
 
+    let clientId = req.body.client;
+
+    // If clientData is provided, create or find the client
+    if (req.body.clientData) {
+      const clientData = req.body.clientData;
+      
+      // Try to find existing client by nationalId
+      let client = await Client.findOne({ nationalId: clientData.nationalId });
+      
+      if (!client) {
+        // Create new client
+        client = new Client({
+          name: clientData.name,
+          nationalId: clientData.nationalId,
+          phone: clientData.phone,
+          village: clientData.village || '',
+          detailedAddress: clientData.detailedAddress || '',
+          birthDate: clientData.birthDate || undefined,
+          status: 'نشط',
+          availableServices: ['vaccination'], createdBy: req.user._id
+        });
+        await client.save();
+      } else {
+        // Update existing client with new data if provided
+        if (clientData.name) client.name = clientData.name;
+        if (clientData.phone) client.phone = clientData.phone;
+        if (clientData.village) client.village = clientData.village;
+        if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
+        if (clientData.birthDate) client.birthDate = clientData.birthDate;
+        
+        // Add vaccination to available services if not already present
+        if (!client.availableServices.includes('vaccination')) {
+          client.availableServices.push('vaccination');
+        }
+        await client.save();
+      }
+      
+      clientId = client._id;
+    }
+
     const record = new Vaccination({
       ...req.body,
-      createdBy: req.user._id
+      client: clientId,
+      // createdBy: req.user._id,
+      // Remove clientData from the record
+      clientData: undefined
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
       message: 'Vaccination record created successfully',
-      data: { record }
+      data: {
+        records: [record],
+        pagination: {
+          page: 1,
+          limit: 1,
+          total: 1,
+          pages: 1
+        }
+      }
     });
   })
 );
@@ -341,16 +392,68 @@ router.put('/:id',
       }
     }
 
+    let clientId = req.body.client;
+
+    // If clientData is provided, create or find the client
+    if (req.body.clientData) {
+      const clientData = req.body.clientData;
+      
+      // Try to find existing client by nationalId
+      let client = await Client.findOne({ nationalId: clientData.nationalId });
+      
+      if (!client) {
+        // Create new client
+        client = new Client({
+          name: clientData.name,
+          nationalId: clientData.nationalId,
+          phone: clientData.phone,
+          village: clientData.village || '',
+          detailedAddress: clientData.detailedAddress || '',
+          birthDate: clientData.birthDate || undefined,
+          status: 'نشط',
+          availableServices: ['vaccination'], createdBy: req.user._id
+        });
+        await client.save();
+      } else {
+        // Update existing client with new data if provided
+        if (clientData.name) client.name = clientData.name;
+        if (clientData.phone) client.phone = clientData.phone;
+        if (clientData.village) client.village = clientData.village;
+        if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
+        if (clientData.birthDate) client.birthDate = clientData.birthDate;
+        
+        // Add vaccination to available services if not already present
+        if (!client.availableServices.includes('vaccination')) {
+          client.availableServices.push('vaccination');
+        }
+        await client.save();
+      }
+      
+      clientId = client._id;
+    }
+
     // Update record
-    Object.assign(record, req.body);
+    Object.assign(record, {
+      ...req.body,
+      client: clientId,
+      clientData: undefined // Remove clientData from the record
+    });
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
       message: 'Vaccination record updated successfully',
-      data: { record }
+      data: {
+        records: [record],
+        pagination: {
+          page: 1,
+          limit: 1,
+          total: 1,
+          pages: 1
+        }
+      }
     });
   })
 );
@@ -666,7 +769,7 @@ router.post('/import',
         situation: row.requestSituation || 'Open'
       },
       remarks: row.remarks || '',
-      createdBy: user._id
+      // createdBy: user._id
     };
     
     const vaccination = new VaccinationModel(vaccinationData);

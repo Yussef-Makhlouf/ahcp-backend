@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { findOrCreateClient } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -308,13 +309,37 @@ router.post('/',
       });
     }
 
+    let clientId = req.body.client;
+
+    // If client is an object (new client data), create or find the client
+    if (typeof req.body.client === 'object' && req.body.client !== null) {
+      const clientData = {
+        clientName: req.body.client.name,
+        clientNationalId: req.body.client.nationalId,
+        clientPhone: req.body.client.phone,
+        clientVillage: req.body.client.village || '',
+        clientDetailedAddress: req.body.client.detailedAddress || ''
+      };
+      
+      const client = await findOrCreateClient(clientData, req.user._id, Client);
+      if (!client) {
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to create or find client',
+          error: 'CLIENT_ERROR'
+        });
+      }
+      clientId = client._id;
+    }
+
     const record = new MobileClinic({
       ...req.body,
+      client: clientId,
       createdBy: req.user._id
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
@@ -364,11 +389,34 @@ router.put('/:id',
       });
     }
 
+    let clientId = req.body.client;
+
+    // If client is an object (new client data), create or find the client
+    if (typeof req.body.client === 'object' && req.body.client !== null) {
+      const clientData = {
+        clientName: req.body.client.name,
+        clientNationalId: req.body.client.nationalId,
+        clientPhone: req.body.client.phone,
+        clientVillage: req.body.client.village || '',
+        clientDetailedAddress: req.body.client.detailedAddress || ''
+      };
+      
+      const client = await findOrCreateClient(clientData, req.user._id, Client);
+      if (!client) {
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to create or find client',
+          error: 'CLIENT_ERROR'
+        });
+      }
+      clientId = client._id;
+    }
+
     // Update record
-    Object.assign(record, req.body);
+    Object.assign(record, { ...req.body, client: clientId });
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
