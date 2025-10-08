@@ -51,7 +51,6 @@ const router = express.Router();
  *         description: Records retrieved successfully
  */
 router.get('/',
-  conditionalAuth,
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
     const { page = 1, limit = 10, startDate, endDate, interventionCategory, supervisor, search } = req.query;
@@ -79,7 +78,6 @@ router.get('/',
 
     // Get records
     const records = await EquineHealth.find(filter)
-      .populate('client', 'name nationalId phone village')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ date: -1 });
@@ -127,7 +125,6 @@ router.get('/',
  *         description: Statistics retrieved successfully
  */
 router.get('/statistics',
-  conditionalAuth,
   asyncHandler(async (req, res) => {
     const { startDate, endDate } = req.query;
     
@@ -174,12 +171,16 @@ router.get('/statistics',
  *         description: Record not found
  */
 router.get('/:id',
-  conditionalAuth,
   asyncHandler(async (req, res) => {
-    const record = await EquineHealth.findById(req.params.id)
-      .populate('client', 'name nationalId phone village detailedAddress')
-      .populate('createdBy', 'name email role')
-      .populate('updatedBy', 'name email role');
+    let record;
+    
+    // Check if the ID is a valid ObjectId, otherwise search by serialNo
+    if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      record = await EquineHealth.findById(req.params.id);
+    } else {
+      // Search by serialNo
+      record = await EquineHealth.findOne({ serialNo: req.params.id });
+    }
 
     if (!record) {
       return res.status(404).json({
@@ -217,7 +218,6 @@ router.get('/:id',
  *         description: Validation error
  */
 router.post('/',
-  conditionalAuth,
   asyncHandler(async (req, res) => {
     // Check if serial number already exists
     const existingRecord = await EquineHealth.findOne({ serialNo: req.body.serialNo });
@@ -229,39 +229,11 @@ router.post('/',
       });
     }
 
-    // Handle client creation/retrieval
-    let clientId = req.body.client;
-    
-    // If client is an object, create or find the client
-    if (req.body.client && typeof req.body.client === 'object') {
-      const Client = require('../models/Client');
-      
-      // Try to find existing client by nationalId
-      let client = await Client.findOne({ nationalId: req.body.client.nationalId });
-      
-      if (!client) {
-        // Create new client
-        client = new Client({
-          name: req.body.client.name,
-          nationalId: req.body.client.nationalId,
-          phone: req.body.client.phone,
-          village: req.body.client.village || '',
-          detailedAddress: req.body.client.detailedAddress || ''
-        });
-        await client.save();
-      }
-      
-      clientId = client._id;
-    }
-
     const record = new EquineHealth({
-      ...req.body,
-      client: clientId,
-      createdBy: req.user._id
+      ...req.body
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.status(201).json({
       success: true,
@@ -303,7 +275,15 @@ router.put('/:id',
   authorize('super_admin', 'section_supervisor'),
   checkSectionAccessWithMessage('صحة الخيول'),
   asyncHandler(async (req, res) => {
-    const record = await EquineHealth.findById(req.params.id);
+    let record;
+    
+    // Check if the ID is a valid ObjectId, otherwise search by serialNo
+    if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      record = await EquineHealth.findById(req.params.id);
+    } else {
+      // Search by serialNo
+      record = await EquineHealth.findOne({ serialNo: req.params.id });
+    }
     
     if (!record) {
       return res.status(404).json({
@@ -313,39 +293,9 @@ router.put('/:id',
       });
     }
 
-    // Handle client update
-    let clientId = req.body.client;
-    
-    // If client is an object, create or find the client
-    if (req.body.client && typeof req.body.client === 'object') {
-      const Client = require('../models/Client');
-      
-      // Try to find existing client by nationalId
-      let client = await Client.findOne({ nationalId: req.body.client.nationalId });
-      
-      if (!client) {
-        // Create new client
-        client = new Client({
-          name: req.body.client.name,
-          nationalId: req.body.client.nationalId,
-          phone: req.body.client.phone,
-          village: req.body.client.village || '',
-          detailedAddress: req.body.client.detailedAddress || ''
-        });
-        await client.save();
-      }
-      
-      clientId = client._id;
-    }
-
     // Update record
     Object.assign(record, req.body);
-    if (clientId) {
-      record.client = clientId;
-    }
-    record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
 
     res.json({
       success: true,
@@ -377,10 +327,17 @@ router.put('/:id',
  *         description: Record not found
  */
 router.delete('/:id',
-  conditionalAuth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
-    const record = await EquineHealth.findById(req.params.id);
+    let record;
+    
+    // Check if the ID is a valid ObjectId, otherwise search by serialNo
+    if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      record = await EquineHealth.findById(req.params.id);
+    } else {
+      // Search by serialNo
+      record = await EquineHealth.findOne({ serialNo: req.params.id });
+    }
     
     if (!record) {
       return res.status(404).json({
@@ -425,7 +382,6 @@ router.delete('/:id',
  *         description: Statistics retrieved successfully
  */
 router.get('/statistics',
-  conditionalAuth,
   asyncHandler(async (req, res) => {
     const { startDate, endDate } = req.query;
     
@@ -480,7 +436,6 @@ router.get('/statistics',
  *               type: string
  */
 router.get('/export',
-  conditionalAuth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(handleExport(EquineHealth, {}, [
     'serialNo', 'date', 'farmLocation', 'supervisor', 'vehicleNo', 'horseCount',
@@ -503,7 +458,6 @@ router.get('/export',
  *         description: CSV template file
  */
 router.get('/template',
-  conditionalAuth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(handleTemplate([{
     serialNo: 'EH001',
@@ -549,7 +503,6 @@ router.get('/template',
  *         description: Import results
  */
 router.post('/import',
-  conditionalAuth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(handleImport(EquineHealth, require('../models/Client'), async (row, userId, ClientModel, EquineHealthModel, errors) => {
     try {
@@ -590,20 +543,17 @@ router.post('/import',
         return null;
       }
 
-      // Find or create client
-      const client = await findOrCreateClient(ClientModel, {
-        name: row.clientName?.trim(),
-        nationalId: row.clientNationalId?.trim(),
-        phone: row.clientPhone?.trim(),
-        village: row.clientVillage?.trim() || '',
-        detailedAddress: row.clientDetailedAddress?.trim() || ''
-      });
-
       // Create equine health record
       const equineHealthData = {
         serialNo: row.serialNo.trim(),
         date: date,
-        client: client._id,
+        client: {
+          name: row.clientName?.trim(),
+          nationalId: row.clientNationalId?.trim(),
+          phone: row.clientPhone?.trim(),
+          village: row.clientVillage?.trim() || '',
+          detailedAddress: row.clientDetailedAddress?.trim() || ''
+        },
         farmLocation: row.farmLocation.trim(),
         coordinates: {
           latitude: parseFloat(row.latitude) || 0,
@@ -622,12 +572,10 @@ router.post('/import',
           fulfillingDate: row.requestFulfillingDate ? new Date(row.requestFulfillingDate) : undefined
         },
         remarks: row.remarks?.trim() || '',
-        createdBy: userId
       };
 
       const record = new EquineHealthModel(equineHealthData);
       await record.save();
-      await record.populate('client', 'name nationalId phone village detailedAddress');
 
       return record;
     } catch (error) {

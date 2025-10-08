@@ -25,6 +25,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { auth: authMiddleware } = require('./middleware/auth');
 const devAuth = require('./middleware/dev-auth');
+const devNoAuth = require('./middleware/dev-no-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -77,22 +78,22 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Middleware إضافي للـ CORS - السماح لجميع الأصول
-app.use((req, res, next) => {
-  // تعيين headers الأساسية - السماح لجميع الأصول
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS,HEAD');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma, Expires, X-CSRF-Token');
-  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Content-Disposition');
-  res.header('Access-Control-Max-Age', '86400');
+// app.use((req, res, next) => {
+//   // تعيين headers الأساسية - السماح لجميع الأصول
+//   res.header('Access-Control-Allow-Origin', '*');
+//   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS,HEAD');
+//   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma, Expires, X-CSRF-Token');
+//   res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Content-Disposition');
+//   res.header('Access-Control-Max-Age', '86400');
   
-  // التعامل مع preflight requests
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
+//   // التعامل مع preflight requests
+//   if (req.method === 'OPTIONS') {
+//     res.status(200).end();
+//     return;
+//   }
   
-  next();
-});
+//   next();
+// });
 
 // Production mode - تفعيل المصادقة الكاملة
 console.log('🔒 Production Mode: Authentication enabled');
@@ -170,7 +171,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/parasite-control', devAuth, parasiteControlRoutes);
 app.use('/api/vaccination', devAuth, vaccinationRoutes);
 app.use('/api/mobile-clinics', devAuth, mobileClinicsRoutes);
-app.use('/api/equine-health', devAuth, equineHealthRoutes);
+app.use('/api/equine-health', devNoAuth.auth, equineHealthRoutes);
 app.use('/api/laboratories', devAuth, laboratoriesRoutes);
 app.use('/api/clients', devAuth, clientsRoutes);
 app.use('/api/reports', devAuth, reportsRoutes);

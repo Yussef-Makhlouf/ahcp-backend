@@ -223,13 +223,7 @@ const requestSchema = new mongoose.Schema({
     }
   },
   fulfillingDate: {
-    type: Date,
-    validate: {
-      validator: function(date) {
-        return !date || date >= this.date;
-      },
-      message: 'Fulfilling date cannot be before request date'
-    }
+    type: Date
   }
 }, { _id: false });
 
@@ -252,9 +246,36 @@ const equineHealthSchema = new mongoose.Schema({
     }
   },
   client: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: [true, 'Client reference is required']
+    name: {
+      type: String,
+      required: [true, 'Client name is required'],
+      trim: true,
+      maxlength: [100, 'Client name cannot exceed 100 characters']
+    },
+    nationalId: {
+      type: String,
+      required: [true, 'Client national ID is required'],
+      trim: true,
+      match: [/^\d{10,14}$/, 'National ID must be between 10-14 digits']
+    },
+    phone: {
+      type: String,
+      required: [true, 'Client phone is required'],
+      trim: true,
+      match: [/^(\+966|0)?[5][0-9]{8}$/, 'Invalid Saudi phone number format']
+    },
+    village: {
+      type: String,
+      required: [true, 'Client village is required'],
+      trim: true,
+      maxlength: [100, 'Village name cannot exceed 100 characters']
+    },
+    detailedAddress: {
+      type: String,
+      required: [true, 'Client detailed address is required'],
+      trim: true,
+      maxlength: [200, 'Address cannot exceed 200 characters']
+    }
   },
   farmLocation: {
     type: String,
@@ -349,11 +370,6 @@ const equineHealthSchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Remarks cannot exceed 1000 characters']
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -401,19 +417,17 @@ equineHealthSchema.statics.findByDateRange = function(startDate, endDate) {
       $gte: new Date(startDate),
       $lte: new Date(endDate)
     }
-  }).populate('client', 'name nationalId phone village');
+  });
 };
 
 // Static method to find records by intervention category
 equineHealthSchema.statics.findByInterventionCategory = function(category) {
-  return this.find({ interventionCategory: category })
-    .populate('client', 'name nationalId phone village');
+  return this.find({ interventionCategory: category });
 };
 
 // Static method to find records requiring follow-up
 equineHealthSchema.statics.findRequiringFollowUp = function() {
-  return this.find({ followUpRequired: true })
-    .populate('client', 'name nationalId phone village');
+  return this.find({ followUpRequired: true });
 };
 
 // Static method to get statistics

@@ -196,11 +196,28 @@ const updateLastLogin = async (req, res, next) => {
   next();
 };
 
+/**
+ * Get supervisor module from section name
+ */
+const getSupervisorModule = (section) => {
+  const sectionToModuleMap = {
+    'مكافحة الطفيليات': 'parasite-control',
+    'التطعيمات': 'vaccination',
+    'العيادات المتنقلة': 'mobile-clinics',
+    'المختبرات': 'laboratories',
+    'صحة الخيول': 'equine-health',
+    'الإدارة العامة': 'all'
+  };
+  
+  return sectionToModuleMap[section] || 'all';
+};
+
 module.exports = {
   auth,
   authorize,
   optionalAuth,
   ownerOrAdmin,
   validateApiKey,
-  updateLastLogin
+  updateLastLogin,
+  getSupervisorModule
 };
