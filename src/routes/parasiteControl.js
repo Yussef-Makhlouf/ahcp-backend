@@ -180,6 +180,132 @@ router.get('/statistics',
 
 /**
  * @swagger
+ * /api/parasite-control/export:
+ *   get:
+ *     summary: Export parasite control records
+ *     tags: [Parasite Control]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *         description: Export format
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ */
+router.get('/export',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { format = 'json', startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const records = await ParasiteControl.find(filter)
+      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .sort({ date: -1 });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      
+      // Transform data for the new column structure
+      const transformedRecords = records.map(record => {
+        const herdCounts = record.herdCounts || {};
+        const totalYoung = (herdCounts.sheep?.young || 0) + (herdCounts.goats?.young || 0) + 
+                          (herdCounts.camel?.young || 0) + (herdCounts.cattle?.young || 0) + 
+                          (herdCounts.horse?.young || 0);
+        const totalFemale = (herdCounts.sheep?.female || 0) + (herdCounts.goats?.female || 0) + 
+                           (herdCounts.camel?.female || 0) + (herdCounts.cattle?.female || 0) + 
+                           (herdCounts.horse?.female || 0);
+        
+        return {
+          'Serial No': record.serialNo,
+          'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+          'Name': record.client?.name || '',
+          'ID': record.client?.nationalId || '',
+          'Date of Birth': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
+          'Phone': record.client?.phone || '',
+          'E': record.coordinates?.latitude || '',
+          'N': record.coordinates?.longitude || '',
+          'Supervisor': record.supervisor || '',
+          'Vehicle No.': record.vehicleNo || '',
+          'Total Sheep': herdCounts.sheep?.total || 0,
+          'Young sheep': herdCounts.sheep?.young || 0,
+          'Female Sheep': herdCounts.sheep?.female || 0,
+          'Treated Sheep': herdCounts.sheep?.treated || 0,
+          'Total Goats': herdCounts.goats?.total || 0,
+          'Young Goats': herdCounts.goats?.young || 0,
+          'Female Goats': herdCounts.goats?.female || 0,
+          'Treated Goats': herdCounts.goats?.treated || 0,
+          'Total Camel': herdCounts.camel?.total || 0,
+          'Young Camels': herdCounts.camel?.young || 0,
+          'Female Camels': herdCounts.camel?.female || 0,
+          'Treated Camels': herdCounts.camel?.treated || 0,
+          'Total Cattle': herdCounts.cattle?.total || 0,
+          'Young Cattle': herdCounts.cattle?.young || 0,
+          'Female Cattle': herdCounts.cattle?.female || 0,
+          'Treated Cattle': herdCounts.cattle?.treated || 0,
+          'Total Herd': record.totalHerdCount || 0,
+          'Total Young': totalYoung,
+          'Total Female': totalFemale,
+          'Total Treated': record.totalTreated || 0,
+          'Insecticide Used': record.insecticide?.type || '',
+          'Type': record.insecticide?.method || '',
+          'Volume (ml)': record.insecticide?.volumeMl || 0,
+          'Category': record.insecticide?.category || '',
+          'Status': record.insecticide?.status || '',
+          'Size (sqM)': record.animalBarnSizeSqM || 0,
+          'Insecticide': record.parasiteControlStatus || '',
+          'Volume': record.parasiteControlVolume || 0,
+          'Status': record.herdHealthStatus || '',
+          'Herd Health Status': record.herdHealthStatus || '',
+          'Complying to instructions': record.complyingToInstructions ? 'Yes' : 'No',
+          'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
+          'Request Situation': record.request?.situation || '',
+          'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
+          'Category': record.insecticide?.category || '',
+          'Remarks': record.remarks || ''
+        };
+      });
+      
+      const parser = new Parser();
+      const csv = parser.parse(transformedRecords);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=parasite-control-records.csv');
+      res.send(csv);
+    } else {
+      res.json({
+        success: true,
+        data: { records }
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/parasite-control/{id}:
  *   get:
  *     summary: Get parasite control record by ID
@@ -557,86 +683,6 @@ router.delete('/:id',
  *       200:
  *         description: Statistics retrieved successfully
  */
-/**
- * @swagger
- * /api/parasite-control/export:
- *   get:
- *     summary: Export parasite control records
- *     tags: [Parasite Control]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [csv, json]
- *         description: Export format
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *         description: Start date filter
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *         description: End date filter
- *     responses:
- *       200:
- *         description: Data exported successfully
- */
-router.get('/export',
-  auth,
-  asyncHandler(async (req, res) => {
-    const { format = 'json', startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const records = await ParasiteControl.find(filter)
-      .populate('client', 'name nationalId phone village')
-      .sort({ date: -1 });
-
-    if (format === 'csv') {
-      const { Parser } = require('json2csv');
-      const fields = [
-        'serialNo',
-        'date',
-        'client.name',
-        'client.nationalId',
-        'herdLocation',
-        'supervisor',
-        'vehicleNo',
-        'totalHerdCount',
-        'totalTreated',
-        'treatmentEfficiency',
-        'herdHealthStatus',
-        'insecticide.type',
-        'insecticide.volumeMl'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(records);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=parasite-control-records.csv');
-      res.send(csv);
-    } else {
-      res.json({
-        success: true,
-        data: { records }
-      });
-    }
-  })
-);
 
 /**
  * @swagger
@@ -654,44 +700,50 @@ router.get('/template',
   auth,
   handleTemplate([
     {
-      serialNo: 'PC001',
-      date: '2024-01-15',
-      clientName: 'محمد أحمد الشمري',
-      clientNationalId: '1234567890',
-      clientPhone: '+966501234567',
-      clientVillage: 'قرية النور',
-      herdLocation: 'مزرعة الشمري',
-      supervisor: 'د. محمد علي',
-      vehicleNo: 'PC1',
-      sheepTotal: 100,
-      sheepYoung: 20,
-      sheepFemale: 60,
-      sheepTreated: 100,
-      goatsTotal: 50,
-      goatsYoung: 10,
-      goatsFemale: 30,
-      goatsTreated: 50,
-      camelTotal: 5,
-      camelYoung: 1,
-      camelFemale: 3,
-      camelTreated: 5,
-      cattleTotal: 10,
-      cattleYoung: 2,
-      cattleFemale: 6,
-      cattleTreated: 10,
-      horseTotal: 3,
-      horseYoung: 0,
-      horseFemale: 2,
-      horseTreated: 3,
-      herdHealthStatus: 'Healthy',
-      insecticideType: 'Ivermectin',
-      insecticideMethod: 'Injection',
-      insecticideVolumeMl: 500,
-      insecticideStatus: 'Effective',
-      insecticideCategory: 'Antiparasitic',
-      requestDate: '2024-01-15',
-      requestSituation: 'Open',
-      remarks: 'ملاحظات إضافية'
+      'Serial No': `PC${Date.now().toString().slice(-6)}`, // Generate unique serial number
+      'Date': '2024-01-15',
+      'Name': 'محمد أحمد الشمري',
+      'ID': '1234567890',
+      'Date of Birth': '1980-01-01',
+      'Phone': '+966501234567',
+      'E': '24.7136',
+      'N': '46.6753',
+      'Supervisor': 'د. محمد علي',
+      'Vehicle No.': 'PC1',
+      'Total Sheep': 100,
+      'Young sheep': 20,
+      'Female Sheep': 60,
+      'Treated Sheep': 100,
+      'Total Goats': 50,
+      'Young Goats': 10,
+      'Female Goats': 30,
+      'Treated Goats': 50,
+      'Total Camel': 5,
+      'Young Camels': 1,
+      'Female Camels': 3,
+      'Treated Camels': 5,
+      'Total Cattle': 10,
+      'Young Cattle': 2,
+      'Female Cattle': 6,
+      'Treated Cattle': 10,
+      'Total Herd': 168,
+      'Total Young': 33,
+      'Total Female': 102,
+      'Total Treated': 168,
+      'Insecticide Used': 'Ivermectin',
+      'Type': 'Injection',
+      'Volume (ml)': 500,
+      'Category': 'Antiparasitic',
+      'Status': 'Sprayed',
+      'Size (sqM)': 1000,
+      'Insecticide': 'Effective',
+      'Volume': 500,
+      'Herd Health Status': 'Healthy',
+      'Complying to instructions': 'Yes',
+      'Request Date': '2024-01-15',
+      'Request Situation': 'Open',
+      'Request Fulfilling Date': '2024-01-16',
+      'Remarks': 'ملاحظات إضافية'
     }
   ], 'parasite-control-template')
 );
@@ -722,18 +774,45 @@ router.post('/import',
   auth,
   authorize('super_admin', 'section_supervisor'),
   handleImport(ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
-    // Validate required fields
-    if (!row.serialNo || !row.date || !row.clientName) {
+    // Validate required fields - using new column names
+    if (!row['Serial No'] || !row['Date'] || !row['Name']) {
       errors.push({
         row: row.rowNumber,
         field: 'required',
-        message: 'Missing required fields: serialNo, date, or clientName'
+        message: 'Missing required fields: Serial No, Date, or Name'
       });
       return;
     }
     
+    // Check if serial number already exists and generate unique one if needed
+    let serialNo = row['Serial No'];
+    const existingRecord = await ParasiteControlModel.findOne({ serialNo: serialNo });
+    if (existingRecord) {
+      // Generate a unique serial number by appending timestamp
+      const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
+      serialNo = `${row['Serial No']}-${timestamp}`;
+      
+      // Double check the new serial number doesn't exist
+      const duplicateCheck = await ParasiteControlModel.findOne({ serialNo: serialNo });
+      if (duplicateCheck) {
+        // If still duplicate, add random number
+        serialNo = `${row['Serial No']}-${timestamp}-${Math.floor(Math.random() * 1000)}`;
+      }
+      
+      console.log(`⚠️  Serial number '${row['Serial No']}' already exists. Generated new serial: '${serialNo}'`);
+    }
+    
+    // Create client data object for findOrCreateClient function
+    const clientData = {
+      clientName: row['Name'],
+      clientNationalId: row['ID'],
+      clientPhone: row['Phone'],
+      clientVillage: '', // Will be set from detailedAddress if needed
+      clientDetailedAddress: ''
+    };
+    
     // Find or create client
-    const client = await findOrCreateClient(row, user._id, ClientModel);
+    const client = await findOrCreateClient(clientData, user._id, ClientModel);
     if (!client) {
       errors.push({
         row: row.rowNumber,
@@ -743,59 +822,88 @@ router.post('/import',
       return;
     }
     
-    // Create parasite control record
+    // Update client with birth date if provided
+    if (row['Date of Birth'] && client) {
+      try {
+        client.birthDate = new Date(row['Date of Birth']);
+        await client.save();
+      } catch (birthDateError) {
+        console.warn('Could not set birth date:', birthDateError.message);
+      }
+    }
+    
+    // Parse coordinates
+    const coordinates = {};
+    if (row['E'] && !isNaN(parseFloat(row['E']))) {
+      coordinates.latitude = parseFloat(row['E']);
+    }
+    if (row['N'] && !isNaN(parseFloat(row['N']))) {
+      coordinates.longitude = parseFloat(row['N']);
+    }
+    
+    // Create parasite control record with new column mapping
     const parasiteControlData = {
-      serialNo: row.serialNo,
-      date: new Date(row.date),
+      serialNo: serialNo, // Use the potentially modified serial number
+      date: new Date(row['Date']),
       client: client._id,
-      herdLocation: row.herdLocation || '',
-      supervisor: row.supervisor || '',
-      vehicleNo: row.vehicleNo || '',
+      herdLocation: row['Supervisor'] || '', // Using supervisor as location for now
+      coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,
+      supervisor: row['Supervisor'] || '',
+      vehicleNo: row['Vehicle No.'] || '',
       herdCounts: {
         sheep: {
-          total: parseInt(row.sheepTotal) || 0,
-          young: parseInt(row.sheepYoung) || 0,
-          female: parseInt(row.sheepFemale) || 0,
-          treated: parseInt(row.sheepTreated) || 0
+          total: parseInt(row['Total Sheep']) || 0,
+          young: parseInt(row['Young sheep']) || 0,
+          female: parseInt(row['Female Sheep']) || 0,
+          treated: parseInt(row['Treated Sheep']) || 0
         },
         goats: {
-          total: parseInt(row.goatsTotal) || 0,
-          young: parseInt(row.goatsYoung) || 0,
-          female: parseInt(row.goatsFemale) || 0,
-          treated: parseInt(row.goatsTreated) || 0
+          total: parseInt(row['Total Goats']) || 0,
+          young: parseInt(row['Young Goats']) || 0,
+          female: parseInt(row['Female Goats']) || 0,
+          treated: parseInt(row['Treated Goats']) || 0
         },
         camel: {
-          total: parseInt(row.camelTotal) || 0,
-          young: parseInt(row.camelYoung) || 0,
-          female: parseInt(row.camelFemale) || 0,
-          treated: parseInt(row.camelTreated) || 0
+          total: parseInt(row['Total Camel']) || 0,
+          young: parseInt(row['Young Camels']) || 0,
+          female: parseInt(row['Female Camels']) || 0,
+          treated: parseInt(row['Treated Camels']) || 0
         },
         cattle: {
-          total: parseInt(row.cattleTotal) || 0,
-          young: parseInt(row.cattleYoung) || 0,
-          female: parseInt(row.cattleFemale) || 0,
-          treated: parseInt(row.cattleTreated) || 0
+          total: parseInt(row['Total Cattle']) || 0,
+          young: parseInt(row['Young Cattle']) || 0,
+          female: parseInt(row['Female Cattle']) || 0,
+          treated: parseInt(row['Treated Cattle']) || 0
         },
         horse: {
-          total: parseInt(row.horseTotal) || 0,
-          young: parseInt(row.horseYoung) || 0,
-          female: parseInt(row.horseFemale) || 0,
-          treated: parseInt(row.horseTreated) || 0
+          total: 0, // Not included in new format
+          young: 0,
+          female: 0,
+          treated: 0
         }
       },
-      herdHealthStatus: row.herdHealthStatus || 'Healthy',
+      animalBarnSizeSqM: parseInt(row['Size (sqM)']) || 0,
+      parasiteControlVolume: parseInt(row['Volume']) || 0,
+      parasiteControlStatus: row['Insecticide'] || '',
+      herdHealthStatus: ['Healthy', 'Sick', 'Under Treatment'].includes(row['Herd Health Status']) 
+        ? row['Herd Health Status'] 
+        : 'Healthy', // تحويل القيم للصيغة المطلوبة
+      complyingToInstructions: row['Complying to instructions'] === 'Yes' || row['Complying to instructions'] === 'true',
       insecticide: {
-        type: row.insecticideType || '',
-        method: row.insecticideMethod || '',
-        volumeMl: parseInt(row.insecticideVolumeMl) || 0,
-        status: row.insecticideStatus || '',
-        category: row.insecticideCategory || ''
+        type: row['Insecticide Used'] || '',
+        method: row['Type'] || '',
+        volumeMl: parseInt(row['Volume (ml)']) || 0,
+        status: row['Status'] === 'Sprayed' ? 'Sprayed' : 'Not Sprayed', // تحويل القيم للصيغة المطلوبة
+        category: row['Category'] || ''
       },
       request: {
-        date: new Date(row.requestDate || row.date),
-        situation: row.requestSituation || 'Open'
+        date: new Date(row['Request Date'] || row['Date']),
+        situation: ['Open', 'Closed', 'Pending'].includes(row['Request Situation']) 
+          ? row['Request Situation'] 
+          : 'Open', // تحويل القيم للصيغة المطلوبة
+        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
       },
-      remarks: row.remarks || '',
+      remarks: row['Remarks'] || '',
       createdBy: user._id
     };
     
@@ -803,7 +911,7 @@ router.post('/import',
     await parasiteControl.save();
     
     // Populate client data for response
-    await parasiteControl.populate('client', 'name nationalId phone village detailedAddress');
+    await parasiteControl.populate('client', 'name nationalId phone village detailedAddress birthDate');
     return parasiteControl;
   })
 );

@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "build": "npm install",
     "test": "jest",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node seed.js",
+    "seed:sections": "node src/scripts/seed-sections.js"
   },
   "keywords": [
     "animal-health",

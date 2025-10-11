@@ -11,6 +11,9 @@ require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const usersRoutes = require('./routes/users');
+const sectionsRoutes = require('./routes/sections');
+const seedRoutes = require('./routes/seed');
 const parasiteControlRoutes = require('./routes/parasiteControl');
 const vaccinationRoutes = require('./routes/vaccination');
 const mobileClinicsRoutes = require('./routes/mobileClinics');
@@ -19,6 +22,7 @@ const laboratoriesRoutes = require('./routes/laboratories');
 const clientsRoutes = require('./routes/clients');
 const reportsRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
+const villagesRoutes = require('./routes/villages');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -166,6 +170,9 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', devAuth, usersRoutes);
+app.use('/api/sections', sectionsRoutes);
+app.use('/api/seed', seedRoutes);
 
 // استخدام نظام المصادقة المبسط للتطوير
 app.use('/api/parasite-control', devAuth, parasiteControlRoutes);
@@ -176,6 +183,7 @@ app.use('/api/laboratories', devAuth, laboratoriesRoutes);
 app.use('/api/clients', devAuth, clientsRoutes);
 app.use('/api/reports', devAuth, reportsRoutes);
 app.use('/api/upload', devAuth, uploadRoutes);
+app.use('/api/villages', devAuth, villagesRoutes);
 
 // Welcome message
 app.get('/', (req, res) => {
@@ -186,6 +194,8 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       auth: '/api/auth',
+      users: '/api/users',
+      sections: '/api/sections',
       parasiteControl: '/api/parasite-control',
       vaccination: '/api/vaccination',
       mobileClinics: '/api/mobile-clinics',
@@ -193,7 +203,8 @@ app.get('/', (req, res) => {
       laboratories: '/api/laboratories',
       clients: '/api/clients',
       reports: '/api/reports',
-      upload: '/api/upload'
+      upload: '/api/upload',
+      villages: '/api/villages'
     }
   });
 });

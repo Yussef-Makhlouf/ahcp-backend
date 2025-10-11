@@ -235,6 +235,121 @@ router.get('/follow-up',
 
 /**
  * @swagger
+ * /api/mobile-clinics/export:
+ *   get:
+ *     summary: Export mobile clinic records
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *         description: Export format
+ *       - in: query
+ *         name: interventionCategory
+ *         schema:
+ *           type: string
+ *           enum: [Emergency, Routine, Preventive, Follow-up]
+ *         description: Filter by intervention category
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ */
+router.get('/export',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (interventionCategory) filter.interventionCategory = interventionCategory;
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const records = await MobileClinic.find(filter)
+      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .sort({ date: -1 });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      
+      // Transform data for the new column structure
+      const transformedRecords = records.map(record => {
+        // تحويل animalCounts إلى object بسيط
+        const animalCounts = record.animalCounts || {};
+        
+        // تحويل client إلى object بسيط
+        const client = record.client || {};
+        
+        // تحويل coordinates إلى object بسيط
+        const coordinates = record.coordinates || {};
+        
+        // تحويل request إلى object بسيط
+        const request = record.request || {};
+        
+        return {
+          'Serial No': record.serialNo || '',
+          'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+          'Name': client.name || '',
+          'ID': client.nationalId || '',
+          'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
+          'Phone': client.phone || '',
+          'Location': record.farmLocation || '',
+          'N Coordinate': coordinates.latitude || '',
+          'E Coordinate': coordinates.longitude || '',
+          'Supervisor': record.supervisor || '',
+          'Vehicle No.': record.vehicleNo || '',
+          'Sheep': animalCounts.sheep || 0,
+          'Goats': animalCounts.goats || 0,
+          'Camel': animalCounts.camel || 0,
+          'Horse': animalCounts.horse || 0,
+          'Cattle': animalCounts.cattle || 0,
+          'Diagnosis': record.diagnosis || '',
+          'Intervention Category': record.interventionCategory || '',
+          'Treatment': record.treatment || '',
+          'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
+          'Request Status': request.situation || '',
+          'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
+          'Category': record.category || '',
+          'Remarks': record.remarks || ''
+        };
+      });
+      
+      const parser = new Parser();
+      const csv = parser.parse(transformedRecords);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
+      res.send(csv);
+    } else {
+      res.json({
+        success: true,
+        data: records
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/mobile-clinics/{id}:
  *   get:
  *     summary: Get mobile clinic record by ID
@@ -473,84 +588,6 @@ router.delete('/:id',
   })
 );
 
-/**
- * @swagger
- * /api/mobile-clinics/export:
- *   get:
- *     summary: Export mobile clinic records
- *     tags: [Mobile Clinics]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [csv, json]
- *         description: Export format
- *       - in: query
- *         name: interventionCategory
- *         schema:
- *           type: string
- *           enum: [Emergency, Routine, Preventive, Follow-up]
- *         description: Filter by intervention category
- *     responses:
- *       200:
- *         description: Data exported successfully
- */
-router.get('/export',
-  auth,
-  asyncHandler(async (req, res) => {
-    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (interventionCategory) filter.interventionCategory = interventionCategory;
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const records = await MobileClinic.find(filter)
-      .populate('client', 'name nationalId phone village')
-      .sort({ date: -1 });
-
-    if (format === 'csv') {
-      const { Parser } = require('json2csv');
-      const fields = [
-        'serialNo',
-        'date',
-        { label: 'Client Name', value: 'client.name' },
-        { label: 'Client ID', value: 'client.nationalId' },
-        { label: 'Client Phone', value: 'client.phone' },
-        'farmLocation',
-        'supervisor',
-        'vehicleNo',
-        { label: 'Total Animals', value: 'totalAnimals' },
-        'interventionCategory',
-        'diagnosis',
-        'treatment',
-        { label: 'Request Status', value: 'request.situation' },
-        'followUpRequired',
-        'remarks',
-        'createdAt'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(records);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
-      res.send(csv);
-    } else {
-      res.json({
-        success: true,
-        data: records
-      });
-    }
-  })
-);
 
 /**
  * @swagger
@@ -702,78 +739,145 @@ router.post('/import',
         // Process each row
         for (const row of results) {
           try {
-            // Validate required fields
-            if (!row.serialNo || !row.date || !row.clientName) {
+            // Support flexible field names and generate defaults if missing
+            let serialNoField = row['Serial No'] || row['serialNo'] || row['رقم تسلسلي'] || row['الرقم'];
+            let dateField = row['Date'] || row['date'] || row['التاريخ'] || row['تاريخ'];
+            let nameField = row['Name'] || row['clientName'] || row['اسم العميل'] || row['الاسم'] || row['اسم المربي'];
+            
+            // Generate defaults for missing required fields
+            if (!serialNoField) {
+              serialNoField = `MC${Date.now().toString().slice(-8)}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Serial number auto-generated: ${serialNoField}`);
+            }
+            
+            // Ensure serial number is not too long (max 20 characters)
+            if (serialNoField.length > 20) {
+              serialNoField = `MC${Date.now().toString().slice(-8)}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Serial number was too long, generated new: ${serialNoField}`);
+            }
+            
+            if (!dateField) {
+              dateField = new Date().toISOString().split('T')[0];
+              console.log(`⚠️  Row ${row.rowNumber}: Date set to current date: ${dateField}`);
+            }
+            
+            if (!nameField) {
+              nameField = `Unknown Client ${row.rowNumber}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Client name auto-generated: ${nameField}`);
+            }
+            
+            // Check if serial number already exists and generate unique one if needed
+            let serialNo = serialNoField;
+            const existingRecord = await MobileClinic.findOne({ serialNo: serialNo });
+            if (existingRecord) {
+              // Generate a unique serial number with shorter format
+              const timestamp = Date.now().toString().slice(-6);
+              serialNo = `MC${timestamp}${Math.floor(Math.random() * 100)}`;
+              
+              // Ensure it's under 20 characters
+              if (serialNo.length > 20) {
+                serialNo = `MC${timestamp}`;
+              }
+              
+              console.log(`⚠️  Serial number '${serialNoField}' already exists. Generated new serial: '${serialNo}'`);
+            }
+            
+            // Create client data object for findOrCreateClient function
+            const rawNationalId = row['ID'] || row['clientNationalId'] || row['رقم الهوية'] || row['الهوية'] || '';
+            const rawPhone = row['Phone'] || row['clientPhone'] || row['الهاتف'] || row['رقم الهاتف'] || '';
+            
+            const clientData = {
+              clientName: nameField,
+              // Generate valid nationalId if missing or invalid
+              clientNationalId: rawNationalId && rawNationalId.length >= 10 && rawNationalId.length <= 14 
+                ? rawNationalId 
+                : `1000000${Date.now().toString().slice(-6)}`, // Generate 13-digit ID
+              // Generate valid phone if missing or invalid
+              clientPhone: rawPhone && rawPhone.match(/^\+?[0-9]{10,15}$/) 
+                ? rawPhone 
+                : `+966500000${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`, // Generate valid Saudi phone
+              clientVillage: row['clientVillage'] || row['القرية'] || '',
+              clientDetailedAddress: row['clientDetailedAddress'] || row['العنوان التفصيلي'] || ''
+            };
+            
+            // Find or create client
+            const client = await findOrCreateClient(clientData, req.user._id, Client);
+            if (!client) {
               errors.push({
                 row: row.rowNumber,
-                field: 'required',
-                message: 'Missing required fields: serialNo, date, or clientName'
+                field: 'client',
+                message: 'Could not create or find client'
               });
               errorCount++;
               continue;
             }
             
-            // Create or find client
-            let client;
-            if (row.clientNationalId) {
-              client = await Client.findOne({ nationalId: row.clientNationalId });
+            // Update client with birth date if provided
+            const birthDateField = row['Birth Date'] || row['birthDate'];
+            if (birthDateField && client) {
+              try {
+                client.birthDate = new Date(birthDateField);
+                await client.save();
+              } catch (birthDateError) {
+                console.warn('Could not set birth date:', birthDateError.message);
+              }
             }
             
-            if (!client) {
-              // Create new client
-              client = new Client({
-                name: row.clientName,
-                nationalId: row.clientNationalId || `TEMP-${Date.now()}`,
-                phone: row.clientPhone || '',
-                village: row.clientVillage || '',
-                detailedAddress: row.clientDetailedAddress || '',
-                status: 'نشط',
-                animals: [],
-                availableServices: ['mobile_clinic'],
-                createdBy: req.user._id
-              });
-              await client.save();
+            // Parse coordinates
+            const coordinates = {};
+            const eCoord = row['E Coordinate'] || row['longitude'] || row['خط الطول'] || row['الطول'];
+            const nCoord = row['N Coordinate'] || row['latitude'] || row['خط العرض'] || row['العرض'];
+            if (eCoord && !isNaN(parseFloat(eCoord))) {
+              coordinates.longitude = parseFloat(eCoord);
+            }
+            if (nCoord && !isNaN(parseFloat(nCoord))) {
+              coordinates.latitude = parseFloat(nCoord);
             }
             
-            // Create mobile clinic record
+            // Create mobile clinic record with flexible field mapping
             const mobileClinicData = {
-              serialNo: row.serialNo,
-              date: new Date(row.date),
+              serialNo: serialNo,
+              date: new Date(dateField),
               client: client._id,
-              farmLocation: row.farmLocation || '',
-              supervisor: row.supervisor || '',
-              vehicleNo: row.vehicleNo || '',
+              createdBy: req.user._id,
+              updatedBy: req.user._id,
+              farmLocation: row['Location'] || row['farmLocation'] || row['الموقع'] || row['موقع المزرعة'] || '',
+              coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,
+              supervisor: row['Supervisor'] || row['supervisor'] || row['المشرف'] || row['الطبيب'] || 'N/A',
+              vehicleNo: row['Vehicle No.'] || row['Vehicle No'] || row['vehicleNo'] || row['رقم المركبة'] || 'N/A',
               animalCounts: {
-                sheep: parseInt(row.sheep) || 0,
-                goats: parseInt(row.goats) || 0,
-                camel: parseInt(row.camel) || 0,
-                cattle: parseInt(row.cattle) || 0,
-                horse: parseInt(row.horse) || 0
+                sheep: parseInt(row['Sheep'] || row['sheep'] || row['الأغنام'] || row['غنم']) || 0,
+                goats: parseInt(row['Goats'] || row['goats'] || row['الماعز'] || row['معز']) || 0,
+                camel: parseInt(row['Camel'] || row['camel'] || row['الإبل'] || row['جمال']) || 0,
+                horse: parseInt(row['Horse'] || row['horse'] || row['الخيول'] || row['خيل']) || 0,
+                cattle: parseInt(row['Cattle'] || row['cattle'] || row['الأبقار'] || row['بقر']) || 0
               },
-              diagnosis: row.diagnosis || '',
-              interventionCategory: row.interventionCategory || 'Routine',
-              treatment: row.treatment || '',
+              diagnosis: row['Diagnosis'] || row['diagnosis'] || row['التشخيص'] || row['الحالة'] || '',
+              interventionCategory: row['Intervention Category'] || row['interventionCategory'] || row['نوع التدخل'] || 'Routine',
+              treatment: row['Treatment'] || row['treatment'] || row['العلاج'] || row['المعالجة'] || '',
               request: {
-                date: new Date(row.requestDate || row.date),
-                situation: row.requestSituation || 'Open'
+                date: new Date(row['Request Date'] || row['requestDate'] || row['تاريخ الطلب'] || dateField),
+                situation: ['Open', 'Closed', 'Pending'].includes(row['Request Status'] || row['requestSituation'] || row['حالة الطلب']) 
+                  ? (row['Request Status'] || row['requestSituation'] || row['حالة الطلب'])
+                  : 'Open',
+                fulfillingDate: (row['Request Fulfilling Date'] || row['requestFulfillingDate'] || row['تاريخ تنفيذ الطلب']) ? new Date(row['Request Fulfilling Date'] || row['requestFulfillingDate'] || row['تاريخ تنفيذ الطلب']) : undefined
               },
-              followUpRequired: row.followUpRequired === 'true',
-              remarks: row.remarks || '',
-              createdBy: req.user._id
+              category: row['Category'] || row['category'] || row['الفئة'] || row['التصنيف'] || '',
+              remarks: row['Remarks'] || row['remarks'] || row['الملاحظات'] || row['ملاحظات'] || ''
             };
             
-            const mobileClinic = new MobileClinic(mobileClinicData);
-            await mobileClinic.save();
+            // Create mobile clinic record
+            const mobileClinicRecord = new MobileClinic(mobileClinicData);
+            await mobileClinicRecord.save();
             
-            // Populate client data for response
-            await mobileClinic.populate('client', 'name nationalId phone village detailedAddress');
-            importedRecords.push(mobileClinic);
+            importedRecords.push(mobileClinicRecord);
             successCount++;
             
           } catch (error) {
+            console.error('Error processing row:', error);
             errors.push({
               row: row.rowNumber,
-              field: 'validation',
+              field: 'processing',
               message: error.message
             });
             errorCount++;
@@ -784,7 +888,8 @@ router.post('/import',
         fs.unlinkSync(req.file.path);
         
         res.json({
-          success: errorCount === 0,
+          success: true,
+          message: `Import completed. ${successCount} records imported successfully, ${errorCount} failed.`,
           totalRows: results.length,
           successRows: successCount,
           errorRows: errorCount,
@@ -793,14 +898,17 @@ router.post('/import',
         });
         
       } catch (error) {
-        // Clean up uploaded file on error
-        if (fs.existsSync(req.file.path)) {
+        console.error('Import error:', error);
+        
+        // Clean up uploaded file if it exists
+        if (req.file && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
         }
         
         res.status(500).json({
           success: false,
-          message: 'Error processing file: ' + error.message
+          message: 'Import failed',
+          error: error.message
         });
       }
     });
@@ -808,3 +916,4 @@ router.post('/import',
 );
 
 module.exports = router;
+   

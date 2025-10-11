@@ -194,6 +194,119 @@ router.get('/statistics',
 
 /**
  * @swagger
+ * /api/vaccination/export:
+ *   get:
+ *     summary: Export vaccination records
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *         description: Export format
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ */
+router.get('/export',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { format = 'json', startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const records = await Vaccination.find(filter)
+      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .sort({ date: -1 });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      
+      // Transform data for the new column structure
+      const transformedRecords = records.map(record => {
+        const herdCounts = record.herdCounts || {};
+        const totalFemales = (herdCounts.sheep?.female || 0) + (herdCounts.goats?.female || 0) + 
+                            (herdCounts.camel?.female || 0) + (herdCounts.cattle?.female || 0);
+        
+        return {
+          'Serial No': record.serialNo,
+          'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+          'Name': record.client?.name || '',
+          'ID': record.client?.nationalId || '',
+          'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
+          'Phone': record.client?.phone || '',
+          'Location': record.farmLocation || '',
+          'N Coordinate': record.coordinates?.latitude || '',
+          'E Coordinate': record.coordinates?.longitude || '',
+          'Supervisor': record.supervisor || '',
+          'Team': record.team || '',
+          'Vehicle No.': record.vehicleNo || '',
+          'Sheep': herdCounts.sheep?.total || 0,
+          'F. Sheep': herdCounts.sheep?.female || 0,
+          'Vaccinated Sheep': herdCounts.sheep?.vaccinated || 0,
+          'Goats': herdCounts.goats?.total || 0,
+          'F.Goats': herdCounts.goats?.female || 0,
+          'Vaccinated Goats': herdCounts.goats?.vaccinated || 0,
+          'Camel': herdCounts.camel?.total || 0,
+          'F. Camel': herdCounts.camel?.female || 0,
+          'Vaccinated Camels': herdCounts.camel?.vaccinated || 0,
+          'Cattel': herdCounts.cattle?.total || 0,
+          'F. Cattle': herdCounts.cattle?.female || 0,
+          'Vaccinated Cattle': herdCounts.cattle?.vaccinated || 0,
+          'Herd Number': (herdCounts.sheep?.total || 0) + (herdCounts.goats?.total || 0) + (herdCounts.camel?.total || 0) + (herdCounts.cattle?.total || 0),
+          'Herd Females': totalFemales,
+          'Total Vaccinated': (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0) + (herdCounts.camel?.vaccinated || 0) + (herdCounts.cattle?.vaccinated || 0),
+          'Herd Health': record.herdHealth || '',
+          'Animals Handling': record.animalsHandling || '',
+          'Labours': record.labours || '',
+          'Reachable Location': record.reachableLocation || '',
+          'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
+          'Situation': record.request?.situation || '',
+          'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
+          'Vaccine': record.vaccineType || '',
+          'Category': record.vaccineCategory || '',
+          'Remarks': record.remarks || ''
+        };
+      });
+      
+      const parser = new Parser();
+      const csv = parser.parse(transformedRecords);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=vaccination-records.csv');
+      res.send(csv);
+    } else {
+      res.json({
+        success: true,
+        data: { records }
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/vaccination/{id}:
  *   get:
  *     summary: Get vaccination record by ID
@@ -529,90 +642,6 @@ router.get('/vaccine-types',
   })
 );
 
-/**
- * @swagger
- * /api/vaccination/export:
- *   get:
- *     summary: Export vaccination records
- *     tags: [Vaccination]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [csv, json]
- *         description: Export format
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *         description: Start date filter
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *         description: End date filter
- *     responses:
- *       200:
- *         description: Data exported successfully
- */
-router.get('/export',
-  auth,
-  asyncHandler(async (req, res) => {
-    const { format = 'json', startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const records = await Vaccination.find(filter)
-      .populate('client', 'name nationalId phone village')
-      .sort({ date: -1 });
-
-    if (format === 'csv') {
-      const { Parser } = require('json2csv');
-      const fields = [
-        'serialNo',
-        'date',
-        'client.name',
-        'client.nationalId',
-        'farmLocation',
-        'supervisor',
-        'team',
-        'vehicleNo',
-        'vaccineType',
-        'vaccineCategory',
-        'totalHerdCount',
-        'totalVaccinated',
-        'vaccinationCoverage',
-        'herdHealth',
-        'animalsHandling',
-        'labours',
-        'reachableLocation'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(records);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=vaccination-records.csv');
-      res.send(csv);
-    } else {
-      res.json({
-        success: true,
-        data: { records }
-      });
-    }
-  })
-);
 
 /**
  * @swagger
@@ -630,45 +659,43 @@ router.get('/template',
   auth,
   handleTemplate([
     {
-      serialNo: 'V001',
-      date: '2024-01-15',
-      clientName: 'محمد أحمد الشمري',
-      clientNationalId: '1234567890',
-      clientPhone: '+966501234567',
-      clientVillage: 'قرية النور',
-      farmLocation: 'مزرعة الشمري',
-      supervisor: 'د. محمد علي',
-      team: 'فريق التحصين الأول',
-      vehicleNo: 'V1',
-      vaccineType: 'لقاح الحمى القلاعية',
-      vaccineCategory: 'Preventive',
-      sheepTotal: 100,
-      sheepYoung: 20,
-      sheepFemale: 60,
-      sheepVaccinated: 100,
-      goatsTotal: 50,
-      goatsYoung: 10,
-      goatsFemale: 30,
-      goatsVaccinated: 50,
-      camelTotal: 5,
-      camelYoung: 1,
-      camelFemale: 3,
-      camelVaccinated: 5,
-      cattleTotal: 10,
-      cattleYoung: 2,
-      cattleFemale: 6,
-      cattleVaccinated: 10,
-      horseTotal: 3,
-      horseYoung: 0,
-      horseFemale: 2,
-      horseVaccinated: 3,
-      herdHealth: 'Healthy',
-      animalsHandling: 'Easy',
-      labours: 'Available',
-      reachableLocation: 'Easy',
-      requestDate: '2024-01-15',
-      requestSituation: 'Open',
-      remarks: 'ملاحظات إضافية'
+      'Serial No': `V${Date.now().toString().slice(-6)}`,
+      'Date': '2024-01-15',
+      'Name': 'محمد أحمد الشمري',
+      'ID': '1234567890',
+      'Birth Date': '1980-01-01',
+      'Phone': '+966501234567',
+      'Location': 'مزرعة الشمري',
+      'N Coordinate': '24.7136',
+      'E Coordinate': '46.6753',
+      'Supervisor': 'د. محمد علي',
+      'Team': 'فريق التحصين الأول',
+      'Vehicle No.': 'V1',
+      'Sheep': 100,
+      'F. Sheep': 60,
+      'Vaccinated Sheep': 100,
+      'Goats': 50,
+      'F.Goats': 30,
+      'Vaccinated Goats': 50,
+      'Camel': 5,
+      'F. Camel': 3,
+      'Vaccinated Camels': 5,
+      'Cattel': 10,
+      'F. Cattle': 6,
+      'Vaccinated Cattle': 10,
+      'Herd Number': 165,
+      'Herd Females': 99,
+      'Total Vaccinated': 165,
+      'Herd Health': 'Healthy',
+      'Animals Handling': 'Easy',
+      'Labours': 'Available',
+      'Reachable Location': 'Easy',
+      'Request Date': '2024-01-15',
+      'Situation': 'Open',
+      'Request Fulfilling Date': '2024-01-16',
+      'Vaccine': 'لقاح الحمى القلاعية',
+      'Category': 'Preventive',
+      'Remarks': 'ملاحظات إضافية'
     }
   ], 'vaccination-template')
 );
@@ -699,18 +726,44 @@ router.post('/import',
   auth,
   authorize('super_admin', 'section_supervisor'),
   handleImport(Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
-    // Validate required fields
-    if (!row.serialNo || !row.date || !row.clientName) {
+    // Validate required fields - using new column names
+    if (!row['Serial No'] || !row['Date'] || !row['Name']) {
       errors.push({
         row: row.rowNumber,
         field: 'required',
-        message: 'Missing required fields: serialNo, date, or clientName'
+        message: 'Missing required fields: Serial No, Date, or Name'
       });
       return;
     }
     
+    // Check if serial number already exists and generate unique one if needed
+    let serialNo = row['Serial No'];
+    const existingRecord = await VaccinationModel.findOne({ serialNo: serialNo });
+    if (existingRecord) {
+      // Generate a unique serial number by appending timestamp
+      const timestamp = Date.now().toString().slice(-6);
+      serialNo = `${row['Serial No']}-${timestamp}`;
+      
+      // Double check the new serial number doesn't exist
+      const duplicateCheck = await VaccinationModel.findOne({ serialNo: serialNo });
+      if (duplicateCheck) {
+        serialNo = `${row['Serial No']}-${timestamp}-${Math.floor(Math.random() * 1000)}`;
+      }
+      
+      console.log(`⚠️  Serial number '${row['Serial No']}' already exists. Generated new serial: '${serialNo}'`);
+    }
+    
+    // Create client data object for findOrCreateClient function
+    const clientData = {
+      clientName: row['Name'],
+      clientNationalId: row['ID'],
+      clientPhone: row['Phone'],
+      clientVillage: '',
+      clientDetailedAddress: ''
+    };
+    
     // Find or create client
-    const client = await findOrCreateClient(row, user._id, ClientModel);
+    const client = await findOrCreateClient(clientData, user._id, ClientModel);
     if (!client) {
       errors.push({
         row: row.rowNumber,
@@ -720,58 +773,81 @@ router.post('/import',
       return;
     }
     
-    // Create vaccination record
+    // Update client with birth date if provided
+    if (row['Birth Date'] && client) {
+      try {
+        client.birthDate = new Date(row['Birth Date']);
+        await client.save();
+      } catch (birthDateError) {
+        console.warn('Could not set birth date:', birthDateError.message);
+      }
+    }
+    
+    // Parse coordinates
+    const coordinates = {};
+    if (row['E Coordinate'] && !isNaN(parseFloat(row['E Coordinate']))) {
+      coordinates.longitude = parseFloat(row['E Coordinate']);
+    }
+    if (row['N Coordinate'] && !isNaN(parseFloat(row['N Coordinate']))) {
+      coordinates.latitude = parseFloat(row['N Coordinate']);
+    }
+    
+    // Create vaccination record with new column mapping
     const vaccinationData = {
-      serialNo: row.serialNo,
-      date: new Date(row.date),
+      serialNo: serialNo,
+      date: new Date(row['Date']),
       client: client._id,
-      farmLocation: row.farmLocation || '',
-      supervisor: row.supervisor || '',
-      team: row.team || '',
-      vehicleNo: row.vehicleNo || '',
-      vaccineType: row.vaccineType || '',
-      vaccineCategory: row.vaccineCategory || 'Preventive',
+      farmLocation: row['Location'] || '',
+      coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,
+      supervisor: row['Supervisor'] || 'N/A',
+      team: row['Team'] || '',
+      vehicleNo: row['Vehicle No.'] || row['Vehicle No'] || row['vehicleNo'] || 'N/A',
+      vaccineType: row['Vaccine'] || 'General Vaccine',
+      vaccineCategory: row['Category'] || 'Preventive',
       herdCounts: {
         sheep: {
-          total: parseInt(row.sheepTotal) || 0,
-          young: parseInt(row.sheepYoung) || 0,
-          female: parseInt(row.sheepFemale) || 0,
-          vaccinated: parseInt(row.sheepVaccinated) || 0
+          total: parseInt(row['Sheep']) || 0,
+          young: 0, // Not included in new format
+          female: parseInt(row['F. Sheep']) || 0,
+          vaccinated: parseInt(row['Vaccinated Sheep']) || 0
         },
         goats: {
-          total: parseInt(row.goatsTotal) || 0,
-          young: parseInt(row.goatsYoung) || 0,
-          female: parseInt(row.goatsFemale) || 0,
-          vaccinated: parseInt(row.goatsVaccinated) || 0
+          total: parseInt(row['Goats']) || 0,
+          young: 0, // Not included in new format
+          female: parseInt(row['F.Goats']) || 0,
+          vaccinated: parseInt(row['Vaccinated Goats']) || 0
         },
         camel: {
-          total: parseInt(row.camelTotal) || 0,
-          young: parseInt(row.camelYoung) || 0,
-          female: parseInt(row.camelFemale) || 0,
-          vaccinated: parseInt(row.camelVaccinated) || 0
+          total: parseInt(row['Camel']) || 0,
+          young: 0, // Not included in new format
+          female: parseInt(row['F. Camel']) || 0,
+          vaccinated: parseInt(row['Vaccinated Camels']) || 0
         },
         cattle: {
-          total: parseInt(row.cattleTotal) || 0,
-          young: parseInt(row.cattleYoung) || 0,
-          female: parseInt(row.cattleFemale) || 0,
-          vaccinated: parseInt(row.cattleVaccinated) || 0
+          total: parseInt(row['Cattel']) || 0,
+          young: 0, // Not included in new format
+          female: parseInt(row['F. Cattle']) || 0,
+          vaccinated: parseInt(row['Vaccinated Cattle']) || 0
         },
         horse: {
-          total: parseInt(row.horseTotal) || 0,
-          young: parseInt(row.horseYoung) || 0,
-          female: parseInt(row.horseFemale) || 0,
-          vaccinated: parseInt(row.horseVaccinated) || 0
+          total: 0, // Not included in new format
+          young: 0,
+          female: 0,
+          vaccinated: 0
         }
       },
-      herdHealth: row.herdHealth || 'Healthy',
-      animalsHandling: row.animalsHandling || 'Easy',
-      labours: row.labours || 'Available',
-      reachableLocation: row.reachableLocation || 'Easy',
+      herdHealth: row['Herd Health'] || 'Healthy',
+      animalsHandling: row['Animals Handling'] || 'Easy',
+      labours: row['Labours'] || 'Available',
+      reachableLocation: row['Reachable Location'] || 'Easy',
       request: {
-        date: new Date(row.requestDate || row.date),
-        situation: row.requestSituation || 'Open'
+        date: new Date(row['Request Date'] || row['Date']),
+        situation: ['Open', 'Closed', 'Pending'].includes(row['Situation']) 
+          ? row['Situation'] 
+          : 'Open',
+        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
       },
-      remarks: row.remarks || '',
+      remarks: row['Remarks'] || '',
       // createdBy: user._id
     };
     
