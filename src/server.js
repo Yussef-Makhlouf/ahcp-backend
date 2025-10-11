@@ -99,8 +99,12 @@ app.use(cors(corsOptions));
 //   next();
 // });
 
-// Production mode - تفعيل المصادقة الكاملة
-console.log('🔒 Production Mode: Authentication enabled');
+// Production mode check - تفعيل المصادقة الكاملة
+if (process.env.NODE_ENV === 'production') {
+  console.log('🔒 Production Mode: Full authentication enabled');
+} else {
+  console.log('🔓 Development Mode: Simplified authentication enabled');
+}
 
 // Compression middlewarea
 app.use(compression());
@@ -111,6 +115,17 @@ if (process.env.NODE_ENV !== 'test') {
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Middleware to prevent 304 responses and ensure 200 OK
+app.use((req, res, next) => {
+  // Set headers to prevent caching and ensure 200 OK responses
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
 
 // Static files
 app.use('/uploads', express.static('uploads'));
@@ -170,20 +185,22 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', devAuth, usersRoutes);
 app.use('/api/sections', sectionsRoutes);
 app.use('/api/seed', seedRoutes);
 
-// استخدام نظام المصادقة المبسط للتطوير
-app.use('/api/parasite-control', devAuth, parasiteControlRoutes);
-app.use('/api/vaccination', devAuth, vaccinationRoutes);
-app.use('/api/mobile-clinics', devAuth, mobileClinicsRoutes);
-app.use('/api/equine-health', devNoAuth.auth, equineHealthRoutes);
-app.use('/api/laboratories', devAuth, laboratoriesRoutes);
-app.use('/api/clients', devAuth, clientsRoutes);
-app.use('/api/reports', devAuth, reportsRoutes);
-app.use('/api/upload', devAuth, uploadRoutes);
-app.use('/api/villages', devAuth, villagesRoutes);
+// استخدام المصادقة الحقيقية بناءً على البيئة
+const selectedAuth = process.env.NODE_ENV === 'production' ? authMiddleware : devAuth;
+
+app.use('/api/users', selectedAuth, usersRoutes);
+app.use('/api/parasite-control', selectedAuth, parasiteControlRoutes);
+app.use('/api/vaccination', selectedAuth, vaccinationRoutes);
+app.use('/api/mobile-clinics', selectedAuth, mobileClinicsRoutes);
+app.use('/api/equine-health', selectedAuth, equineHealthRoutes);
+app.use('/api/laboratories', selectedAuth, laboratoriesRoutes);
+app.use('/api/clients', selectedAuth, clientsRoutes);
+app.use('/api/reports', selectedAuth, reportsRoutes);
+app.use('/api/upload', selectedAuth, uploadRoutes);
+app.use('/api/villages', selectedAuth, villagesRoutes);
 
 // Welcome message
 app.get('/', (req, res) => {

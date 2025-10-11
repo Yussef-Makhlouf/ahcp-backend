@@ -73,10 +73,7 @@ const sectionSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'الوصف لا يمكن أن يتجاوز 500 حرف']
   },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
+  // isActive field removed - all sections are active by default
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -91,7 +88,7 @@ const sectionSchema = new mongoose.Schema({
 // Indexes for better performance
 sectionSchema.index({ code: 1 });
 sectionSchema.index({ name: 1 });
-sectionSchema.index({ isActive: 1 });
+// isActive index removed
 sectionSchema.index({ createdBy: 1 });
 
 // Virtual for supervisor count
@@ -100,7 +97,7 @@ sectionSchema.virtual('supervisorCount', {
   localField: 'code',
   foreignField: 'section',
   count: true,
-  match: { role: 'section_supervisor', isActive: true }
+  match: { role: 'section_supervisor' }
 });
 
 // Virtual for worker count
@@ -109,7 +106,7 @@ sectionSchema.virtual('workerCount', {
   localField: 'code',
   foreignField: 'section',
   count: true,
-  match: { role: 'field_worker', isActive: true }
+  match: { role: 'field_worker' }
 });
 
 // Virtual for total user count
@@ -118,17 +115,17 @@ sectionSchema.virtual('totalUsers', {
   localField: 'code',
   foreignField: 'section',
   count: true,
-  match: { isActive: true }
+  match: {}
 });
 
-// Static method to find active sections
+// Static method to find all sections (all are active)
 sectionSchema.statics.findActive = function() {
-  return this.find({ isActive: true }).sort({ name: 1 });
+  return this.find({}).sort({ name: 1 });
 };
 
 // Static method to find section by code
 sectionSchema.statics.findByCode = function(code) {
-  return this.findOne({ code: code.toUpperCase(), isActive: true });
+  return this.findOne({ code: code.toUpperCase() });
 };
 
 // Pre-save middleware to ensure code is uppercase

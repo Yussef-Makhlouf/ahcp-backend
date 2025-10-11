@@ -601,7 +601,7 @@ router.get('/supervisors',
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
       
-      // Prevent caching for fresh data
+      // Set headers to prevent caching and ensure 200 OK responses
       res.set({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',

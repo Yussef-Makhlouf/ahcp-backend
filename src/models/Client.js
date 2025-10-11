@@ -70,31 +70,32 @@ const mongoose = require('mongoose');
  *             latitude:
  *               type: number
  *             longitude:
+ *               type: number
  *         status:
  *           type: string
  *           enum: [نشط, غير نشط]
  *           description: Client status
  *         animals:
-           type: array
-           items:
-             $ref: '#/components/schemas/Animal'
-         availableServices:
-           type: array
-           items:
-             type: string
-           description: Services available to this client
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/Animal'
+ *         availableServices:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: Services available to this client
  *         totalAnimals:
-           type: number
-           description: Total number of animals owned
-         createdBy:
-           type: string
-           description: ID of user who created this client
-         createdAt:
-           type: string
-           format: date-time
-         updatedAt:
-           type: string
-           format: date-time
+ *           type: number
+ *           description: Total number of animals owned
+ *         createdBy:
+ *           type: string
+ *           description: ID of user who created this client
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 const animalSchema = new mongoose.Schema({

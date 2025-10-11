@@ -51,9 +51,8 @@ router.get('/',
     const { page = 1, limit = 10, search, active } = req.query;
     const skip = (page - 1) * limit;
 
-    // Build filter
+    // Build filter (isActive removed - all sections are active)
     const filter = {};
-    if (active !== undefined) filter.isActive = active === 'true';
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -154,8 +153,7 @@ router.get('/:id',
 
     // Get users in this section
     const users = await User.find({ 
-      section: section.code, 
-      isActive: true 
+      section: section.code
     }).select('name email role').sort({ name: 1 });
 
     res.json({
@@ -279,8 +277,6 @@ router.post('/',
  *                 type: string
  *               description:
  *                 type: string
- *               isActive:
- *                 type: boolean
  *     responses:
  *       200:
  *         description: Section updated successfully
@@ -291,7 +287,7 @@ router.put('/:id',
   auth,
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    const { name, nameEn, code, description, isActive } = req.body;
+    const { name, nameEn, code, description } = req.body;
     const sectionId = req.params.id;
 
     // Check if section exists
@@ -330,7 +326,7 @@ router.put('/:id',
     // Update section
     const updatedSection = await Section.findByIdAndUpdate(
       sectionId,
-      { name, nameEn, code: code?.toUpperCase(), description, isActive },
+      { name, nameEn, code: code?.toUpperCase(), description },
       { new: true, runValidators: true }
     ).populate('createdBy', 'name email');
 
@@ -342,51 +338,7 @@ router.put('/:id',
   })
 );
 
-/**
- * @swagger
- * /api/sections/{id}/toggle-status:
- *   put:
- *     summary: Toggle section active status
- *     tags: [Sections]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Section ID
- *     responses:
- *       200:
- *         description: Section status updated successfully
- *       404:
- *         description: Section not found
- */
-router.put('/:id/toggle-status',
-  auth,
-  authorize('super_admin'),
-  asyncHandler(async (req, res) => {
-    const section = await Section.findById(req.params.id);
-    if (!section) {
-      return res.status(404).json({
-        success: false,
-        message: 'القسم غير موجود',
-        error: 'SECTION_NOT_FOUND'
-      });
-    }
-
-    // Toggle status
-    section.isActive = !section.isActive;
-    await section.save();
-
-    res.json({
-      success: true,
-      message: `تم ${section.isActive ? 'تفعيل' : 'إلغاء تفعيل'} القسم بنجاح`,
-      data: section
-    });
-  })
-);
+// Toggle status route removed - all sections are active by default
 
 /**
  * @swagger
@@ -426,8 +378,7 @@ router.delete('/:id',
 
     // Check if section has users
     const userCount = await User.countDocuments({ 
-      section: section.code,
-      isActive: true 
+      section: section.code
     });
     
     if (userCount > 0) {
@@ -491,7 +442,7 @@ router.get('/:code/users',
     }
 
     // Build filter
-    const filter = { section: code.toUpperCase(), isActive: true };
+    const filter = { section: code.toUpperCase() };
     if (role) filter.role = role;
 
     // Get users
