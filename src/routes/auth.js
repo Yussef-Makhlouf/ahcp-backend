@@ -1,10 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 const { validate, schemas } = require('../middleware/validation');
 const { auth, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { sendPasswordResetEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -782,6 +784,253 @@ router.post('/logout',
     res.json({
       success: true,
       message: 'تم تسجيل الخروج بنجاح'
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Password reset email sent
+ *       404:
+ *         description: User not found
+ */
+router.post('/forgot-password',
+  asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'البريد الإلكتروني مطلوب',
+        error: 'EMAIL_REQUIRED'
+      });
+    }
+
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'لا يوجد مستخدم بهذا البريد الإلكتروني',
+        error: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'الحساب غير مفعل',
+        error: 'ACCOUNT_DEACTIVATED'
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    // Set token and expiration (15 minutes)
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+
+    // Send email
+    try {
+      const emailResult = await sendPasswordResetEmail(user.email, resetUrl, user.name);
+      
+      if (emailResult.success) {
+        console.log('📧 Password reset email sent successfully to:', user.email);
+        res.json({
+          success: true,
+          message: 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
+          data: {
+            resetUrl: process.env.NODE_ENV === 'development' ? resetUrl : undefined
+          }
+        });
+      } else {
+        console.error('❌ Failed to send email:', emailResult.error);
+        // Still return success but log the error
+        res.json({
+          success: true,
+          message: 'تم إنشاء رابط إعادة التعيين، ولكن فشل في إرسال البريد الإلكتروني',
+          data: {
+            resetUrl: resetUrl // Always return URL in case email fails
+          }
+        });
+      }
+    } catch (emailError) {
+      console.error('❌ Email service error:', emailError);
+      // Fallback: return the reset URL even if email fails
+      res.json({
+        success: true,
+        message: 'تم إنشاء رابط إعادة التعيين، ولكن فشل في إرسال البريد الإلكتروني',
+        data: {
+          resetUrl: resetUrl
+        }
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password',
+  asyncHandler(async (req, res) => {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز وكلمة المرور مطلوبان',
+        error: 'MISSING_FIELDS'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل',
+        error: 'PASSWORD_TOO_SHORT'
+      });
+    }
+
+    // Hash the token to compare with stored token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid token
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز غير صحيح أو منتهي الصلاحية',
+        error: 'INVALID_TOKEN'
+      });
+    }
+
+    // Update password and clear reset token
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'تم تغيير كلمة المرور بنجاح'
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/verify-reset-token:
+ *   post:
+ *     summary: Verify password reset token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token is valid
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-reset-token',
+  asyncHandler(async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز مطلوب',
+        error: 'TOKEN_REQUIRED'
+      });
+    }
+
+    // Hash the token to compare with stored token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid token
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز غير صحيح أو منتهي الصلاحية',
+        error: 'INVALID_TOKEN'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'الرمز صحيح',
+      data: {
+        email: user.email,
+        name: user.name
+      }
     });
   })
 );
