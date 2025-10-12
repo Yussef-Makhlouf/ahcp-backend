@@ -18,7 +18,7 @@ const sampleUsers = [
     email: 'admin@ahcp.gov.sa',
     password: 'Admin@123456',
     role: 'super_admin',
-    section: 'الإدارة العامة',
+    section: 'Administration',
     isActive: true
   },
   {

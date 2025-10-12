@@ -46,7 +46,6 @@ const router = express.Router();
  *         description: Validation error or user already exists
  */
 router.post('/register', 
-  authorizeSection('super_admin'),
   validate(schemas.userRegistration),
   asyncHandler(async (req, res) => {
     const { name, email, password, role, section } = req.body;

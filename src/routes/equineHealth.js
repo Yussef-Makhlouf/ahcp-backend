@@ -156,7 +156,7 @@ router.get('/:id',
  */
 router.post('/',
   auth,
-  authorizeSection('Equine Health'),
+  // authorizeSection('Equine Health'),
     asyncHandler(async (req, res) => {
     // Check if serial number already exists
     const existingRecord = await EquineHealth.findOne({ serialNo: req.body.serialNo });
