@@ -150,7 +150,19 @@ router.get('/statistics',
 );
 
 // Export routes - must come before /:id route
-router.get('/export', conditionalAuth, checkSectionAccessWithMessage('equine-health'), asyncHandler(async (req, res) => {
+router.get('/export', asyncHandler(async (req, res) => {
+  // Check for API key for security
+  const apiKey = req.header('X-API-Key');
+  if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+    return res.status(401).json({
+      success: false,
+      message: 'API key required for export',
+      error: 'API_KEY_REQUIRED'
+    });
+  }
+  
+  // Add default user for export
+  req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
   const { ids } = req.query;
   
   let filter = {};
@@ -162,11 +174,35 @@ router.get('/export', conditionalAuth, checkSectionAccessWithMessage('equine-hea
   await handleExport(req, res, EquineHealth, filter, 'equine-health');
 }));
 
-router.get('/template', conditionalAuth, checkSectionAccessWithMessage('equine-health'), asyncHandler(async (req, res) => {
+router.get('/template', asyncHandler(async (req, res) => {
+  // Check for API key for security
+  const apiKey = req.header('X-API-Key');
+  if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+    return res.status(401).json({
+      success: false,
+      message: 'API key required for template',
+      error: 'API_KEY_REQUIRED'
+    });
+  }
+  
+  // Add default user for template
+  req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
   await handleTemplate(req, res, 'equine-health');
 }));
 
-router.post('/import', conditionalAuth, checkSectionAccessWithMessage('equine-health'), asyncHandler(async (req, res) => {
+router.post('/import', asyncHandler(async (req, res) => {
+  // Check for API key for security
+  const apiKey = req.header('X-API-Key');
+  if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+    return res.status(401).json({
+      success: false,
+      message: 'API key required for import',
+      error: 'API_KEY_REQUIRED'
+    });
+  }
+  
+  // Add default user for import
+  req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
   await handleImport(req, res, EquineHealth, async (rowData, req) => {
     // Find or create client
     const client = await findOrCreateClient({
@@ -491,7 +527,6 @@ router.get('/statistics',
  *         description: CSV template file
  */
 router.get('/template',
-  authorize('super_admin', 'section_supervisor'),
   asyncHandler(handleTemplate([{
     serialNo: 'EH001',
     date: '2024-01-15',
@@ -536,8 +571,11 @@ router.get('/template',
  *         description: Import results
  */
 router.post('/import',
-  authorize('super_admin', 'section_supervisor'),
   asyncHandler(handleImport(EquineHealth, require('../models/Client'), async (row, userId, ClientModel, EquineHealthModel, errors) => {
+    // Add default user for import if no auth
+    if (!req.user) {
+      req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    }
     try {
       // Required fields validation
       const requiredFields = ['serialNo', 'date', 'clientName', 'farmLocation', 'supervisor', 'vehicleNo', 'horseCount', 'diagnosis'];

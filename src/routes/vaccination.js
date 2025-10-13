@@ -250,8 +250,19 @@ router.get('/statistics',
  *         description: Data exported successfully
  */
 router.get('/export',
-  auth,
   asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for export',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for export
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
     const { format = 'json', startDate, endDate } = req.query;
     
     const filter = {};
@@ -699,8 +710,22 @@ router.get('/vaccine-types',
  *         description: Template downloaded successfully
  */
 router.get('/template',
-  auth,
-  handleTemplate([
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for template',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for template
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
+    
+    // Call handleTemplate with proper context
+    await handleTemplate(req, res, [
     {
       'Serial No': `V${Date.now().toString().slice(-6)}`,
       'Date': '2024-01-15',
@@ -740,7 +765,8 @@ router.get('/template',
       'Category': 'Preventive',
       'Remarks': 'ملاحظات إضافية'
     }
-  ], 'vaccination-template')
+  ], 'vaccination-template');
+  })
 );
 
 /**
@@ -766,9 +792,22 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
-  auth,
-  authorize('super_admin', 'section_supervisor'),
-  handleImport(Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for import',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for import
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    
+    // Call handleImport with proper context
+    await handleImport(req, res, Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
     // Validate required fields - using new column names
     if (!row['Serial No'] || !row['Date'] || !row['Name']) {
       errors.push({
@@ -900,6 +939,7 @@ router.post('/import',
     // Populate client data for response
     await vaccination.populate('client', 'name nationalId phone village detailedAddress');
     return vaccination;
+  });
   })
 );
 

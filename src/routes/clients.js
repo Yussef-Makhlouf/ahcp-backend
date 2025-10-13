@@ -186,8 +186,19 @@ router.get('/statistics',
  *         description: Data exported successfully
  */
 router.get('/export',
-  auth,
   asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for export',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for export
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
     const { format = 'json', status } = req.query;
     
     const filter = {};
@@ -268,8 +279,22 @@ router.get('/export',
  *         description: Template downloaded successfully
  */
 router.get('/template',
-  auth,
-  handleTemplate([
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for template',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for template
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
+    
+    // Call handleTemplate with proper context
+    await handleTemplate(req, res, [
     {
       'Name': 'اسم العميل',
       'National ID': 'رقم الهوية',
@@ -280,7 +305,8 @@ router.get('/template',
       'Status': 'الحالة',
       'Birth Date': 'تاريخ الميلاد'
     }
-  ], 'clients-template')
+  ], 'clients-template');
+  })
 );
 
 /**
@@ -306,9 +332,22 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
-  auth,
-  authorize('super_admin', 'section_supervisor'),
-  handleImport(Client, Client, async (row, userId, ClientModel, errors) => {
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for import',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for import
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    
+    // Call handleImport with proper context
+    await handleImport(req, res, Client, Client, async (row, userId, ClientModel, errors) => {
     // Check if client with same national ID already exists
     const existingClient = await ClientModel.findOne({ nationalId: row['National ID'] || row['رقم الهوية'] });
     if (existingClient) {
@@ -347,6 +386,7 @@ router.post('/import',
 
     await client.save();
     return client;
+  });
   })
 );
 

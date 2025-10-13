@@ -210,8 +210,19 @@ router.get('/statistics',
  *         description: Data exported successfully
  */
 router.get('/export',
-  auth,
   asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for export',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for export
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
     const { format = 'json', startDate, endDate } = req.query;
     
     const filter = {};
@@ -697,8 +708,22 @@ router.delete('/:id',
  *         description: Template downloaded successfully
  */
 router.get('/template',
-  auth,
-  handleTemplate([
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for template',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for template
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
+    
+    // Call handleTemplate with proper context
+    await handleTemplate([
     {
       'Serial No': `PC${Date.now().toString().slice(-6)}`, // Generate unique serial number
       'Date': '2024-01-15',
@@ -745,7 +770,8 @@ router.get('/template',
       'Request Fulfilling Date': '2024-01-16',
       'Remarks': 'ملاحظات إضافية'
     }
-  ], 'parasite-control-template')
+  ], 'parasite-control-template');
+  })
 );
 
 /**
@@ -771,9 +797,22 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
-  auth,
-  authorize('super_admin', 'section_supervisor'),
-  handleImport(ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for import',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for import
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    
+    // Call handleImport with proper context
+    await handleImport(req, res, ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
     // Validate required fields - using new column names
     if (!row['Serial No'] || !row['Date'] || !row['Name']) {
       errors.push({
@@ -913,6 +952,7 @@ router.post('/import',
     // Populate client data for response
     await parasiteControl.populate('client', 'name nationalId phone village detailedAddress birthDate');
     return parasiteControl;
+  });
   })
 );
 
