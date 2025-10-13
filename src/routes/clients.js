@@ -161,6 +161,101 @@ router.get('/statistics',
 
 /**
  * @swagger
+ * /api/clients/export:
+ *   get:
+ *     summary: Export clients data
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json, excel]
+ *         description: Export format
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [نشط, غير نشط]
+ *         description: Filter by status
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ */
+router.get('/export',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { format = 'json', status } = req.query;
+    
+    const filter = {};
+    if (status) filter.status = status;
+
+    const clients = await Client.find(filter).sort({ createdAt: -1 });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      const fields = [
+        'name',
+        'nationalId',
+        'phone',
+        'email',
+        'village',
+        'detailedAddress',
+        'status',
+        'totalAnimals',
+        'createdAt'
+      ];
+      
+      const parser = new Parser({ fields });
+      const csv = parser.parse(clients);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=clients.csv');
+      res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Transform data for Excel export
+      const transformedClients = clients.map(client => ({
+        'Name': client.name || '',
+        'National ID': client.nationalId || '',
+        'Phone': client.phone || '',
+        'Email': client.email || '',
+        'Village': client.village || '',
+        'Detailed Address': client.detailedAddress || '',
+        'Status': client.status || '',
+        'Total Animals': client.totalAnimals || 0,
+        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : ''
+      }));
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedClients);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
+      res.send(excelBuffer);
+    } else {
+      res.json({
+        success: true,
+        data: { clients }
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/clients/{id}:
  *   get:
  *     summary: Get client by ID
@@ -531,101 +626,6 @@ router.delete('/:id/animals/:animalIndex',
         success: false,
         message: error.message,
         error: 'ANIMAL_NOT_FOUND'
-      });
-    }
-  })
-);
-
-/**
- * @swagger
- * /api/clients/export:
- *   get:
- *     summary: Export clients data
- *     tags: [Clients]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [csv, json, excel]
- *         description: Export format
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [نشط, غير نشط]
- *         description: Filter by status
- *     responses:
- *       200:
- *         description: Data exported successfully
- */
-router.get('/export',
-  auth,
-  asyncHandler(async (req, res) => {
-    const { format = 'json', status } = req.query;
-    
-    const filter = {};
-    if (status) filter.status = status;
-
-    const clients = await Client.find(filter).sort({ createdAt: -1 });
-
-    if (format === 'csv') {
-      const { Parser } = require('json2csv');
-      const fields = [
-        'name',
-        'nationalId',
-        'phone',
-        'email',
-        'village',
-        'detailedAddress',
-        'status',
-        'totalAnimals',
-        'createdAt'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(clients);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients.csv');
-      res.send(csv);
-    } else if (format === 'excel') {
-      const XLSX = require('xlsx');
-      
-      // Transform data for Excel export
-      const transformedClients = clients.map(client => ({
-        'Name': client.name || '',
-        'National ID': client.nationalId || '',
-        'Phone': client.phone || '',
-        'Email': client.email || '',
-        'Village': client.village || '',
-        'Detailed Address': client.detailedAddress || '',
-        'Status': client.status || '',
-        'Total Animals': client.totalAnimals || 0,
-        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : ''
-      }));
-      
-      // Create a new workbook
-      const workbook = XLSX.utils.book_new();
-      
-      // Convert data to worksheet
-      const worksheet = XLSX.utils.json_to_sheet(transformedClients);
-      
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
-      
-      // Generate Excel file buffer
-      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
-      res.send(excelBuffer);
-    } else {
-      res.json({
-        success: true,
-        data: { clients }
       });
     }
   })
