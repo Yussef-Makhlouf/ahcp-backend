@@ -296,16 +296,6 @@ router.get('/follow-up',
  */
 router.get('/export',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for export',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
     const { format = 'json', interventionCategory, startDate, endDate } = req.query;
@@ -404,16 +394,6 @@ router.get('/export',
 // Export route
 router.get('/export',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for export',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
     const { format = 'json', interventionCategory, startDate, endDate } = req.query;
@@ -511,16 +491,6 @@ router.get('/export',
 // Template route
 router.get('/template',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for template',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for template
     req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
     const { Parser } = require('json2csv');
@@ -565,16 +535,6 @@ router.get('/template',
 // Import route
 router.post('/import',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for import',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for import
     req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
     const multer = require('multer');
@@ -1086,16 +1046,6 @@ router.delete('/:id',
  */
 router.get('/template',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for template',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for template
     req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
     const { Parser } = require('json2csv');
@@ -1161,16 +1111,6 @@ router.get('/template',
  */
 router.post('/import',
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for import',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for import
     req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
     const multer = require('multer');

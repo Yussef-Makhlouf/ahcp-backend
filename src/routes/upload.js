@@ -298,16 +298,6 @@ router.post('/avatar',
 router.post('/import/csv',
   upload.single('csvFile'),
   asyncHandler(async (req, res) => {
-    // Check for API key for security
-    const apiKey = req.header('X-API-Key');
-    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
-      return res.status(401).json({
-        success: false,
-        message: 'API key required for import',
-        error: 'API_KEY_REQUIRED'
-      });
-    }
-    
     // Add default user for import
     req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
     if (!req.file) {
