@@ -3,6 +3,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { handleTemplate, handleImport } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -251,6 +252,101 @@ router.get('/export',
         data: { clients }
       });
     }
+  })
+);
+
+/**
+ * @swagger
+ * /api/clients/template:
+ *   get:
+ *     summary: Download import template for clients
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Template downloaded successfully
+ */
+router.get('/template',
+  auth,
+  handleTemplate([
+    {
+      'Name': 'اسم العميل',
+      'National ID': 'رقم الهوية',
+      'Phone': 'رقم الهاتف',
+      'Email': 'البريد الإلكتروني',
+      'Village': 'القرية',
+      'Detailed Address': 'العنوان التفصيلي',
+      'Status': 'الحالة',
+      'Birth Date': 'تاريخ الميلاد'
+    }
+  ], 'clients-template')
+);
+
+/**
+ * @swagger
+ * /api/clients/import:
+ *   post:
+ *     summary: Import clients from CSV
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import completed
+ */
+router.post('/import',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  handleImport(Client, Client, async (row, userId, ClientModel, errors) => {
+    // Check if client with same national ID already exists
+    const existingClient = await ClientModel.findOne({ nationalId: row['National ID'] || row['رقم الهوية'] });
+    if (existingClient) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'National ID',
+        message: 'Client with this national ID already exists'
+      });
+      return null;
+    }
+
+    // Parse birth date
+    let birthDate = null;
+    if (row['Birth Date'] || row['تاريخ الميلاد']) {
+      const dateStr = row['Birth Date'] || row['تاريخ الميلاد'];
+      birthDate = new Date(dateStr);
+      if (isNaN(birthDate.getTime())) {
+        birthDate = null;
+      }
+    }
+
+    // Create new client
+    const client = new ClientModel({
+      name: row['Name'] || row['اسم العميل'],
+      nationalId: row['National ID'] || row['رقم الهوية'],
+      phone: row['Phone'] || row['رقم الهاتف'] || '',
+      email: row['Email'] || row['البريد الإلكتروني'] || '',
+      village: row['Village'] || row['القرية'] || '',
+      detailedAddress: row['Detailed Address'] || row['العنوان التفصيلي'] || '',
+      status: row['Status'] || row['الحالة'] || 'نشط',
+      birthDate: birthDate,
+      animals: [],
+      availableServices: [],
+      createdBy: userId
+    });
+
+    await client.save();
+    return client;
   })
 );
 
