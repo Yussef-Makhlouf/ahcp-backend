@@ -400,6 +400,437 @@ router.get('/export',
   })
 );
 
+// Specific routes must come before parameterized routes
+// Export route
+router.get('/export',
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for export',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for export
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
+    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (interventionCategory) filter.interventionCategory = interventionCategory;
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    const records = await MobileClinic.find(filter)
+      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .sort({ date: -1 });
+
+    // Transform data for export
+    const transformedRecords = records.map(record => {
+      // تحويل animalCounts إلى object بسيط
+      const animalCounts = record.animalCounts || {};
+      
+      // تحويل client إلى object بسيط
+      const client = record.client || {};
+      
+      // تحويل coordinates إلى object بسيط
+      const coordinates = record.coordinates || {};
+      
+      // تحويل request إلى object بسيط
+      const request = record.request || {};
+      
+      return {
+        'Serial No': record.serialNo || '',
+        'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+        'Name': client.name || '',
+        'ID': client.nationalId || '',
+        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
+        'Phone': client.phone || '',
+        'Location': record.farmLocation || '',
+        'N Coordinate': coordinates.latitude || '',
+        'E Coordinate': coordinates.longitude || '',
+        'Supervisor': record.supervisor || '',
+        'Vehicle No.': record.vehicleNo || '',
+        'Sheep': animalCounts.sheep || 0,
+        'Goats': animalCounts.goats || 0,
+        'Camel': animalCounts.camel || 0,
+        'Horse': animalCounts.horse || 0,
+        'Cattle': animalCounts.cattle || 0,
+        'Diagnosis': record.diagnosis || '',
+        'Intervention Category': record.interventionCategory || '',
+        'Treatment': record.treatment || '',
+        'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
+        'Request Status': request.situation || '',
+        'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
+        'Category': record.category || '',
+        'Remarks': record.remarks || ''
+      };
+    });
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      const parser = new Parser();
+      const csv = parser.parse(transformedRecords);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
+      res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Mobile Clinics');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.xlsx');
+      res.send(excelBuffer);
+    } else {
+      res.json({
+        success: true,
+        data: records
+      });
+    }
+  })
+);
+
+// Template route
+router.get('/template',
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for template',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for template
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Template' };
+    const { Parser } = require('json2csv');
+    
+    // Template with sample data and required columns
+    const templateData = [
+      {
+        serialNo: 'MC-001',
+        date: '2024-01-15',
+        clientName: 'محمد أحمد الشمري',
+        clientNationalId: '1234567890',
+        clientPhone: '+966501234567',
+        clientVillage: 'قرية النور',
+        farmLocation: 'مزرعة الشمري',
+        supervisor: 'د. محمد علي',
+        vehicleNo: 'MC1',
+        sheep: 50,
+        goats: 30,
+        camel: 5,
+        cattle: 10,
+        horse: 2,
+        diagnosis: 'التهاب رئوي',
+        interventionCategory: 'Emergency',
+        treatment: 'مضادات حيوية وأدوية مضادة للالتهاب',
+        requestDate: '2024-01-15',
+        requestSituation: 'Open',
+        followUpRequired: 'true',
+        remarks: 'ملاحظات إضافية'
+      }
+    ];
+    
+    const fields = Object.keys(templateData[0]);
+    const parser = new Parser({ fields });
+    const csv = parser.parse(templateData);
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics-template.csv');
+    res.send(csv);
+  })
+);
+
+// Import route
+router.post('/import',
+  asyncHandler(async (req, res) => {
+    // Check for API key for security
+    const apiKey = req.header('X-API-Key');
+    if (!apiKey || apiKey !== process.env.IMPORT_EXPORT_API_KEY) {
+      return res.status(401).json({
+        success: false,
+        message: 'API key required for import',
+        error: 'API_KEY_REQUIRED'
+      });
+    }
+    
+    // Add default user for import
+    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    const multer = require('multer');
+    const csv = require('csv-parser');
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Configure multer for file upload
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        cb(null, `import-${Date.now()}-${file.originalname}`);
+      }
+    });
+    
+    const upload = multer({ 
+      storage,
+      fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ];
+        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+        
+        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+        const hasValidExtension = allowedExtensions.some(ext => 
+          file.originalname.toLowerCase().endsWith(ext)
+        );
+        
+        if (hasValidMimeType || hasValidExtension) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
+        }
+      },
+      limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    }).single('file');
+    
+    upload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.message
+        });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No file uploaded'
+        });
+      }
+      
+      const results = [];
+      const errors = [];
+      let rowNumber = 0;
+      
+      try {
+        // Parse file (CSV or Excel)
+        const fileData = await parseFileData(req.file.path, req.file.originalname);
+        
+        // Add row numbers to results
+        fileData.forEach((data, index) => {
+          results.push({ ...data, rowNumber: index + 1 });
+        });
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const importedRecords = [];
+        
+        // Process each row
+        for (const row of results) {
+          try {
+            // Support flexible field names and generate defaults if missing
+            let serialNoField = row['Serial No'] || row['serialNo'] || row['رقم تسلسلي'] || row['الرقم'];
+            let dateField = row['Date'] || row['date'] || row['التاريخ'] || row['تاريخ'];
+            let nameField = row['Name'] || row['clientName'] || row['اسم العميل'] || row['الاسم'] || row['اسم المربي'];
+            
+            // Generate defaults for missing required fields
+            if (!serialNoField) {
+              serialNoField = `MC${Date.now().toString().slice(-8)}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Serial number auto-generated: ${serialNoField}`);
+            }
+            
+            // Ensure serial number is not too long (max 20 characters)
+            if (serialNoField.length > 20) {
+              serialNoField = `MC${Date.now().toString().slice(-8)}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Serial number was too long, generated new: ${serialNoField}`);
+            }
+            
+            if (!dateField) {
+              dateField = new Date().toISOString().split('T')[0];
+              console.log(`⚠️  Row ${row.rowNumber}: Date set to current date: ${dateField}`);
+            }
+            
+            if (!nameField) {
+              nameField = `Unknown Client ${row.rowNumber}`;
+              console.log(`⚠️  Row ${row.rowNumber}: Client name auto-generated: ${nameField}`);
+            }
+            
+            // Check if serial number already exists and generate unique one if needed
+            let serialNo = serialNoField;
+            const existingRecord = await MobileClinic.findOne({ serialNo: serialNo });
+            if (existingRecord) {
+              // Generate a unique serial number with shorter format
+              const timestamp = Date.now().toString().slice(-6);
+              serialNo = `MC${timestamp}${Math.floor(Math.random() * 100)}`;
+              
+              // Ensure it's under 20 characters
+              if (serialNo.length > 20) {
+                serialNo = `MC${timestamp}`;
+              }
+              
+              console.log(`⚠️  Serial number '${serialNoField}' already exists. Generated new serial: '${serialNo}'`);
+            }
+            
+            // Create client data object for findOrCreateClient function
+            const rawNationalId = row['ID'] || row['clientNationalId'] || row['رقم الهوية'] || row['الهوية'] || '';
+            const rawPhone = row['Phone'] || row['clientPhone'] || row['الهاتف'] || row['رقم الهاتف'] || '';
+            
+            const clientData = {
+              clientName: nameField,
+              // Generate valid nationalId if missing or invalid
+              clientNationalId: rawNationalId && rawNationalId.length >= 10 && rawNationalId.length <= 14 
+                ? rawNationalId 
+                : `1000000${Date.now().toString().slice(-6)}`, // Generate 13-digit ID
+              // Generate valid phone if missing or invalid
+              clientPhone: rawPhone && rawPhone.match(/^\+?[0-9]{10,15}$/) 
+                ? rawPhone 
+                : `+966500000${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`, // Generate valid Saudi phone
+              clientVillage: row['clientVillage'] || row['القرية'] || '',
+              clientDetailedAddress: row['clientDetailedAddress'] || row['العنوان التفصيلي'] || ''
+            };
+            
+            // Find or create client
+            const client = await findOrCreateClient(clientData, req.user._id, Client);
+            if (!client) {
+              errors.push({
+                row: row.rowNumber,
+                field: 'client',
+                message: 'Could not create or find client'
+              });
+              errorCount++;
+              continue;
+            }
+            
+            // Update client with birth date if provided
+            const birthDateField = row['Birth Date'] || row['birthDate'];
+            if (birthDateField && client) {
+              try {
+                client.birthDate = new Date(birthDateField);
+                await client.save();
+              } catch (birthDateError) {
+                console.warn('Could not set birth date:', birthDateError.message);
+              }
+            }
+            
+            // Parse coordinates
+            const coordinates = {};
+            const eCoord = row['E Coordinate'] || row['longitude'] || row['خط الطول'] || row['الطول'];
+            const nCoord = row['N Coordinate'] || row['latitude'] || row['خط العرض'] || row['العرض'];
+            if (eCoord && !isNaN(parseFloat(eCoord))) {
+              coordinates.longitude = parseFloat(eCoord);
+            }
+            if (nCoord && !isNaN(parseFloat(nCoord))) {
+              coordinates.latitude = parseFloat(nCoord);
+            }
+            
+            // Create mobile clinic record with flexible field mapping
+            const mobileClinicData = {
+              serialNo: serialNo,
+              date: new Date(dateField),
+              client: client._id,
+              createdBy: req.user._id,
+              updatedBy: req.user._id,
+              farmLocation: row['Location'] || row['farmLocation'] || row['الموقع'] || row['موقع المزرعة'] || '',
+              coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,
+              supervisor: row['Supervisor'] || row['supervisor'] || row['المشرف'] || row['الطبيب'] || 'N/A',
+              vehicleNo: row['Vehicle No.'] || row['Vehicle No'] || row['vehicleNo'] || row['رقم المركبة'] || 'N/A',
+              animalCounts: {
+                sheep: parseInt(row['Sheep'] || row['sheep'] || row['الأغنام'] || row['غنم']) || 0,
+                goats: parseInt(row['Goats'] || row['goats'] || row['الماعز'] || row['معز']) || 0,
+                camel: parseInt(row['Camel'] || row['camel'] || row['الإبل'] || row['جمال']) || 0,
+                horse: parseInt(row['Horse'] || row['horse'] || row['الخيول'] || row['خيل']) || 0,
+                cattle: parseInt(row['Cattle'] || row['cattle'] || row['الأبقار'] || row['بقر']) || 0
+              },
+              diagnosis: row['Diagnosis'] || row['diagnosis'] || row['التشخيص'] || row['الحالة'] || '',
+              interventionCategory: row['Intervention Category'] || row['interventionCategory'] || row['نوع التدخل'] || 'Routine',
+              treatment: row['Treatment'] || row['treatment'] || row['العلاج'] || row['المعالجة'] || '',
+              request: {
+                date: new Date(row['Request Date'] || row['requestDate'] || row['تاريخ الطلب'] || dateField),
+                situation: ['Open', 'Closed', 'Pending'].includes(row['Request Status'] || row['requestSituation'] || row['حالة الطلب']) 
+                  ? (row['Request Status'] || row['requestSituation'] || row['حالة الطلب'])
+                  : 'Open',
+                fulfillingDate: (row['Request Fulfilling Date'] || row['requestFulfillingDate'] || row['تاريخ تنفيذ الطلب']) ? new Date(row['Request Fulfilling Date'] || row['requestFulfillingDate'] || row['تاريخ تنفيذ الطلب']) : undefined
+              },
+              category: row['Category'] || row['category'] || row['الفئة'] || row['التصنيف'] || '',
+              remarks: row['Remarks'] || row['remarks'] || row['الملاحظات'] || row['ملاحظات'] || ''
+            };
+            
+            // Create mobile clinic record
+            const mobileClinicRecord = new MobileClinic(mobileClinicData);
+            await mobileClinicRecord.save();
+            
+            importedRecords.push(mobileClinicRecord);
+            successCount++;
+            
+          } catch (error) {
+            console.error('Error processing row:', error);
+            errors.push({
+              row: row.rowNumber,
+              field: 'processing',
+              message: error.message
+            });
+            errorCount++;
+          }
+        }
+        
+        // Clean up uploaded file
+        fs.unlinkSync(req.file.path);
+        
+        res.json({
+          success: true,
+          message: `Import completed. ${successCount} records imported successfully, ${errorCount} failed.`,
+          totalRows: results.length,
+          successRows: successCount,
+          errorRows: errorCount,
+          errors: errors,
+          importedRecords: importedRecords
+        });
+        
+      } catch (error) {
+        console.error('Import error:', error);
+        
+        // Clean up uploaded file if it exists
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        
+        res.status(500).json({
+          success: false,
+          message: 'Import failed',
+          error: error.message
+        });
+      }
+    });
+  })
+);
+
 /**
  * @swagger
  * /api/mobile-clinics/{id}:

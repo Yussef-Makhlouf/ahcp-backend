@@ -13,7 +13,7 @@ require('dotenv').config();
 let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
 let parasiteControlRoutes, vaccinationRoutes, mobileClinicsRoutes;
 let equineHealthRoutes, laboratoriesRoutes, clientsRoutes;
-let reportsRoutes, uploadRoutes, villagesRoutes;
+let reportsRoutes, uploadRoutes, villagesRoutes, exportRoutes, importRoutes;
 
 let errorHandler, notFound, authMiddleware;
 
@@ -31,6 +31,8 @@ try {
   reportsRoutes = require('../src/routes/reports');
   uploadRoutes = require('../src/routes/upload');
   villagesRoutes = require('../src/routes/villages');
+  exportRoutes = require('../src/routes/export');
+  importRoutes = require('../src/routes/import');
 
   // Import middleware
   errorHandler = require('../src/middleware/errorHandler').errorHandler;
@@ -200,6 +202,10 @@ if (clientsRoutes) app.use('/api/clients', clientsRoutes);
 if (reportsRoutes) app.use('/api/reports', reportsRoutes);
 if (uploadRoutes) app.use('/api/upload', uploadRoutes);
 if (villagesRoutes && selectedAuth) app.use('/api/villages', selectedAuth, villagesRoutes);
+
+// JWT-protected export/import routes
+if (exportRoutes) app.use('/api/export', exportRoutes);
+if (importRoutes) app.use('/api/import', importRoutes);
 
 // Simple test endpoint
 app.get('/test', (req, res) => {
