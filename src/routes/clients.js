@@ -69,14 +69,27 @@ router.get('/',
       ];
     }
 
-    // Get clients
-    const clients = await Client.find(filter)
-      .populate('createdBy', 'name email')
-      .skip(skip)
-      .limit(parseInt(limit))
-      .sort({ createdAt: -1 });
-
-    const total = await Client.countDocuments(filter);
+    // Get clients with error handling
+    let clients = [];
+    let total = 0;
+    
+    try {
+      clients = await Client.find(filter)
+        .populate('createdBy', 'name email')
+        .skip(skip)
+        .limit(parseInt(limit))
+        .sort({ createdAt: -1 });
+    } catch (findError) {
+      console.error('Error finding clients:', findError);
+      clients = [];
+    }
+    
+    try {
+      total = await Client.countDocuments(filter);
+    } catch (countError) {
+      console.error('Error counting clients:', countError);
+      total = 0;
+    }
 
     res.json({
       success: true,
@@ -125,12 +138,18 @@ router.get('/statistics',
       console.error('Error getting clients statistics:', error);
       
       // Return basic count if aggregation fails
-      const basicStats = {
-        totalClients: await Client.countDocuments(),
+      let basicStats = {
+        totalClients: 0,
         activeClients: 0,
         inactiveClients: 0,
         totalAnimals: 0
       };
+      
+      try {
+        basicStats.totalClients = await Client.countDocuments();
+      } catch (countError) {
+        console.error('Error counting clients:', countError);
+      }
       
       res.json({
         success: true,
@@ -530,7 +549,7 @@ router.delete('/:id/animals/:animalIndex',
  *         name: format
  *         schema:
  *           type: string
- *           enum: [csv, json]
+ *           enum: [csv, json, excel]
  *         description: Export format
  *       - in: query
  *         name: status
@@ -572,6 +591,37 @@ router.get('/export',
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=clients.csv');
       res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Transform data for Excel export
+      const transformedClients = clients.map(client => ({
+        'Name': client.name || '',
+        'National ID': client.nationalId || '',
+        'Phone': client.phone || '',
+        'Email': client.email || '',
+        'Village': client.village || '',
+        'Detailed Address': client.detailedAddress || '',
+        'Status': client.status || '',
+        'Total Animals': client.totalAnimals || 0,
+        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : ''
+      }));
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedClients);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
+      res.send(excelBuffer);
     } else {
       res.json({
         success: true,

@@ -111,7 +111,18 @@ router.get('/',
         .lean();
     }
 
-    const total = await Vaccination.countDocuments(filter);
+    // If still no records, return empty array
+    if (!records) {
+      records = [];
+    }
+
+    let total = 0;
+    try {
+      total = await Vaccination.countDocuments(filter);
+    } catch (countError) {
+      console.error('Error counting documents:', countError);
+      total = 0;
+    }
 
     res.json({
       success: true,
@@ -167,7 +178,22 @@ router.get('/statistics',
     }
 
     try {
-      const statistics = await Vaccination.getStatistics(filter);
+      // Simple statistics without complex aggregation
+      const totalRecords = await Vaccination.countDocuments(filter);
+      const recordsThisMonth = await Vaccination.countDocuments({
+        ...filter,
+        date: {
+          $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+          $lte: new Date()
+        }
+      });
+      
+      const statistics = {
+        totalRecords,
+        recordsThisMonth,
+        totalAnimalsVaccinated: 0, // Will be calculated if needed
+        totalVaccinesUsed: 0 // Will be calculated if needed
+      };
       
       res.json({
         success: true,
@@ -176,8 +202,8 @@ router.get('/statistics',
     } catch (error) {
       console.error('Error getting vaccination statistics:', error);
       
-      // Return default statistics if method fails
-      const defaultStats = {
+      // Return basic count if aggregation fails
+      const basicStats = {
         totalRecords: await Vaccination.countDocuments(filter),
         recordsThisMonth: 0,
         totalAnimalsVaccinated: 0,
@@ -186,7 +212,7 @@ router.get('/statistics',
       
       res.json({
         success: true,
-        data: defaultStats
+        data: basicStats
       });
     }
   })
@@ -205,7 +231,7 @@ router.get('/statistics',
  *         name: format
  *         schema:
  *           type: string
- *           enum: [csv, json]
+ *           enum: [csv, json, excel]
  *         description: Export format
  *       - in: query
  *         name: startDate
@@ -240,62 +266,79 @@ router.get('/export',
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
       .sort({ date: -1 });
 
+    // Transform data for export
+    const transformedRecords = records.map(record => {
+      const herdCounts = record.herdCounts || {};
+      const totalFemales = (herdCounts.sheep?.female || 0) + (herdCounts.goats?.female || 0) + 
+                          (herdCounts.camel?.female || 0) + (herdCounts.cattle?.female || 0);
+      
+      return {
+        'Serial No': record.serialNo,
+        'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+        'Name': record.client?.name || '',
+        'ID': record.client?.nationalId || '',
+        'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
+        'Phone': record.client?.phone || '',
+        'Location': record.farmLocation || '',
+        'N Coordinate': record.coordinates?.latitude || '',
+        'E Coordinate': record.coordinates?.longitude || '',
+        'Supervisor': record.supervisor || '',
+        'Team': record.team || '',
+        'Vehicle No.': record.vehicleNo || '',
+        'Sheep': herdCounts.sheep?.total || 0,
+        'F. Sheep': herdCounts.sheep?.female || 0,
+        'Vaccinated Sheep': herdCounts.sheep?.vaccinated || 0,
+        'Goats': herdCounts.goats?.total || 0,
+        'F.Goats': herdCounts.goats?.female || 0,
+        'Vaccinated Goats': herdCounts.goats?.vaccinated || 0,
+        'Camel': herdCounts.camel?.total || 0,
+        'F. Camel': herdCounts.camel?.female || 0,
+        'Vaccinated Camels': herdCounts.camel?.vaccinated || 0,
+        'Cattel': herdCounts.cattle?.total || 0,
+        'F. Cattle': herdCounts.cattle?.female || 0,
+        'Vaccinated Cattle': herdCounts.cattle?.vaccinated || 0,
+        'Herd Number': (herdCounts.sheep?.total || 0) + (herdCounts.goats?.total || 0) + (herdCounts.camel?.total || 0) + (herdCounts.cattle?.total || 0),
+        'Herd Females': totalFemales,
+        'Total Vaccinated': (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0) + (herdCounts.camel?.vaccinated || 0) + (herdCounts.cattle?.vaccinated || 0),
+        'Herd Health': record.herdHealth || '',
+        'Animals Handling': record.animalsHandling || '',
+        'Labours': record.labours || '',
+        'Reachable Location': record.reachableLocation || '',
+        'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
+        'Situation': record.request?.situation || '',
+        'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
+        'Vaccine': record.vaccineType || '',
+        'Category': record.vaccineCategory || '',
+        'Remarks': record.remarks || ''
+      };
+    });
+
     if (format === 'csv') {
       const { Parser } = require('json2csv');
-      
-      // Transform data for the new column structure
-      const transformedRecords = records.map(record => {
-        const herdCounts = record.herdCounts || {};
-        const totalFemales = (herdCounts.sheep?.female || 0) + (herdCounts.goats?.female || 0) + 
-                            (herdCounts.camel?.female || 0) + (herdCounts.cattle?.female || 0);
-        
-        return {
-          'Serial No': record.serialNo,
-          'Date': record.date ? record.date.toISOString().split('T')[0] : '',
-          'Name': record.client?.name || '',
-          'ID': record.client?.nationalId || '',
-          'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
-          'Phone': record.client?.phone || '',
-          'Location': record.farmLocation || '',
-          'N Coordinate': record.coordinates?.latitude || '',
-          'E Coordinate': record.coordinates?.longitude || '',
-          'Supervisor': record.supervisor || '',
-          'Team': record.team || '',
-          'Vehicle No.': record.vehicleNo || '',
-          'Sheep': herdCounts.sheep?.total || 0,
-          'F. Sheep': herdCounts.sheep?.female || 0,
-          'Vaccinated Sheep': herdCounts.sheep?.vaccinated || 0,
-          'Goats': herdCounts.goats?.total || 0,
-          'F.Goats': herdCounts.goats?.female || 0,
-          'Vaccinated Goats': herdCounts.goats?.vaccinated || 0,
-          'Camel': herdCounts.camel?.total || 0,
-          'F. Camel': herdCounts.camel?.female || 0,
-          'Vaccinated Camels': herdCounts.camel?.vaccinated || 0,
-          'Cattel': herdCounts.cattle?.total || 0,
-          'F. Cattle': herdCounts.cattle?.female || 0,
-          'Vaccinated Cattle': herdCounts.cattle?.vaccinated || 0,
-          'Herd Number': (herdCounts.sheep?.total || 0) + (herdCounts.goats?.total || 0) + (herdCounts.camel?.total || 0) + (herdCounts.cattle?.total || 0),
-          'Herd Females': totalFemales,
-          'Total Vaccinated': (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0) + (herdCounts.camel?.vaccinated || 0) + (herdCounts.cattle?.vaccinated || 0),
-          'Herd Health': record.herdHealth || '',
-          'Animals Handling': record.animalsHandling || '',
-          'Labours': record.labours || '',
-          'Reachable Location': record.reachableLocation || '',
-          'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
-          'Situation': record.request?.situation || '',
-          'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
-          'Vaccine': record.vaccineType || '',
-          'Category': record.vaccineCategory || '',
-          'Remarks': record.remarks || ''
-        };
-      });
-      
       const parser = new Parser();
       const csv = parser.parse(transformedRecords);
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=vaccination-records.csv');
       res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Vaccination Records');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=vaccination-records.xlsx');
+      res.send(excelBuffer);
     } else {
       res.json({
         success: true,

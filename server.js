@@ -34,7 +34,7 @@ try {
 
   // Import middleware
   errorHandler = require('./src/middleware/errorHandler').errorHandler;
-  notFound = require('./src/middleware/notFound');
+  notFound = require('./src/middleware/errorHandler').notFound;
   authMiddleware = require('./src/middleware/auth').auth;
   devAuth = require('./src/middleware/dev-auth');
   devNoAuth = require('./src/middleware/dev-no-auth');

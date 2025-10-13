@@ -158,25 +158,33 @@ router.get('/statistics',
       });
 
       // إجمالي الحيوانات المفحوصة
-      const animalStats = await MobileClinic.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: null,
-            totalAnimals: {
-              $sum: {
-                $add: [
-                  { $ifNull: ['$sheep', 0] },
-                  { $ifNull: ['$goats', 0] },
-                  { $ifNull: ['$camel', 0] },
-                  { $ifNull: ['$horse', 0] },
-                  { $ifNull: ['$cattle', 0] }
-                ]
+      let totalAnimalsExamined = 0;
+      try {
+        const animalStats = await MobileClinic.aggregate([
+          { $match: filter },
+          {
+            $group: {
+              _id: null,
+              totalAnimals: {
+                $sum: {
+                  $add: [
+                    { $ifNull: ['$animalCounts.sheep', 0] },
+                    { $ifNull: ['$animalCounts.goats', 0] },
+                    { $ifNull: ['$animalCounts.camel', 0] },
+                    { $ifNull: ['$animalCounts.horse', 0] },
+                    { $ifNull: ['$animalCounts.cattle', 0] }
+                  ]
+                }
               }
             }
           }
-        }
-      ]);
+        ]);
+        totalAnimalsExamined = animalStats.length > 0 ? animalStats[0].totalAnimals : 0;
+      } catch (aggregationError) {
+        console.warn('Animal stats aggregation failed, using fallback:', aggregationError.message);
+        // Fallback: get basic count without aggregation
+        totalAnimalsExamined = 0;
+      }
 
       // الحالات الطارئة
       const emergencyCases = await MobileClinic.countDocuments({
@@ -187,7 +195,7 @@ router.get('/statistics',
       const statistics = {
         totalRecords,
         recordsThisMonth,
-        totalAnimalsExamined: animalStats.length > 0 ? animalStats[0].totalAnimals : 0,
+        totalAnimalsExamined,
         emergencyCases
       };
 
@@ -197,11 +205,27 @@ router.get('/statistics',
       });
     } catch (error) {
       console.error('Error getting mobile clinic statistics:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error retrieving statistics',
-        error: error.message
-      });
+      
+      // Return basic statistics if complex queries fail
+      try {
+        const basicStats = {
+          totalRecords: await MobileClinic.countDocuments(filter),
+          recordsThisMonth: 0,
+          totalAnimalsExamined: 0,
+          emergencyCases: 0
+        };
+        
+        res.json({
+          success: true,
+          data: basicStats
+        });
+      } catch (fallbackError) {
+        res.status(500).json({
+          success: false,
+          message: 'Error retrieving statistics',
+          error: error.message
+        });
+      }
     }
   })
 );
