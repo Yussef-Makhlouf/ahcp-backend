@@ -127,65 +127,84 @@ router.post('/register',
 router.post('/login',
   validate(schemas.userLogin),
   asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
+    try {
+      const { email, password } = req.body;
 
-    // Find user and include password
-    const user = await User.findOne({ email }).select('+password');
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-        error: 'INVALID_CREDENTIALS'
-      });
-    }
-
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated',
-        error: 'ACCOUNT_DEACTIVATED'
-      });
-    }
-
-    // Check password
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-        error: 'INVALID_CREDENTIALS'
-      });
-    }
-
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
-
-    // Generate token
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          roleNameAr: user.roleNameAr,
-          section: user.section,
-          isActive: user.isActive,
-          lastLogin: user.lastLogin
-        },
-        token
+      // Check if JWT_SECRET is available
+      if (!process.env.JWT_SECRET) {
+        console.error('❌ JWT_SECRET not found in environment variables');
+        return res.status(500).json({
+          success: false,
+          message: 'Server configuration error',
+          error: 'JWT_SECRET_MISSING'
+        });
       }
-    });
+
+      // Find user and include password
+      const user = await User.findOne({ email }).select('+password');
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password',
+          error: 'INVALID_CREDENTIALS'
+        });
+      }
+
+      // Check if user is active
+      if (!user.isActive) {
+        return res.status(401).json({
+          success: false,
+          message: 'Account is deactivated',
+          error: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+
+      // Check password
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password',
+          error: 'INVALID_CREDENTIALS'
+        });
+      }
+
+      // Update last login
+      user.lastLogin = new Date();
+      await user.save();
+
+      // Generate token
+      const token = jwt.sign(
+        { id: user._id },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      );
+
+      res.json({
+        success: true,
+        message: 'Login successful',
+        data: {
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            roleNameAr: user.roleNameAr,
+            section: user.section,
+            isActive: user.isActive,
+            lastLogin: user.lastLogin
+          },
+          token
+        }
+      });
+    } catch (error) {
+      console.error('❌ Login error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during login',
+        error: error.message
+      });
+    }
   })
 );
  
@@ -595,7 +614,7 @@ let cacheTimestamp = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 router.get('/supervisors',
-  optionalAuth, // استخدام optional auth بدلاً من auth الإجباري
+  auth, // استخدام auth الإجباري للمصادقة الطبيعية
   asyncHandler(async (req, res) => {
     try {
       // Set CORS headers explicitly
@@ -694,7 +713,7 @@ router.post('/supervisors/clear-cache',
  *         description: No supervisors found for this section
  */
 router.get('/supervisors/by-section/:section',
-  optionalAuth,
+  auth, // استخدام auth الإجباري للمصادقة الطبيعية
   asyncHandler(async (req, res) => {
     try {
       const { section } = req.params;

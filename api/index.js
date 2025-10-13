@@ -31,8 +31,6 @@ try {
   reportsRoutes = require('../src/routes/reports');
   uploadRoutes = require('../src/routes/upload');
   villagesRoutes = require('../src/routes/villages');
-  exportRoutes = require('../src/routes/export');
-  importRoutes = require('../src/routes/import');
 
   // Import middleware
   errorHandler = require('../src/middleware/errorHandler').errorHandler;

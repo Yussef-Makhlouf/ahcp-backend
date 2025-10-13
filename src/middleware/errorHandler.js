@@ -185,21 +185,8 @@ const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-/**
- * 404 handler for undefined routes
- */
-const notFound = (req, res, next) => {
-  const error = new AppError(
-    `Route ${req.originalUrl} not found`,
-    404,
-    'ROUTE_NOT_FOUND'
-  );
-  next(error);
-};
-
 module.exports = {
   errorHandler,
   AppError,
-  asyncHandler,
-  notFound
+  asyncHandler
 };

@@ -1,0 +1,180 @@
+{
+  "timestamp": "2025-10-13T11:17:26.917Z",
+  "total": 9,
+  "superAdmins": 1,
+  "sectionSupervisors": 8,
+  "supervisors": [
+    {
+      "_id": "68e5a7d1f227e89cf0fab424",
+      "name": "Dr. Mohammed AlAhmad",
+      "email": "yousef@gmail.com",
+      "role": "section_supervisor",
+      "section": "ADMIN",
+      "createdAt": "2025-10-07T23:52:49.314Z",
+      "lastLogin": "2025-10-07T23:53:08.717Z"
+    },
+    {
+      "_id": "68eacb63ab6a6b1cd8e36cd9",
+      "name": "yussef",
+      "email": "yussef.ali.it@gmail.com",
+      "role": "section_supervisor",
+      "section": "VET",
+      "createdAt": "2025-10-11T21:25:55.811Z"
+    },
+    {
+      "_id": "68e59db357f0dd0854a5fff1",
+      "name": "د. أحمد حسن الشمري",
+      "email": "clinic@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "PARA",
+      "createdAt": "2025-10-07T23:09:39.388Z",
+      "lastLogin": "2025-10-08T16:35:53.366Z"
+    },
+    {
+      "_id": "68e59db557f0dd0854a5fff5",
+      "name": "د. خالد إبراهيم العتيبي",
+      "email": "equine@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "CLINIC",
+      "createdAt": "2025-10-07T23:09:41.703Z",
+      "lastLogin": "2025-10-07T23:18:58.356Z"
+    },
+    {
+      "_id": "68e59db257f0dd0854a5ffef",
+      "name": "د. سارة محمود الزهراني",
+      "email": "vaccination@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "LAB",
+      "createdAt": "2025-10-07T23:09:38.725Z"
+    },
+    {
+      "_id": "68e59db457f0dd0854a5fff3",
+      "name": "د. فاطمة عبدالله القحطاني",
+      "email": "laboratory@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "VACC",
+      "createdAt": "2025-10-07T23:09:40.390Z"
+    },
+    {
+      "_id": "68e59db257f0dd0854a5ffed",
+      "name": "د. محمد علي الأحمد",
+      "email": "parasite@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "VET",
+      "createdAt": "2025-10-07T23:09:38.090Z",
+      "lastLogin": "2025-10-11T02:28:27.233Z"
+    },
+    {
+      "_id": "68e59db657f0dd0854a5fff7",
+      "name": "د. نورا سعد الحربي",
+      "email": "parasite2@ahcp.gov.sa",
+      "role": "section_supervisor",
+      "section": "EQUINE",
+      "createdAt": "2025-10-07T23:09:42.553Z"
+    },
+    {
+      "_id": "68e59db157f0dd0854a5ffeb",
+      "name": "مدير النظام",
+      "email": "admin@ahcp.gov.sa",
+      "role": "super_admin",
+      "section": "الإدارة العامة",
+      "createdAt": "2025-10-07T23:09:37.339Z",
+      "lastLogin": "2025-10-13T11:04:26.413Z"
+    }
+  ],
+  "sectionGroups": {
+    "ADMIN": [
+      {
+        "_id": "68e5a7d1f227e89cf0fab424",
+        "name": "Dr. Mohammed AlAhmad",
+        "email": "yousef@gmail.com",
+        "role": "section_supervisor",
+        "section": "ADMIN",
+        "createdAt": "2025-10-07T23:52:49.314Z",
+        "lastLogin": "2025-10-07T23:53:08.717Z"
+      }
+    ],
+    "VET": [
+      {
+        "_id": "68eacb63ab6a6b1cd8e36cd9",
+        "name": "yussef",
+        "email": "yussef.ali.it@gmail.com",
+        "role": "section_supervisor",
+        "section": "VET",
+        "createdAt": "2025-10-11T21:25:55.811Z"
+      },
+      {
+        "_id": "68e59db257f0dd0854a5ffed",
+        "name": "د. محمد علي الأحمد",
+        "email": "parasite@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "VET",
+        "createdAt": "2025-10-07T23:09:38.090Z",
+        "lastLogin": "2025-10-11T02:28:27.233Z"
+      }
+    ],
+    "PARA": [
+      {
+        "_id": "68e59db357f0dd0854a5fff1",
+        "name": "د. أحمد حسن الشمري",
+        "email": "clinic@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "PARA",
+        "createdAt": "2025-10-07T23:09:39.388Z",
+        "lastLogin": "2025-10-08T16:35:53.366Z"
+      }
+    ],
+    "CLINIC": [
+      {
+        "_id": "68e59db557f0dd0854a5fff5",
+        "name": "د. خالد إبراهيم العتيبي",
+        "email": "equine@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "CLINIC",
+        "createdAt": "2025-10-07T23:09:41.703Z",
+        "lastLogin": "2025-10-07T23:18:58.356Z"
+      }
+    ],
+    "LAB": [
+      {
+        "_id": "68e59db257f0dd0854a5ffef",
+        "name": "د. سارة محمود الزهراني",
+        "email": "vaccination@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "LAB",
+        "createdAt": "2025-10-07T23:09:38.725Z"
+      }
+    ],
+    "VACC": [
+      {
+        "_id": "68e59db457f0dd0854a5fff3",
+        "name": "د. فاطمة عبدالله القحطاني",
+        "email": "laboratory@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "VACC",
+        "createdAt": "2025-10-07T23:09:40.390Z"
+      }
+    ],
+    "EQUINE": [
+      {
+        "_id": "68e59db657f0dd0854a5fff7",
+        "name": "د. نورا سعد الحربي",
+        "email": "parasite2@ahcp.gov.sa",
+        "role": "section_supervisor",
+        "section": "EQUINE",
+        "createdAt": "2025-10-07T23:09:42.553Z"
+      }
+    ],
+    "الإدارة العامة": [
+      {
+        "_id": "68e59db157f0dd0854a5ffeb",
+        "name": "مدير النظام",
+        "email": "admin@ahcp.gov.sa",
+        "role": "super_admin",
+        "section": "الإدارة العامة",
+        "createdAt": "2025-10-07T23:09:37.339Z",
+        "lastLogin": "2025-10-13T11:04:26.413Z"
+      }
+    ]
+  }
+}

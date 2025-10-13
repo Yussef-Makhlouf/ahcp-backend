@@ -296,10 +296,11 @@ router.post('/avatar',
  *         description: Import error
  */
 router.post('/import/csv',
+  auth,
   upload.single('csvFile'),
   asyncHandler(async (req, res) => {
-    // Add default user for import
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    // Use authenticated user for import
+    // req.user is already set by auth middleware
     if (!req.file) {
       return res.status(400).json({
         success: false,

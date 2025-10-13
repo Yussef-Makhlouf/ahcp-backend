@@ -9,16 +9,25 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 require('dotenv').config();
 
+// Check critical environment variables
+console.log('🔍 Environment check:');
+console.log('📊 NODE_ENV:', process.env.NODE_ENV);
+console.log('🔑 JWT_SECRET:', process.env.JWT_SECRET ? 'Set' : 'Not set');
+console.log('🗄️ MONGODB_URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
+console.log('🌐 CORS_ORIGIN:', process.env.CORS_ORIGIN);
+
 // Import routes with error handling
 let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
 let parasiteControlRoutes, vaccinationRoutes, mobileClinicsRoutes;
 let equineHealthRoutes, laboratoriesRoutes, clientsRoutes;
-let reportsRoutes, uploadRoutes, villagesRoutes, exportRoutes, importRoutes;
+let reportsRoutes, uploadRoutes, villagesRoutes, importExportRoutes;
 
 let errorHandler, notFound, authMiddleware;
 
 try {
+  console.log('🔄 Loading routes...');
   authRoutes = require('./src/routes/auth');
+  console.log('✅ Auth routes loaded');
   usersRoutes = require('./src/routes/users');
   sectionsRoutes = require('./src/routes/sections');
   seedRoutes = require('./src/routes/seed');
@@ -31,15 +40,16 @@ try {
   reportsRoutes = require('./src/routes/reports');
   uploadRoutes = require('./src/routes/upload');
   villagesRoutes = require('./src/routes/villages');
-  exportRoutes = require('./src/routes/export');
-  importRoutes = require('./src/routes/import');
+  importExportRoutes = require('./src/routes/import-export');
 
   // Import middleware
   errorHandler = require('./src/middleware/errorHandler').errorHandler;
-  notFound = require('./src/middleware/errorHandler').notFound;
+  notFound = require('./src/middleware/notFound');
   authMiddleware = require('./src/middleware/auth').auth;
+  console.log('✅ All routes and middleware loaded successfully');
 } catch (error) {
-  console.error('Error loading routes or middleware:', error.message);
+  console.error('❌ Error loading routes or middleware:', error.message);
+  console.error('❌ Stack trace:', error.stack);
 }
 
 const app = express();
@@ -194,7 +204,20 @@ app.get('/test', (req, res) => {
 });
 
 // API routes - only add if routes are loaded successfully
-if (authRoutes) app.use('/api/auth', authRoutes);
+if (authRoutes) {
+  console.log('✅ Adding auth routes to /api/auth');
+  app.use('/api/auth', authRoutes);
+} else {
+  console.error('❌ Auth routes not loaded - this will cause 500 errors');
+  // Add a fallback route for auth
+  app.use('/api/auth', (req, res) => {
+    res.status(500).json({
+      success: false,
+      message: 'Auth routes not loaded',
+      error: 'AUTH_ROUTES_NOT_LOADED'
+    });
+  });
+}
 if (sectionsRoutes) app.use('/api/sections', sectionsRoutes);
 if (seedRoutes) app.use('/api/seed', seedRoutes);
 
@@ -239,9 +262,12 @@ if (uploadRoutes) {
 }
 if (villagesRoutes && selectedAuth) app.use('/api/villages', selectedAuth, villagesRoutes);
 
-// JWT-protected export/import routes
-if (exportRoutes) app.use('/api/export', exportRoutes);
-if (importRoutes) app.use('/api/import', importRoutes);
+// Import/Export routes
+if (importExportRoutes) {
+  console.log('✅ Loading import-export routes');
+  app.use('/api/import-export', importExportRoutes);
+}
+
 
 // Test endpoint for debugging
 app.get('/test-routes', (req, res) => {
@@ -288,8 +314,19 @@ app.get('/', (req, res) => {
 });
 
 // Error handling middleware - only add if they exist
-if (notFound) app.use(notFound);
-if (errorHandler) app.use(errorHandler);
+if (notFound) {
+  console.log('✅ Adding notFound middleware');
+  app.use(notFound);
+} else {
+  console.error('❌ notFound middleware not loaded');
+}
+
+if (errorHandler) {
+  console.log('✅ Adding errorHandler middleware');
+  app.use(errorHandler);
+} else {
+  console.error('❌ errorHandler middleware not loaded');
+}
 
 // Database connection with better error handling
 const connectDB = async () => {
@@ -347,6 +384,17 @@ if (!process.env.VERCEL) {
     console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
   });
+} else {
+  console.log('🌐 Running on Vercel environment');
 }
+
+// Add global error handler for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+});
 
 module.exports = app;

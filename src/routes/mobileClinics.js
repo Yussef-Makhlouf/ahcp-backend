@@ -534,9 +534,10 @@ router.get('/template',
 
 // Import route
 router.post('/import',
+  auth,
   asyncHandler(async (req, res) => {
-    // Add default user for import
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    // Use authenticated user for import
+    // req.user is already set by auth middleware
     const multer = require('multer');
     const csv = require('csv-parser');
     const fs = require('fs');
@@ -577,7 +578,7 @@ router.post('/import',
           cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
         }
       },
-      limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+      limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit - increased for large files
     }).single('file');
     
     upload(req, res, async (err) => {
@@ -1110,9 +1111,10 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
+  auth,
   asyncHandler(async (req, res) => {
-    // Add default user for import
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    // Use authenticated user for import
+    // req.user is already set by auth middleware
     const multer = require('multer');
     const csv = require('csv-parser');
     const fs = require('fs');
@@ -1153,7 +1155,7 @@ router.post('/import',
           cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
         }
       },
-      limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+      limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit - increased for large files // 10MB limit
     }).single('file');
     
     upload(req, res, async (err) => {

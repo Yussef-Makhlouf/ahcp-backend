@@ -1,12 +1,55 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const ParasiteControl = require('../models/ParasiteControl');
 const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
+// Import/Export functionality moved to import-export routes
 
 const router = express.Router();
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `import-${Date.now()}-${file.originalname}`);
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { 
+    fileSize: 50 * 1024 * 1024, // 50MB limit - increased for large files
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+    
+    const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+    const hasValidExtension = allowedExtensions.some(ext => 
+      file.originalname.toLowerCase().endsWith(ext)
+    );
+    
+    if (hasValidMimeType || hasValidExtension) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
+    }
+  }
+});
 
 /**
  * @swagger
@@ -777,9 +820,10 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
+  auth,
   asyncHandler(async (req, res) => {
-    // Add default user for import
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    // Use authenticated user for import
+    // req.user is already set by auth middleware
     
     // Call handleImport with proper context
     await handleImport(req, res, ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {

@@ -23,13 +23,12 @@ const clientsRoutes = require('./routes/clients');
 const reportsRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const villagesRoutes = require('./routes/villages');
+const importExportRoutes = require('./routes/import-export');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { auth: authMiddleware } = require('./middleware/auth');
-const devAuth = require('./middleware/dev-auth');
-const devNoAuth = require('./middleware/dev-no-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -189,7 +188,7 @@ app.use('/api/sections', sectionsRoutes);
 app.use('/api/seed', seedRoutes);
 
 // استخدام المصادقة الحقيقية بناءً على البيئة
-const selectedAuth = process.env.NODE_ENV === 'production' ? authMiddleware : devAuth;
+const selectedAuth = authMiddleware;
 
 app.use('/api/users', selectedAuth, usersRoutes);
 app.use('/api/parasite-control', selectedAuth, parasiteControlRoutes);
@@ -201,6 +200,7 @@ app.use('/api/clients', selectedAuth, clientsRoutes);
 app.use('/api/reports', selectedAuth, reportsRoutes);
 app.use('/api/upload', selectedAuth, uploadRoutes);
 app.use('/api/villages', selectedAuth, villagesRoutes);
+app.use('/api/import-export', selectedAuth, importExportRoutes);
 
 // Welcome message
 app.get('/', (req, res) => {
@@ -221,7 +221,8 @@ app.get('/', (req, res) => {
       clients: '/api/clients',
       reports: '/api/reports',
       upload: '/api/upload',
-      villages: '/api/villages'
+      villages: '/api/villages',
+      importExport: '/api/import-export'
     }
   });
 });

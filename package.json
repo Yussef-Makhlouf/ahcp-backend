@@ -10,7 +10,9 @@
     "test": "jest",
     "seed": "node seed.js",
     "seed:sections": "node src/scripts/seed-sections.js",
-    "vercel-build": "npm install"
+    "vercel-build": "npm install",
+    "railway-build": "npm install",
+    "railway-db-setup": "node railway-db-setup.js"
   },
   "keywords": [
     "animal-health",

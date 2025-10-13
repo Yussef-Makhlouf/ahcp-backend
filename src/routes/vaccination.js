@@ -772,9 +772,10 @@ router.get('/template',
  *         description: Import completed
  */
 router.post('/import',
+  auth,
   asyncHandler(async (req, res) => {
-    // Add default user for import
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Import' };
+    // Use authenticated user for import
+    // req.user is already set by auth middleware
     
     // Call handleImport with proper context
     await handleImport(req, res, Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
