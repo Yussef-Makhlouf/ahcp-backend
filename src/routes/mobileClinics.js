@@ -270,7 +270,7 @@ router.get('/follow-up',
  *         name: format
  *         schema:
  *           type: string
- *           enum: [csv, json]
+ *           enum: [csv, json, excel]
  *         description: Export format
  *       - in: query
  *         name: interventionCategory
@@ -312,57 +312,74 @@ router.get('/export',
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
       .sort({ date: -1 });
 
+    // Transform data for export
+    const transformedRecords = records.map(record => {
+      // تحويل animalCounts إلى object بسيط
+      const animalCounts = record.animalCounts || {};
+      
+      // تحويل client إلى object بسيط
+      const client = record.client || {};
+      
+      // تحويل coordinates إلى object بسيط
+      const coordinates = record.coordinates || {};
+      
+      // تحويل request إلى object بسيط
+      const request = record.request || {};
+      
+      return {
+        'Serial No': record.serialNo || '',
+        'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+        'Name': client.name || '',
+        'ID': client.nationalId || '',
+        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
+        'Phone': client.phone || '',
+        'Location': record.farmLocation || '',
+        'N Coordinate': coordinates.latitude || '',
+        'E Coordinate': coordinates.longitude || '',
+        'Supervisor': record.supervisor || '',
+        'Vehicle No.': record.vehicleNo || '',
+        'Sheep': animalCounts.sheep || 0,
+        'Goats': animalCounts.goats || 0,
+        'Camel': animalCounts.camel || 0,
+        'Horse': animalCounts.horse || 0,
+        'Cattle': animalCounts.cattle || 0,
+        'Diagnosis': record.diagnosis || '',
+        'Intervention Category': record.interventionCategory || '',
+        'Treatment': record.treatment || '',
+        'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
+        'Request Status': request.situation || '',
+        'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
+        'Category': record.category || '',
+        'Remarks': record.remarks || ''
+      };
+    });
+
     if (format === 'csv') {
       const { Parser } = require('json2csv');
-      
-      // Transform data for the new column structure
-      const transformedRecords = records.map(record => {
-        // تحويل animalCounts إلى object بسيط
-        const animalCounts = record.animalCounts || {};
-        
-        // تحويل client إلى object بسيط
-        const client = record.client || {};
-        
-        // تحويل coordinates إلى object بسيط
-        const coordinates = record.coordinates || {};
-        
-        // تحويل request إلى object بسيط
-        const request = record.request || {};
-        
-        return {
-          'Serial No': record.serialNo || '',
-          'Date': record.date ? record.date.toISOString().split('T')[0] : '',
-          'Name': client.name || '',
-          'ID': client.nationalId || '',
-          'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
-          'Phone': client.phone || '',
-          'Location': record.farmLocation || '',
-          'N Coordinate': coordinates.latitude || '',
-          'E Coordinate': coordinates.longitude || '',
-          'Supervisor': record.supervisor || '',
-          'Vehicle No.': record.vehicleNo || '',
-          'Sheep': animalCounts.sheep || 0,
-          'Goats': animalCounts.goats || 0,
-          'Camel': animalCounts.camel || 0,
-          'Horse': animalCounts.horse || 0,
-          'Cattle': animalCounts.cattle || 0,
-          'Diagnosis': record.diagnosis || '',
-          'Intervention Category': record.interventionCategory || '',
-          'Treatment': record.treatment || '',
-          'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
-          'Request Status': request.situation || '',
-          'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
-          'Category': record.category || '',
-          'Remarks': record.remarks || ''
-        };
-      });
-      
       const parser = new Parser();
       const csv = parser.parse(transformedRecords);
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
       res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Mobile Clinics');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.xlsx');
+      res.send(excelBuffer);
     } else {
       res.json({
         success: true,
