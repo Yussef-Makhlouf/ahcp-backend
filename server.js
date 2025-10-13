@@ -237,6 +237,17 @@ if (uploadRoutes) {
 }
 if (villagesRoutes && selectedAuth) app.use('/api/villages', selectedAuth, villagesRoutes);
 
+// Test endpoint for debugging
+app.get('/test-routes', (req, res) => {
+  res.json({
+    message: 'Routes test',
+    mobileClinicsRoutes: !!mobileClinicsRoutes,
+    clientsRoutes: !!clientsRoutes,
+    vaccinationRoutes: !!vaccinationRoutes,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Welcome message
 app.get('/', (req, res) => {
   try {
