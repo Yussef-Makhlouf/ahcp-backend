@@ -5,7 +5,7 @@ const { validate, validateQuery, schemas } = require('../middleware/validation')
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
-const { findOrCreateClient } = require('../utils/importExportHelpers');
+const { findOrCreateClient, parseFileData } = require('../utils/importExportHelpers');
 
 const router = express.Router();
 
@@ -732,10 +732,22 @@ router.post('/import',
     const upload = multer({ 
       storage,
       fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+        const allowedMimeTypes = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ];
+        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+        
+        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+        const hasValidExtension = allowedExtensions.some(ext => 
+          file.originalname.toLowerCase().endsWith(ext)
+        );
+        
+        if (hasValidMimeType || hasValidExtension) {
           cb(null, true);
         } else {
-          cb(new Error('Only CSV files are allowed'));
+          cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
         }
       },
       limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
@@ -761,16 +773,12 @@ router.post('/import',
       let rowNumber = 0;
       
       try {
-        // Parse CSV file
-        await new Promise((resolve, reject) => {
-          fs.createReadStream(req.file.path)
-            .pipe(csv())
-            .on('data', (data) => {
-              rowNumber++;
-              results.push({ ...data, rowNumber });
-            })
-            .on('end', resolve)
-            .on('error', reject);
+        // Parse file (CSV or Excel)
+        const fileData = await parseFileData(req.file.path, req.file.originalname);
+        
+        // Add row numbers to results
+        fileData.forEach((data, index) => {
+          results.push({ ...data, rowNumber: index + 1 });
         });
         
         let successCount = 0;

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const json2csv = require('json2csv');
 const Parser = json2csv.Parser || json2csv;
+const XLSX = require('xlsx');
 
 /**
  * Configure multer for file uploads
@@ -25,10 +26,23 @@ const configureMulter = () => {
   return multer({ 
     storage,
     fileFilter: (req, file, cb) => {
-      if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      const allowedMimeTypes = [
+        'text/csv',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ];
+      const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+      
+      const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+      const hasValidExtension = allowedExtensions.some(ext => 
+        file.originalname.toLowerCase().endsWith(ext)
+      );
+      
+      if (hasValidMimeType || hasValidExtension) {
         cb(null, true);
       } else {
-        cb(new Error('Only CSV files are allowed'));
+        cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
       }
     },
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
@@ -140,16 +154,12 @@ const handleImport = (Model, ClientModel, processRowFunction) => {
       let rowNumber = 0;
       
       try {
-        // Parse CSV file
-        await new Promise((resolve, reject) => {
-          fs.createReadStream(req.file.path)
-            .pipe(csv())
-            .on('data', (data) => {
-              rowNumber++;
-              results.push({ ...data, rowNumber });
-            })
-            .on('end', resolve)
-            .on('error', reject);
+        // Parse file (CSV or Excel)
+        const fileData = await parseFileData(req.file.path, req.file.originalname);
+        
+        // Add row numbers to results
+        fileData.forEach((data, index) => {
+          results.push({ ...data, rowNumber: index + 1 });
         });
         
         let successCount = 0;
@@ -202,6 +212,35 @@ const handleImport = (Model, ClientModel, processRowFunction) => {
 };
 
 /**
+ * Parse file data (CSV or Excel)
+ */
+const parseFileData = async (filePath, fileName) => {
+  const results = [];
+  
+  if (fileName.toLowerCase().endsWith('.csv')) {
+    // Parse CSV file
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (data) => results.push(data))
+        .on('end', resolve)
+        .on('error', reject);
+    });
+  } else if (fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls')) {
+    // Parse Excel file
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0]; // Use first sheet
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+    
+    // Convert Excel data to same format as CSV
+    jsonData.forEach(row => results.push(row));
+  }
+  
+  return results;
+};
+
+/**
  * Helper function to find or create client
  */
 const findOrCreateClient = async (row, userId, ClientModel) => {
@@ -234,5 +273,6 @@ module.exports = {
   handleExport,
   handleTemplate,
   handleImport,
+  parseFileData,
   findOrCreateClient
 };
