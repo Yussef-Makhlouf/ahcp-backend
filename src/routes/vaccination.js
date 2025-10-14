@@ -62,7 +62,7 @@ router.get('/',
   auth,
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, startDate, endDate, vaccineType, vaccineCategory, supervisor, search } = req.query;
+    const { page = 1, limit = 30, startDate, endDate, vaccineType, vaccineCategory, supervisor, search } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
@@ -620,6 +620,135 @@ router.put('/:id',
 
 /**
  * @swagger
+ * /api/vaccination/bulk-delete:
+ *   delete:
+ *     summary: Delete multiple vaccination records
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of record IDs to delete
+ *     responses:
+ *       200:
+ *         description: Records deleted successfully
+ *       400:
+ *         description: Invalid request
+ */
+router.delete('/bulk-delete',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs array is required and must not be empty',
+        error: 'INVALID_REQUEST'
+      });
+    }
+
+    // Validate ObjectIds
+    const mongoose = require('mongoose');
+    const invalidIds = ids.filter(id => !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ObjectId format',
+        error: 'INVALID_OBJECT_ID',
+        invalidIds
+      });
+    }
+
+    try {
+      // Check if records exist before deletion
+      const existingRecords = await Vaccination.find({ _id: { $in: ids } });
+      const existingIds = existingRecords.map(record => record._id.toString());
+      const notFoundIds = ids.filter(id => !existingIds.includes(id));
+      
+      // If no records found at all, return error
+      if (existingIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No vaccination records found to delete',
+          error: 'RESOURCE_NOT_FOUND',
+          notFoundIds: ids,
+          foundCount: 0,
+          requestedCount: ids.length
+        });
+      }
+
+      const result = await Vaccination.deleteMany({ _id: { $in: existingIds } });
+      
+      // Prepare response with details about what was deleted and what wasn't found
+      const response = {
+        success: true,
+        message: `${result.deletedCount} vaccination records deleted successfully`,
+        deletedCount: result.deletedCount,
+        requestedCount: ids.length,
+        foundCount: existingIds.length
+      };
+
+      // Add warning if some records were not found
+      if (notFoundIds.length > 0) {
+        response.warning = `${notFoundIds.length} records were not found and could not be deleted`;
+        response.notFoundIds = notFoundIds;
+        response.notFoundCount = notFoundIds.length;
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting vaccination records',
+        error: 'DELETE_ERROR',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/vaccination/delete-all:
+ *   delete:
+ *     summary: Delete all vaccination records
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All records deleted successfully
+ */
+router.delete('/delete-all',
+  auth,
+  authorize('super_admin'),
+  asyncHandler(async (req, res) => {
+    const result = await Vaccination.deleteMany({});
+    
+    res.json({
+      success: true,
+      message: `All vaccination records deleted successfully`,
+      data: {
+        deletedCount: result.deletedCount
+      }
+    });
+  })
+);
+
+/**
+ * @swagger
  * /api/vaccination/{id}:
  *   delete:
  *     summary: Delete vaccination record
@@ -779,8 +908,12 @@ router.post('/import',
     
     // Call handleImport with proper context
     await handleImport(req, res, Vaccination, Client, async (row, user, ClientModel, VaccinationModel, errors) => {
-    // Validate required fields - using new column names
-    if (!row['Serial No'] || !row['Date'] || !row['Name']) {
+    // Validate required fields - using flexible field names
+    const serialNo = row['Serial No'] || row.serialNo || row['Serial'] || row.serial;
+    const date = row['Date'] || row.date || row.DATE;
+    const name = row['Name'] || row.name || row.clientName || row['Client Name'];
+    
+    if (!serialNo || !date || !name) {
       errors.push({
         row: row.rowNumber,
         field: 'required',
@@ -790,27 +923,27 @@ router.post('/import',
     }
     
     // Check if serial number already exists and generate unique one if needed
-    let serialNo = row['Serial No'];
-    const existingRecord = await VaccinationModel.findOne({ serialNo: serialNo });
+    let finalSerialNo = serialNo;
+    const existingRecord = await VaccinationModel.findOne({ serialNo: finalSerialNo });
     if (existingRecord) {
       // Generate a unique serial number by appending timestamp
       const timestamp = Date.now().toString().slice(-6);
-      serialNo = `${row['Serial No']}-${timestamp}`;
+      finalSerialNo = `${serialNo}-${timestamp}`;
       
       // Double check the new serial number doesn't exist
-      const duplicateCheck = await VaccinationModel.findOne({ serialNo: serialNo });
+      const duplicateCheck = await VaccinationModel.findOne({ serialNo: finalSerialNo });
       if (duplicateCheck) {
-        serialNo = `${row['Serial No']}-${timestamp}-${Math.floor(Math.random() * 1000)}`;
+        finalSerialNo = `${serialNo}-${timestamp}-${Math.floor(Math.random() * 1000)}`;
       }
       
-      console.log(`⚠️  Serial number '${row['Serial No']}' already exists. Generated new serial: '${serialNo}'`);
+      console.log(`⚠️  Serial number '${serialNo}' already exists. Generated new serial: '${finalSerialNo}'`);
     }
     
     // Create client data object for findOrCreateClient function
     const clientData = {
-      clientName: row['Name'],
-      clientNationalId: row['ID'],
-      clientPhone: row['Phone'],
+      clientName: name,
+      clientNationalId: row['ID'] || row.id || row.ID,
+      clientPhone: row['Phone'] || row.phone || row.Phone,
       clientVillage: '',
       clientDetailedAddress: ''
     };
@@ -845,10 +978,41 @@ router.post('/import',
       coordinates.latitude = parseFloat(row['N Coordinate']);
     }
     
+    // Validate and parse date
+    let dateValue;
+    if (date.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+      // Convert D-Mon format to proper date
+      const currentYear = new Date().getFullYear();
+      const monthMap = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+      };
+      const [day, month] = date.split('-');
+      const monthNum = monthMap[month];
+      if (monthNum) {
+        const fullDate = `${currentYear}-${monthNum}-${day.padStart(2, '0')}`;
+        dateValue = new Date(fullDate);
+      } else {
+        dateValue = new Date(date);
+      }
+    } else {
+      dateValue = new Date(date);
+    }
+    
+    if (isNaN(dateValue.getTime())) {
+      errors.push({
+        row: row.rowNumber,
+        field: 'date',
+        message: 'Invalid date format'
+      });
+      return;
+    }
+    
     // Create vaccination record with new column mapping
     const vaccinationData = {
-      serialNo: serialNo,
-      date: new Date(row['Date']),
+      serialNo: finalSerialNo,
+      date: dateValue,
       client: client._id,
       farmLocation: row['Location'] || '',
       coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,

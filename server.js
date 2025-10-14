@@ -7,6 +7,8 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+// Load environment variables
+require('dotenv').config({ path: './production.env' });
 require('dotenv').config();
 
 // Check critical environment variables
@@ -229,43 +231,43 @@ if (usersRoutes && selectedAuth) app.use('/api/users', selectedAuth, usersRoutes
 
 // Routes with mixed authentication (some endpoints protected, some not)
 if (parasiteControlRoutes) {
-  console.log('✅ Loading parasite-control routes');
-  app.use('/api/parasite-control', parasiteControlRoutes);
+  console.log('✅ Loading parasite-control routes with authentication');
+  app.use('/api/parasite-control', selectedAuth, parasiteControlRoutes);
 }
 if (vaccinationRoutes) {
-  console.log('✅ Loading vaccination routes');
-  app.use('/api/vaccination', vaccinationRoutes);
+  console.log('✅ Loading vaccination routes with authentication');
+  app.use('/api/vaccination', selectedAuth, vaccinationRoutes);
 }
 if (mobileClinicsRoutes) {
-  console.log('✅ Loading mobile-clinics routes');
-  app.use('/api/mobile-clinics', mobileClinicsRoutes);
+  console.log('✅ Loading mobile-clinics routes with authentication');
+  app.use('/api/mobile-clinics', selectedAuth, mobileClinicsRoutes);
 }
 if (equineHealthRoutes) {
-  console.log('✅ Loading equine-health routes');
-  app.use('/api/equine-health', equineHealthRoutes);
+  console.log('✅ Loading equine-health routes with authentication');
+  app.use('/api/equine-health', selectedAuth, equineHealthRoutes);
 }
 if (laboratoriesRoutes) {
-  console.log('✅ Loading laboratories routes');
-  app.use('/api/laboratories', laboratoriesRoutes);
+  console.log('✅ Loading laboratories routes with authentication');
+  app.use('/api/laboratories', selectedAuth, laboratoriesRoutes);
 }
 if (clientsRoutes) {
-  console.log('✅ Loading clients routes');
-  app.use('/api/clients', clientsRoutes);
+  console.log('✅ Loading clients routes with authentication');
+  app.use('/api/clients', selectedAuth, clientsRoutes);
 }
 if (reportsRoutes) {
-  console.log('✅ Loading reports routes');
-  app.use('/api/reports', reportsRoutes);
+  console.log('✅ Loading reports routes with authentication');
+  app.use('/api/reports', selectedAuth, reportsRoutes);
 }
 if (uploadRoutes) {
-  console.log('✅ Loading upload routes');
-  app.use('/api/upload', uploadRoutes);
+  console.log('✅ Loading upload routes with authentication');
+  app.use('/api/upload', selectedAuth, uploadRoutes);
 }
 if (villagesRoutes && selectedAuth) app.use('/api/villages', selectedAuth, villagesRoutes);
 
 // Import/Export routes
 if (importExportRoutes) {
-  console.log('✅ Loading import-export routes');
-  app.use('/api/import-export', importExportRoutes);
+  console.log('✅ Loading import-export routes with authentication');
+  app.use('/api/import-export', selectedAuth, importExportRoutes);
 }
 
 

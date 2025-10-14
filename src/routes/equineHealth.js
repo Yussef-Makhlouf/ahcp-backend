@@ -96,7 +96,7 @@ const upload = multer({
 router.get('/',
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, startDate, endDate, interventionCategory, supervisor, search } = req.query;
+    const { page = 1, limit = 30, startDate, endDate, interventionCategory, supervisor, search } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
@@ -429,6 +429,107 @@ router.put('/:id',
 
 /**
  * @swagger
+ * /api/equine-health/bulk-delete:
+ *   delete:
+ *     summary: Delete multiple equine health records
+ *     tags: [Equine Health]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of record IDs to delete
+ *     responses:
+ *       200:
+ *         description: Records deleted successfully
+ *       400:
+ *         description: Invalid request
+ */
+router.delete('/bulk-delete',
+  auth,
+  authorize('super_admin', 'section_supervisor'),
+  asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs array is required and must not be empty',
+        error: 'INVALID_REQUEST'
+      });
+    }
+
+    // Validate ObjectIds
+    const mongoose = require('mongoose');
+    const invalidIds = ids.filter(id => !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ObjectId format',
+        error: 'INVALID_OBJECT_ID',
+        invalidIds
+      });
+    }
+
+    try {
+      // Check if records exist before deletion
+      const existingRecords = await EquineHealth.find({ _id: { $in: ids } });
+      const existingIds = existingRecords.map(record => record._id.toString());
+      const notFoundIds = ids.filter(id => !existingIds.includes(id));
+      
+      // If no records found at all, return error
+      if (existingIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No equine health records found to delete',
+          error: 'RESOURCE_NOT_FOUND',
+          notFoundIds: ids,
+          foundCount: 0,
+          requestedCount: ids.length
+        });
+      }
+
+      const result = await EquineHealth.deleteMany({ _id: { $in: existingIds } });
+      
+      // Prepare response with details about what was deleted and what wasn't found
+      const response = {
+        success: true,
+        message: `${result.deletedCount} equine health records deleted successfully`,
+        deletedCount: result.deletedCount,
+        requestedCount: ids.length,
+        foundCount: existingIds.length
+      };
+
+      // Add warning if some records were not found
+      if (notFoundIds.length > 0) {
+        response.warning = `${notFoundIds.length} records were not found and could not be deleted`;
+        response.notFoundIds = notFoundIds;
+        response.notFoundCount = notFoundIds.length;
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting equine health records',
+        error: 'DELETE_ERROR',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/equine-health/{id}:
  *   delete:
  *     summary: Delete equine health record
@@ -474,6 +575,33 @@ router.delete('/:id',
     res.json({
       success: true,
       message: 'Equine health record deleted successfully'
+    });
+  })
+);
+
+
+/**
+ * @swagger
+ * /api/equine-health/delete-all:
+ *   delete:
+ *     summary: Delete all equine health records
+ *     tags: [Equine Health]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All records deleted successfully
+ */
+router.delete('/delete-all',
+  auth,
+  authorize('super_admin'),
+  asyncHandler(async (req, res) => {
+    const result = await EquineHealth.deleteMany({});
+    
+    res.json({
+      success: true,
+      message: `All equine health records deleted successfully`,
+      deletedCount: result.deletedCount
     });
   })
 );

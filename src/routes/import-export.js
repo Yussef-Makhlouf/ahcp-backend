@@ -123,6 +123,7 @@ const parseFileData = async (fileBuffer, fileName) => {
       }
       
       const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      console.log(`📊 CSV Headers:`, headers);
       
       for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim()) {
@@ -131,6 +132,7 @@ const parseFileData = async (fileBuffer, fileName) => {
           headers.forEach((header, index) => {
             row[header] = values[index] || '';
           });
+          console.log(`📊 Row ${i}:`, Object.keys(row), Object.values(row));
           results.push(row);
         }
       }
@@ -150,8 +152,13 @@ const parseFileData = async (fileBuffer, fileName) => {
         throw new Error('Excel file is empty');
       }
       
+      console.log(`📊 Excel Headers:`, Object.keys(jsonData[0] || {}));
+      
       // Convert Excel data to same format as CSV
-      jsonData.forEach(row => results.push(row));
+      jsonData.forEach((row, index) => {
+        console.log(`📊 Excel Row ${index + 1}:`, Object.keys(row), Object.values(row));
+        results.push(row);
+      });
     } else {
       throw new Error('Unsupported file format. Please use CSV or Excel files.');
     }
@@ -176,40 +183,179 @@ const validateImportData = (data, Model) => {
     return errors;
   }
   
+  console.log(`🔍 Total rows to validate: ${data.length}`);
+  console.log(`🔍 First row keys:`, data[0] ? Object.keys(data[0]) : 'No data');
+  
   // Check for required fields based on model
   const requiredFields = getRequiredFields(Model);
+  console.log(`🔍 Required fields for ${Model.modelName}:`, requiredFields);
   
   data.forEach((row, index) => {
+    console.log(`🔍 Validating row ${index + 1}:`, Object.keys(row));
+    console.log(`🔍 Row data sample:`, Object.entries(row).slice(0, 3)); // Show first 3 fields
+    console.log(`🔍 Full row data:`, row); // Show all data for debugging
+    
     requiredFields.forEach(field => {
-      // Check multiple possible field names
+      // Check multiple possible field names including Arabic equivalents
       const fieldVariants = [
         field,
         field.replace(/([A-Z])/g, '_$1').toLowerCase(), // camelCase to snake_case
         field.replace(/_/g, ''), // remove underscores
+        field.toLowerCase(), // lowercase
+        field.replace(/\s+/g, ''), // remove spaces
+        field.replace(/\s+/g, '_'), // spaces to underscores
+        field.replace(/\s+/g, '').toLowerCase(), // remove spaces and lowercase
+        field.replace(/\s+/g, '').toUpperCase(), // remove spaces and uppercase
+        field.replace(/\s+/g, '').charAt(0).toUpperCase() + field.replace(/\s+/g, '').slice(1).toLowerCase(), // Title case
+        // Arabic equivalents
+        ...(field === 'Name' ? ['اسم', 'الاسم', 'اسم المالك', 'اسم المالك'] : []),
+        ...(field === 'Date' ? ['تاريخ', 'التاريخ', 'تاريخ التقرير'] : []),
+        // Common variations
+        ...(field === 'Name' ? ['Client Name', 'clientName', 'client_name', 'owner_name', 'ownerName', 'اسم العميل', 'اسم المالك', 'Name', 'name'] : []),
+        ...(field === 'Date' ? ['Report Date', 'reportDate', 'report_date', 'visit_date', 'visitDate', 'تاريخ التقرير', 'تاريخ الزيارة', 'Date', 'date'] : []),
+        // Excel common column names
+        ...(field === 'Name' ? ['Name', 'name', 'NAME', 'اسم', 'الاسم'] : []),
+        ...(field === 'Date' ? ['Date', 'date', 'DATE', 'تاريخ', 'التاريخ'] : [])
       ];
       
-      const hasField = fieldVariants.some(variant => 
-        row[variant] && row[variant].toString().trim() !== ''
-      );
+      console.log(`🔍 Checking field '${field}' with variants:`, fieldVariants);
+      
+      const hasField = fieldVariants.some(variant => {
+        const value = row[variant];
+        const hasValue = value && value.toString().trim() !== '';
+        console.log(`  - Variant '${variant}': ${value} (hasValue: ${hasValue})`);
+        return hasValue;
+      });
+      
+      // Additional check: look for any field that might contain the required data
+      if (!hasField && (field === 'Name' || field === 'Date')) {
+        console.log(`🔍 Searching for ${field} in all row keys...`);
+        const allKeys = Object.keys(row);
+        const foundKey = allKeys.find(key => {
+          const value = row[key];
+          const hasValue = value && value.toString().trim() !== '';
+          console.log(`  - Checking key '${key}': ${value} (hasValue: ${hasValue})`);
+          return hasValue;
+        });
+        
+        if (foundKey) {
+          console.log(`✅ Found ${field} data in key '${foundKey}'`);
+          // Don't add error if we found the data
+          return;
+        }
+      }
+      
+      // Special handling for Date field - check if we found it but it's not in the first loop
+      if (field === 'Date' && !hasField) {
+        console.log(`🔍 Special Date check - looking for any date-like field...`);
+        const allKeys = Object.keys(row);
+        const dateLikeKeys = allKeys.filter(key => {
+          const value = row[key];
+          if (!value || value.toString().trim() === '') return false;
+          
+          const valueStr = value.toString().trim();
+          console.log(`🔍 Checking key '${key}' for date: ${valueStr}`);
+          // Check if it looks like a date (D-Mon format or other date formats)
+          if (valueStr.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+            console.log(`🔍 Found D-Mon date in key '${key}': ${valueStr}`);
+            return true;
+          }
+          if (valueStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+            console.log(`🔍 Found DD/MM/YYYY date in key '${key}': ${valueStr}`);
+            return true;
+          }
+          if (valueStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            console.log(`🔍 Found YYYY-MM-DD date in key '${key}': ${valueStr}`);
+            return true;
+          }
+          // Don't treat pure numbers as dates unless they're in specific date formats
+          if (valueStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/) || 
+              valueStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/) ||
+              valueStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+            console.log(`🔍 Found valid date format in key '${key}': ${valueStr}`);
+            return true;
+          }
+          return false;
+        });
+        
+        if (dateLikeKeys.length > 0) {
+          console.log(`✅ Found date-like data in keys: ${dateLikeKeys.join(', ')}`);
+          return; // Don't add error
+        }
+      }
       
       if (!hasField) {
-        errors.push({
-          row: index + 1,
-          field: field,
-          message: `Required field '${field}' is missing or empty`
-        });
+        console.log(`❌ Field '${field}' not found in row ${index + 1}`);
+        // Only add error for truly required fields (Date and Name)
+        if (field === 'Date' || field === 'Name') {
+          // Check if we already have an error for this field in this row
+          const existingError = errors.find(err => 
+            err.row === index + 1 && err.field === field
+          );
+          if (!existingError) {
+            errors.push({
+              row: index + 1,
+              field: field,
+              message: `Required field '${field}' is missing or empty`
+            });
+          }
+        }
+      } else {
+        console.log(`✅ Field '${field}' found in row ${index + 1}`);
       }
     });
     
-    // Validate date fields
-    if (row.date) {
-      const dateValue = new Date(row.date);
-      if (isNaN(dateValue.getTime())) {
-        errors.push({
-          row: index + 1,
-          field: 'date',
-          message: 'Invalid date format'
-        });
+    // Only validate date if Date is a required field and we haven't found it yet
+    if (requiredFields.includes('Date')) {
+      const dateFields = ['date', 'Date', 'DATE', 'تاريخ', 'التاريخ'];
+      let hasValidDate = false;
+      
+      dateFields.forEach(dateField => {
+        if (row[dateField] && !hasValidDate) {
+          const dateString = row[dateField].toString().trim();
+          console.log(`🔍 Date validation for ${dateField}: ${dateString}`);
+          
+          // Handle D-Mon format (1-Sep, 2-Sep, etc.)
+          let dateValue;
+          if (dateString.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+            // Convert D-Mon format to proper date
+            const currentYear = new Date().getFullYear();
+            const monthMap = {
+              'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+              'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+              'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+            };
+            const [day, month] = dateString.split('-');
+            const monthNum = monthMap[month];
+            if (monthNum) {
+              dateValue = new Date(`${currentYear}-${monthNum}-${day.padStart(2, '0')}`);
+            } else {
+              dateValue = new Date(dateString);
+            }
+          } else {
+            dateValue = new Date(dateString);
+          }
+          
+          console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
+          if (!isNaN(dateValue.getTime())) {
+            hasValidDate = true;
+          }
+        }
+      });
+      
+      // Only add date error if no valid date found AND we don't already have a date error
+      if (!hasValidDate) {
+        // Check if we already have a date error for this row
+        const existingDateError = errors.find(err => 
+          err.row === index + 1 && err.field === 'Date'
+        );
+        if (!existingDateError) {
+          errors.push({
+            row: index + 1,
+            field: 'Date',
+            message: 'Date is required and must be in valid format'
+          });
+        }
       }
     }
     
@@ -238,32 +384,123 @@ const getRequiredFields = (Model) => {
     case 'Client':
       return ['name', 'nationalId', 'phone'];
     case 'Vaccination':
-      return ['Serial No', 'Date', 'Name'];
+      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
     case 'ParasiteControl':
-      return ['Serial No', 'Date', 'Name'];
+      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
     case 'MobileClinic':
-      return ['Serial No', 'Date', 'Name'];
+      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
     case 'Laboratory':
-      return ['Sample Code', 'Name'];
+      return ['Name']; // Remove Sample Code as it can be auto-generated
     case 'EquineHealth':
-      return ['Serial No', 'Date', 'Name'];
+      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
     default:
       return ['date']; // Default required field
   }
 };
 
-// Helper function to generate CSV content with Arabic headers
-const generateCSV = (data, headers, arabicHeaders = null) => {
+// Helper function to validate field mapping
+const validateFieldMapping = (records, fields) => {
+  if (!records || records.length === 0) {
+    return {
+      isValid: false,
+      message: 'No data found',
+      availableFields: []
+    };
+  }
+
+  const availableFields = Object.keys(records[0]);
+  const clientFields = records[0].client ? Object.keys(records[0].client) : [];
+  const allAvailableFields = [...availableFields, ...clientFields];
+  
+  console.log('📊 Available fields in main record:', availableFields);
+  console.log('📊 Available fields in client:', clientFields);
+  console.log('📊 All available fields:', allAvailableFields);
+  
+  const missingFields = fields.filter(field => !allAvailableFields.includes(field));
+  
+  return {
+    isValid: missingFields.length === 0,
+    availableFields: allAvailableFields,
+    missingFields,
+    message: missingFields.length > 0 ? 
+      `Missing fields: ${missingFields.join(', ')}` : 
+      'All fields available'
+  };
+};
+
+// Helper function to generate CSV content with English headers
+const generateCSV = (data, headers) => {
   if (!data || data.length === 0) {
-    const headerRow = arabicHeaders ? arabicHeaders.join(',') : headers.join(',');
+    const headerRow = headers.join(',');
     return headerRow;
   }
   
-  // Use Arabic headers if provided, otherwise use original headers
-  const csvHeaders = arabicHeaders ? arabicHeaders.join(',') : headers.join(',');
+  // Use English headers (same as template headers)
+  const csvHeaders = headers.join(',');
   const csvRows = data.map(row => 
     headers.map(header => {
       let value = row[header] || '';
+      
+      // Handle animal count fields from nested objects
+      if (value === '' || value === undefined) {
+        if (header === 'sheep' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.total || 0;
+        } else if (header === 'sheepFemale' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.female || 0;
+        } else if (header === 'sheepVaccinated' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.vaccinated || 0;
+        } else if (header === 'goats' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.total || 0;
+        } else if (header === 'goatsFemale' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.female || 0;
+        } else if (header === 'goatsVaccinated' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.vaccinated || 0;
+        } else if (header === 'camel' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.total || 0;
+        } else if (header === 'camelFemale' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.female || 0;
+        } else if (header === 'camelVaccinated' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.vaccinated || 0;
+        } else if (header === 'cattle' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.total || 0;
+        } else if (header === 'cattleFemale' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.female || 0;
+        } else if (header === 'cattleVaccinated' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.vaccinated || 0;
+        } else if (header === 'herdNumber' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.total || 0) + (row.herdCounts.goats?.total || 0) + (row.herdCounts.camel?.total || 0) + (row.herdCounts.cattle?.total || 0);
+        } else if (header === 'herdFemales' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.female || 0) + (row.herdCounts.goats?.female || 0) + (row.herdCounts.camel?.female || 0) + (row.herdCounts.cattle?.female || 0);
+        } else if (header === 'totalVaccinated' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.vaccinated || 0) + (row.herdCounts.goats?.vaccinated || 0) + (row.herdCounts.camel?.vaccinated || 0) + (row.herdCounts.cattle?.vaccinated || 0);
+        }
+        // Handle animalCounts for Mobile Clinic
+        else if (header === 'sheep' && row.animalCounts && row.animalCounts.sheep) {
+          value = row.animalCounts.sheep || 0;
+        } else if (header === 'goats' && row.animalCounts && row.animalCounts.goats) {
+          value = row.animalCounts.goats || 0;
+        } else if (header === 'camel' && row.animalCounts && row.animalCounts.camel) {
+          value = row.animalCounts.camel || 0;
+        } else if (header === 'cattle' && row.animalCounts && row.animalCounts.cattle) {
+          value = row.animalCounts.cattle || 0;
+        } else if (header === 'horse' && row.animalCounts && row.animalCounts.horse) {
+          value = row.animalCounts.horse || 0;
+        }
+        // Handle speciesCounts for Laboratory
+        else if (header === 'sheep' && row.speciesCounts && row.speciesCounts.sheep) {
+          value = row.speciesCounts.sheep || 0;
+        } else if (header === 'goats' && row.speciesCounts && row.speciesCounts.goats) {
+          value = row.speciesCounts.goats || 0;
+        } else if (header === 'camel' && row.speciesCounts && row.speciesCounts.camel) {
+          value = row.speciesCounts.camel || 0;
+        } else if (header === 'cattle' && row.speciesCounts && row.speciesCounts.cattle) {
+          value = row.speciesCounts.cattle || 0;
+        } else if (header === 'horse' && row.speciesCounts && row.speciesCounts.horse) {
+          value = row.speciesCounts.horse || 0;
+        } else if (header === 'otherSpecies' && row.speciesCounts && row.speciesCounts.other) {
+          value = row.speciesCounts.other || '';
+        }
+      }
       
       // Handle nested objects (like client data)
       if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -271,6 +508,9 @@ const generateCSV = (data, headers, arabicHeaders = null) => {
           value = value.name;
         } else if (value._id) {
           value = value._id.toString();
+        } else if (header.includes('Counts') || header.includes('Herd') || header.includes('Animal')) {
+          // Skip nested animal count objects - we now have separate fields
+          value = '';
         } else {
           value = JSON.stringify(value);
         }
@@ -311,13 +551,12 @@ const generateCSV = (data, headers, arabicHeaders = null) => {
   return [csvHeaders, ...csvRows].join('\n');
 };
 
-// Helper function to generate Excel content with Arabic headers
-const generateExcel = (data, headers, arabicHeaders = null) => {
+// Helper function to generate Excel content with English headers
+const generateExcel = (data, headers) => {
   if (!data || data.length === 0) {
     // Create empty worksheet with headers only
     const emptyData = [{}];
-    const displayHeaders = arabicHeaders || headers;
-    displayHeaders.forEach(header => {
+    headers.forEach(header => {
       emptyData[0][header] = '';
     });
     const worksheet = XLSX.utils.json_to_sheet(emptyData);
@@ -326,12 +565,121 @@ const generateExcel = (data, headers, arabicHeaders = null) => {
     return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   }
 
+  console.log('📊 generateExcel called with:', {
+    dataLength: data ? data.length : 0,
+    headers: headers
+  });
+
   // Process data to flatten nested objects and arrays
-  const processedData = data.map(row => {
+  const processedData = data.map((row, rowIndex) => {
     const processedRow = {};
     
     headers.forEach((header, index) => {
       let value = row[header];
+      
+      // Check if field exists in client object
+      if (value === undefined && row.client && row.client[header] !== undefined) {
+        value = row.client[header];
+        console.log(`📊 Found field ${header} in client data:`, value);
+      }
+      
+      // Handle animal count fields from nested objects
+      if (value === undefined || value === '') {
+        console.log(`🔍 Looking for ${header} in row data:`, {
+          hasHerdCounts: !!row.herdCounts,
+          hasAnimalCounts: !!row.animalCounts,
+          hasSpeciesCounts: !!row.speciesCounts,
+          herdCounts: row.herdCounts,
+          animalCounts: row.animalCounts,
+          speciesCounts: row.speciesCounts
+        });
+        
+        if (header === 'sheep' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.total || 0;
+          console.log(`✅ Found sheep in herdCounts: ${value}`);
+        } else if (header === 'sheepFemale' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.female || 0;
+          console.log(`✅ Found sheepFemale in herdCounts: ${value}`);
+        } else if (header === 'sheepVaccinated' && row.herdCounts && row.herdCounts.sheep) {
+          value = row.herdCounts.sheep.vaccinated || 0;
+          console.log(`✅ Found sheepVaccinated in herdCounts: ${value}`);
+        } else if (header === 'goats' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.total || 0;
+          console.log(`✅ Found goats in herdCounts: ${value}`);
+        } else if (header === 'goatsFemale' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.female || 0;
+          console.log(`✅ Found goatsFemale in herdCounts: ${value}`);
+        } else if (header === 'goatsVaccinated' && row.herdCounts && row.herdCounts.goats) {
+          value = row.herdCounts.goats.vaccinated || 0;
+          console.log(`✅ Found goatsVaccinated in herdCounts: ${value}`);
+        } else if (header === 'camel' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.total || 0;
+          console.log(`✅ Found camel in herdCounts: ${value}`);
+        } else if (header === 'camelFemale' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.female || 0;
+          console.log(`✅ Found camelFemale in herdCounts: ${value}`);
+        } else if (header === 'camelVaccinated' && row.herdCounts && row.herdCounts.camel) {
+          value = row.herdCounts.camel.vaccinated || 0;
+          console.log(`✅ Found camelVaccinated in herdCounts: ${value}`);
+        } else if (header === 'cattle' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.total || 0;
+          console.log(`✅ Found cattle in herdCounts: ${value}`);
+        } else if (header === 'cattleFemale' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.female || 0;
+          console.log(`✅ Found cattleFemale in herdCounts: ${value}`);
+        } else if (header === 'cattleVaccinated' && row.herdCounts && row.herdCounts.cattle) {
+          value = row.herdCounts.cattle.vaccinated || 0;
+          console.log(`✅ Found cattleVaccinated in herdCounts: ${value}`);
+        } else if (header === 'herdNumber' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.total || 0) + (row.herdCounts.goats?.total || 0) + (row.herdCounts.camel?.total || 0) + (row.herdCounts.cattle?.total || 0);
+          console.log(`✅ Calculated herdNumber: ${value}`);
+        } else if (header === 'herdFemales' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.female || 0) + (row.herdCounts.goats?.female || 0) + (row.herdCounts.camel?.female || 0) + (row.herdCounts.cattle?.female || 0);
+          console.log(`✅ Calculated herdFemales: ${value}`);
+        } else if (header === 'totalVaccinated' && row.herdCounts) {
+          value = (row.herdCounts.sheep?.vaccinated || 0) + (row.herdCounts.goats?.vaccinated || 0) + (row.herdCounts.camel?.vaccinated || 0) + (row.herdCounts.cattle?.vaccinated || 0);
+          console.log(`✅ Calculated totalVaccinated: ${value}`);
+        }
+        // Handle animalCounts for Mobile Clinic
+        else if (header === 'sheep' && row.animalCounts && row.animalCounts.sheep) {
+          value = row.animalCounts.sheep || 0;
+          console.log(`✅ Found sheep in animalCounts: ${value}`);
+        } else if (header === 'goats' && row.animalCounts && row.animalCounts.goats) {
+          value = row.animalCounts.goats || 0;
+          console.log(`✅ Found goats in animalCounts: ${value}`);
+        } else if (header === 'camel' && row.animalCounts && row.animalCounts.camel) {
+          value = row.animalCounts.camel || 0;
+          console.log(`✅ Found camel in animalCounts: ${value}`);
+        } else if (header === 'cattle' && row.animalCounts && row.animalCounts.cattle) {
+          value = row.animalCounts.cattle || 0;
+          console.log(`✅ Found cattle in animalCounts: ${value}`);
+        } else if (header === 'horse' && row.animalCounts && row.animalCounts.horse) {
+          value = row.animalCounts.horse || 0;
+          console.log(`✅ Found horse in animalCounts: ${value}`);
+        }
+        // Handle speciesCounts for Laboratory
+        else if (header === 'sheep' && row.speciesCounts && row.speciesCounts.sheep) {
+          value = row.speciesCounts.sheep || 0;
+          console.log(`✅ Found sheep in speciesCounts: ${value}`);
+        } else if (header === 'goats' && row.speciesCounts && row.speciesCounts.goats) {
+          value = row.speciesCounts.goats || 0;
+          console.log(`✅ Found goats in speciesCounts: ${value}`);
+        } else if (header === 'camel' && row.speciesCounts && row.speciesCounts.camel) {
+          value = row.speciesCounts.camel || 0;
+          console.log(`✅ Found camel in speciesCounts: ${value}`);
+        } else if (header === 'cattle' && row.speciesCounts && row.speciesCounts.cattle) {
+          value = row.speciesCounts.cattle || 0;
+          console.log(`✅ Found cattle in speciesCounts: ${value}`);
+        } else if (header === 'horse' && row.speciesCounts && row.speciesCounts.horse) {
+          value = row.speciesCounts.horse || 0;
+          console.log(`✅ Found horse in speciesCounts: ${value}`);
+        } else if (header === 'otherSpecies' && row.speciesCounts && row.speciesCounts.other) {
+          value = row.speciesCounts.other || '';
+          console.log(`✅ Found otherSpecies in speciesCounts: ${value}`);
+        } else {
+          console.log(`❌ Field ${header} not found in any nested object`);
+        }
+      }
       
       // Handle nested objects (like client data)
       if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -339,6 +687,9 @@ const generateExcel = (data, headers, arabicHeaders = null) => {
           value = value.name;
         } else if (value._id) {
           value = value._id.toString();
+        } else if (header.includes('Counts') || header.includes('Herd') || header.includes('Animal')) {
+          // Skip nested animal count objects - we now have separate fields
+          value = '';
         } else {
           value = JSON.stringify(value);
         }
@@ -367,20 +718,25 @@ const generateExcel = (data, headers, arabicHeaders = null) => {
       // Convert to string and clean up
       value = String(value).trim();
       
-      // Use Arabic header as key if available
-      const displayHeader = arabicHeaders ? arabicHeaders[index] : header;
-      processedRow[displayHeader] = value;
+      // Use English header as key (same as template headers)
+      processedRow[header] = value;
+      
+      if (rowIndex === 0) {
+        console.log(`📊 Field ${header}: ${value} (type: ${typeof value})`);
+      }
     });
     
     return processedRow;
   });
 
+  console.log('📊 Processed data:', processedData[0]);
+  console.log('📊 Processed data keys:', Object.keys(processedData[0]));
+
   // Create worksheet with processed data
   const worksheet = XLSX.utils.json_to_sheet(processedData);
   
   // Set column widths for better readability
-  const displayHeaders = arabicHeaders || headers;
-  const colWidths = displayHeaders.map(header => ({
+  const colWidths = headers.map(header => ({
     wch: Math.max(header.length, 15)
   }));
   worksheet['!cols'] = colWidths;
@@ -415,6 +771,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
       }
       
       console.log(`📊 Starting export for ${filename} with filter:`, queryFilter);
+      console.log(`📊 Requested fields:`, fields);
       
       // Optimized query with lean() for better performance
       let query = Model.find(queryFilter)
@@ -426,8 +783,9 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
       try {
         const sampleDoc = await Model.findOne(queryFilter).lean();
         if (sampleDoc && sampleDoc.client) {
+          console.log('📊 Client field found, adding populate');
           query = Model.find(queryFilter)
-            .populate('client', 'name nationalId phone village detailedAddress')
+            .populate('client', 'name nationalId phone email village detailedAddress status totalAnimals')
             .sort({ createdAt: -1 })
             .limit(parseInt(limit) || 1000)
             .lean();
@@ -440,17 +798,38 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
       console.log(`📊 Exporting ${filename} with format: ${format}`);
       const records = await query;
       console.log(`📊 Found ${records.length} records to export`);
+      
+      // Debug: Log first record structure if records exist
+      if (records.length > 0) {
+        console.log('📊 First record structure:', Object.keys(records[0]));
+        console.log('📊 First record data:', JSON.stringify(records[0], null, 2));
+        
+        if (records[0].client) {
+          console.log('📊 Client data structure:', Object.keys(records[0].client));
+          console.log('📊 Client data:', JSON.stringify(records[0].client, null, 2));
+        }
+        
+        // Check field mapping using validation function
+        const validation = validateFieldMapping(records, fields);
+        console.log('📊 Field mapping validation:', validation);
+        
+        if (!validation.isValid) {
+          console.log('⚠️ Field mapping issues:', validation.message);
+        } else {
+          console.log('✅ All requested fields are available');
+        }
+      }
 
       // If no records found, still create a file with headers
       if (records.length === 0) {
         console.log('⚠️ No records found, creating empty file with headers');
         if (format === 'csv') {
-          const csvContent = generateCSV([], fields, fields.map(field => arabicHeaders[field] || field));
+          const csvContent = generateCSV([], fields);
           res.setHeader('Content-Type', 'text/csv; charset=utf-8');
           res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
           res.send(csvContent);
         } else {
-          const excelBuffer = generateExcel([], fields, fields.map(field => arabicHeaders[field] || field));
+          const excelBuffer = generateExcel([], fields);
           res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
           res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
           res.send(excelBuffer);
@@ -458,17 +837,15 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
         return;
       }
 
-      // Use Arabic headers for better user experience
-      const arabicFields = fields.map(field => arabicHeaders[field] || field);
-
+      // Use English headers (same as template headers)
       if (format === 'csv') {
-        const csvContent = generateCSV(records, fields, arabicFields);
+        const csvContent = generateCSV(records, fields);
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
         res.send(csvContent);
       } else {
         // Default to Excel format
-        const excelBuffer = generateExcel(records, fields, arabicFields);
+        const excelBuffer = generateExcel(records, fields);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
         res.send(excelBuffer);
@@ -751,30 +1128,62 @@ const processImport = async (req, res, file, user, Model, processRowFunction) =>
 const findOrCreateClient = async (row, userId) => {
   let client;
   
-  if (row.clientNationalId || row.clientId) {
-    const nationalId = row.clientNationalId || row.clientId;
-    client = await Client.findOne({ nationalId });
+  console.log(`🔍 Looking for client in row:`, {
+    clientNationalId: row.clientNationalId,
+    clientId: row.clientId,
+    clientName: row.clientName,
+    client_name: row.client_name,
+    Name: row.Name,
+    ID: row.ID
+  });
+  
+  // Check multiple possible field names for client data
+  const clientName = row.clientName || row.client_name || row.Name || row.name;
+  const clientId = row.clientNationalId || row.clientId || row.ID || row.id;
+  const clientPhone = row.clientPhone || row.client_phone || row.Phone || row.phone;
+  const clientVillage = row.clientVillage || row.client_village || row.Location || row.location;
+  const clientAddress = row.clientAddress || row.client_address || row.Location || row.location;
+  
+  console.log(`🔍 Extracted client data:`, {
+    clientName,
+    clientId,
+    clientPhone,
+    clientVillage,
+    clientAddress
+  });
+  
+  if (clientId) {
+    client = await Client.findOne({ nationalId: clientId });
+    console.log(`🔍 Found existing client by ID:`, client ? 'Yes' : 'No');
   }
   
-  if (!client && (row.clientName || row.client_name)) {
-    const clientName = row.clientName || row.client_name;
-    const nationalId = row.clientNationalId || row.clientId || `TEMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const phone = row.clientPhone || row.client_phone || '';
-    const village = row.clientVillage || row.client_village || '';
-    const detailedAddress = row.clientAddress || row.client_address || '';
+  if (!client && clientName) {
+    console.log(`🔍 Creating new client with name: ${clientName}`);
+    const nationalId = clientId || `TEMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    client = new Client({
-      name: clientName,
-      nationalId: nationalId,
-      phone: phone,
-      village: village,
-      detailedAddress: detailedAddress,
-      status: 'نشط',
-      animals: [],
-      availableServices: [],
-      createdBy: userId
-    });
-    await client.save();
+    try {
+      client = new Client({
+        name: clientName,
+        nationalId: nationalId,
+        phone: clientPhone || '',
+        village: clientVillage || '',
+        detailedAddress: clientAddress || '',
+        status: 'نشط',
+        animals: [],
+        availableServices: [],
+        createdBy: userId
+      });
+      await client.save();
+      console.log(`✅ Successfully created client: ${client.name} (${client.nationalId})`);
+    } catch (error) {
+      console.error(`❌ Error creating client:`, error);
+      throw new Error(`Failed to create client: ${error.message}`);
+    }
+  }
+  
+  if (!client) {
+    console.log(`❌ No client found or created`);
+    throw new Error('Client not found and could not be created - missing required client information');
   }
   
   return client;
@@ -795,6 +1204,39 @@ const parseJsonField = (value, defaultValue = []) => {
   }
 };
 
+// Enhanced date parsing function to handle D-Mon format
+const parseDateField = (dateString) => {
+  if (!dateString || dateString.toString().trim() === '') {
+    return null;
+  }
+  
+  const dateStr = dateString.toString().trim();
+  console.log(`🔍 Parsing date: ${dateStr}`);
+  
+  // Handle D-Mon format (1-Sep, 2-Sep, etc.)
+  if (dateStr.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+    const currentYear = new Date().getFullYear();
+    const monthMap = {
+      'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+      'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+      'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+    };
+    const [day, month] = dateStr.split('-');
+    const monthNum = monthMap[month];
+    if (monthNum) {
+      const fullDate = `${currentYear}-${monthNum}-${day.padStart(2, '0')}`;
+      const dateValue = new Date(fullDate);
+      console.log(`🔍 Converted D-Mon format: ${dateStr} -> ${fullDate} -> ${dateValue}`);
+      return dateValue;
+    }
+  }
+  
+  // Handle other date formats
+  const dateValue = new Date(dateStr);
+  console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
+  return dateValue;
+};
+
 // Process row functions for each model with improved validation
 const processVaccinationRow = async (row, userId, errors) => {
   try {
@@ -809,21 +1251,33 @@ const processVaccinationRow = async (row, userId, errors) => {
 
     // Find or create client using new field names
     const client = await findOrCreateClient({
-      name: row['Name'] || row.name || row.clientName,
-      nationalId: row['ID'] || row.id || row.nationalId,
-      phone: row['Phone'] || row.phone,
-      village: row['Location'] || row.location,
-      detailedAddress: row['Location'] || row.location
+      Name: row['Name'],
+      ID: row['ID'],
+      Phone: row['Phone'],
+      Location: row['Location'],
+      name: row.name,
+      id: row.id,
+      phone: row.phone,
+      location: row.location,
+      clientName: row.clientName,
+      clientId: row.clientId,
+      clientPhone: row.clientPhone,
+      clientVillage: row.clientVillage,
+      clientAddress: row.clientAddress
     }, userId);
     
     if (!client) {
       throw new Error('Client not found and could not be created');
     }
 
-    // Validate date
-    const dateValue = new Date(row['Date'] || row.date);
-    if (isNaN(dateValue.getTime())) {
-      throw new Error('Invalid date format');
+    // Validate date - handle multiple date formats using enhanced parser
+    const dateString = row['Date'] || row.date || row.DATE;
+    console.log(`🔍 Processing date: ${dateString}`);
+    
+    const dateValue = parseDateField(dateString);
+    
+    if (!dateValue || isNaN(dateValue.getTime())) {
+      throw new Error(`Invalid date format: ${dateString}`);
     }
 
     // Create vaccination record with new field names
@@ -831,44 +1285,28 @@ const processVaccinationRow = async (row, userId, errors) => {
       serialNo: row['Serial No'] || row.serialNo || `VAC-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       date: dateValue,
       client: client._id,
-      farmLocation: row['Location'] || row.location || '',
+      farmLocation: row['Location'] || row.location || 'N/A',
       supervisor: row['Supervisor'] || row.supervisor || '',
       team: row['Team'] || row.team || '',
-      vehicleNo: row.vehicleNo || '',
+      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
       vaccineType: row['Vaccine'] || row.vaccineType || '',
       vaccineCategory: row['Category'] || row.vaccineCategory || 'Preventive',
-      herdCounts: {
-        sheep: {
-          total: parseInt(row['Sheep'] || row.sheep || 0),
-          young: parseInt(row.sheepYoung || 0),
-          female: parseInt(row['F. Sheep'] || row.sheepFemale || 0),
-          vaccinated: parseInt(row['Vaccinated Sheep'] || row.sheepVaccinated || 0)
-        },
-        goats: {
-          total: parseInt(row['Goats'] || row.goats || 0),
-          young: parseInt(row.goatsYoung || 0),
-          female: parseInt(row['F. Goats'] || row.goatsFemale || 0),
-          vaccinated: parseInt(row['Vaccinated Goats'] || row.goatsVaccinated || 0)
-        },
-        camel: {
-          total: parseInt(row['Camel'] || row.camel || 0),
-          young: parseInt(row.camelYoung || 0),
-          female: parseInt(row['F. Camel'] || row.camelFemale || 0),
-          vaccinated: parseInt(row['Vaccinated Camels'] || row.camelVaccinated || 0)
-        },
-        cattle: {
-          total: parseInt(row['Cattle'] || row.cattle || 0),
-          young: parseInt(row.cattleYoung || 0),
-          female: parseInt(row['F. Cattle'] || row.cattleFemale || 0),
-          vaccinated: parseInt(row['Vaccinated Cattle'] || row.cattleVaccinated || 0)
-        },
-        horse: {
-          total: parseInt(row.horse || 0),
-          young: parseInt(row.horseYoung || 0),
-          female: parseInt(row.horseFemale || 0),
-          vaccinated: parseInt(row.horseVaccinated || 0)
-        }
-      },
+      // Animal counts as separate fields for better display
+      sheep: parseInt(row['Sheep'] || row.sheep || 0),
+      sheepFemale: parseInt(row['F. Sheep'] || row.sheepFemale || 0),
+      sheepVaccinated: parseInt(row['Vaccinated Sheep'] || row.sheepVaccinated || 0),
+      goats: parseInt(row['Goats'] || row.goats || 0),
+      goatsFemale: parseInt(row['F. Goats'] || row.goatsFemale || 0),
+      goatsVaccinated: parseInt(row['Vaccinated Goats'] || row.goatsVaccinated || 0),
+      camel: parseInt(row['Camel'] || row.camel || 0),
+      camelFemale: parseInt(row['F. Camel'] || row.camelFemale || 0),
+      camelVaccinated: parseInt(row['Vaccinated Camels'] || row.camelVaccinated || 0),
+      cattle: parseInt(row['Cattle'] || row.cattle || 0),
+      cattleFemale: parseInt(row['F. Cattle'] || row.cattleFemale || 0),
+      cattleVaccinated: parseInt(row['Vaccinated Cattle'] || row.cattleVaccinated || 0),
+      herdNumber: parseInt(row['Herd Number'] || row.herdNumber || 0),
+      herdFemales: parseInt(row['Herd Females'] || row.herdFemales || 0),
+      totalVaccinated: parseInt(row['Total Vaccinated'] || row.totalVaccinated || 0),
       herdHealth: row['Herd Health'] || row.herdHealth || 'Healthy',
       animalsHandling: row['Animals Handling'] || row.animalsHandling || 'Easy',
       labours: row['Labours'] || row.labours || 'Available',
@@ -893,11 +1331,19 @@ const processParasiteControlRow = async (row, userId, errors) => {
   try {
     // Find or create client using new field names
     const client = await findOrCreateClient({
-      name: row['Name'] || row.name || row.clientName,
-      nationalId: row['ID'] || row.id || row.nationalId,
-      phone: row['Phone'] || row.phone,
-      village: row['Location'] || row.location,
-      detailedAddress: row['Location'] || row.location
+      Name: row['Name'],
+      ID: row['ID'],
+      Phone: row['Phone'],
+      Location: row['Location'],
+      name: row.name,
+      id: row.id,
+      phone: row.phone,
+      location: row.location,
+      clientName: row.clientName,
+      clientId: row.clientId,
+      clientPhone: row.clientPhone,
+      clientVillage: row.clientVillage,
+      clientAddress: row.clientAddress
     }, userId);
     
     if (!client) {
@@ -909,52 +1355,53 @@ const processParasiteControlRow = async (row, userId, errors) => {
       serialNo: row['Serial No'] || row.serialNo || `PAR-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       date: new Date(row['Date'] || row.date),
       client: client._id,
-      herdLocation: row['Location'] || row.location || '',
+      herdLocation: row['Location'] || row.location || 'N/A',
       supervisor: row['Supervisor'] || row.supervisor || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || '',
-      herdCounts: {
-        sheep: {
-          total: parseInt(row['Total Sheep'] || row.sheepTotal || 0),
-          young: parseInt(row['Young sheep'] || row.sheepYoung || 0),
-          female: parseInt(row['Female Sheep'] || row.sheepFemale || 0),
-          treated: parseInt(row['Treated Sheep'] || row.sheepTreated || 0)
-        },
-        goats: {
-          total: parseInt(row['Total Goats'] || row.goatsTotal || 0),
-          young: parseInt(row['Young Goats'] || row.goatsYoung || 0),
-          female: parseInt(row['Female Goats'] || row.goatsFemale || 0),
-          treated: parseInt(row['Treated Goats'] || row.goatsTreated || 0)
-        },
-        camel: {
-          total: parseInt(row['Total Camel'] || row.camelTotal || 0),
-          young: parseInt(row['Young Camels'] || row.camelYoung || 0),
-          female: parseInt(row['Female Camels'] || row.camelFemale || 0),
-          treated: parseInt(row['Treated Camels'] || row.camelTreated || 0)
-        },
-        cattle: {
-          total: parseInt(row['Total Cattle'] || row.cattleTotal || 0),
-          young: parseInt(row['Young Cattle'] || row.cattleYoung || 0),
-          female: parseInt(row['Female Cattle'] || row.cattleFemale || 0),
-          treated: parseInt(row['Treated Cattle'] || row.cattleTreated || 0)
-        },
-        horse: {
-          total: parseInt(row.horseTotal || 0),
-          young: parseInt(row.horseYoung || 0),
-          female: parseInt(row.horseFemale || 0),
-          treated: parseInt(row.horseTreated || 0)
-        }
-      },
+      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
+      // Animal counts as separate fields for better display
+      sheepTotal: parseInt(row['Total Sheep'] || row.sheepTotal || 0),
+      sheepYoung: parseInt(row['Young sheep'] || row.sheepYoung || 0),
+      sheepFemale: parseInt(row['Female Sheep'] || row.sheepFemale || 0),
+      sheepTreated: parseInt(row['Treated Sheep'] || row.sheepTreated || 0),
+      goatsTotal: parseInt(row['Total Goats'] || row.goatsTotal || 0),
+      goatsYoung: parseInt(row['Young Goats'] || row.goatsYoung || 0),
+      goatsFemale: parseInt(row['Female Goats'] || row.goatsFemale || 0),
+      goatsTreated: parseInt(row['Treated Goats'] || row.goatsTreated || 0),
+      camelTotal: parseInt(row['Total Camel'] || row.camelTotal || 0),
+      camelYoung: parseInt(row['Young Camels'] || row.camelYoung || 0),
+      camelFemale: parseInt(row['Female Camels'] || row.camelFemale || 0),
+      camelTreated: parseInt(row['Treated Camels'] || row.camelTreated || 0),
+      cattleTotal: parseInt(row['Total Cattle'] || row.cattleTotal || 0),
+      cattleYoung: parseInt(row['Young Cattle'] || row.cattleYoung || 0),
+      cattleFemale: parseInt(row['Female Cattle'] || row.cattleFemale || 0),
+      cattleTreated: parseInt(row['Treated Cattle'] || row.cattleTreated || 0),
+      horseTotal: parseInt(row.horseTotal || 0),
+      horseYoung: parseInt(row.horseYoung || 0),
+      horseFemale: parseInt(row.horseFemale || 0),
+      horseTreated: parseInt(row.horseTreated || 0),
+      totalHerd: parseInt(row['Total Herd'] || row.totalHerd || 0),
+      totalYoung: parseInt(row['Total Young'] || row.totalYoung || 0),
+      totalFemale: parseInt(row['Total Female'] || row.totalFemale || 0),
+      totalTreated: parseInt(row['Total Treated'] || row.totalTreated || 0),
       insecticide: {
-        type: row['Insecticide Used'] || row['Insecticide'] || row.insecticideType || '',
-        method: row['Type'] || row.insecticideMethod || '',
+        type: row['Insecticide Used'] || row['Insecticide'] || row.insecticideType || 'N/A',
+        method: row['Type'] || row.insecticideMethod || 'N/A',
         volumeMl: parseInt(row['Volume (ml)'] || row['Volume'] || row.insecticideVolume || 0),
-        status: row['Status'] || row.insecticideStatus || 'Sprayed',
-        category: row['Category'] || row.insecticideCategory || ''
+        status: (() => {
+          const statusValue = row['Status'] || row.insecticideStatus || 'Sprayed';
+          const lowerStatus = statusValue.toLowerCase();
+          if (lowerStatus === 'sprayed' || lowerStatus === 'yes' || lowerStatus === 'true' || lowerStatus === '1') {
+            return 'Sprayed';
+          } else {
+            return 'Not Sprayed';
+          }
+        })(),
+        category: row['Category'] || row.insecticideCategory || 'N/A'
       },
       animalBarnSizeSqM: parseInt(row['Size (sqM)'] || row.animalBarnSize || 0),
-      breedingSites: row.breedingSites || '',
+      breedingSites: row.breedingSites || 'N/A',
       parasiteControlVolume: parseInt(row['Volume (ml)'] || row['Volume'] || row.parasiteControlVolume || 0),
-      parasiteControlStatus: row['Status'] || row.parasiteControlStatus || '',
+      parasiteControlStatus: row['Status'] || row.parasiteControlStatus || 'N/A',
       herdHealthStatus: row['Herd Health Status'] || row.herdHealthStatus || 'Healthy',
       complyingToInstructions: row['Complying to instructions'] === 'true' || row.complyingToInstructions === 'true',
       request: {
@@ -977,11 +1424,19 @@ const processMobileClinicRow = async (row, userId, errors) => {
   try {
     // Find or create client using new field names
     const client = await findOrCreateClient({
-      name: row['Name'] || row.name,
-      nationalId: row['ID'] || row.id || row.nationalId,
-      phone: row['Phone'] || row.phone,
-      village: row['Location'] || row.location,
-      detailedAddress: row['Location'] || row.location
+      Name: row['Name'],
+      ID: row['ID'],
+      Phone: row['Phone'],
+      Location: row['Location'],
+      name: row.name,
+      id: row.id,
+      phone: row.phone,
+      location: row.location,
+      clientName: row.clientName,
+      clientId: row.clientId,
+      clientPhone: row.clientPhone,
+      clientVillage: row.clientVillage,
+      clientAddress: row.clientAddress
     }, userId);
     
     if (!client) {
@@ -993,16 +1448,15 @@ const processMobileClinicRow = async (row, userId, errors) => {
       serialNo: row['Serial No'] || row.serialNo || `MC-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       date: new Date(row['Date'] || row.date),
       client: client._id,
-      farmLocation: row['Location'] || row.location || '',
+      farmLocation: row['Location'] || row.location || 'N/A',
       supervisor: row['Supervisor'] || row.supervisor || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || '',
-      animalCounts: {
-        sheep: parseInt(row['Sheep'] || row.sheep || 0),
-        goats: parseInt(row['Goats'] || row.goats || 0),
-        camel: parseInt(row['Camel'] || row.camel || 0),
-        cattle: parseInt(row['Cattle'] || row.cattle || 0),
-        horse: parseInt(row['Horse'] || row.horse || 0)
-      },
+      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
+      // Animal counts as separate fields for better display
+      sheep: parseInt(row['Sheep'] || row.sheep || 0),
+      goats: parseInt(row['Goats'] || row.goats || 0),
+      camel: parseInt(row['Camel'] || row.camel || 0),
+      cattle: parseInt(row['Cattle'] || row.cattle || 0),
+      horse: parseInt(row['Horse'] || row.horse || 0),
       diagnosis: row['Diagnosis'] || row.diagnosis || '',
       interventionCategory: row['Intervention Category'] || row.interventionCategory || 'Routine',
       treatment: row['Treatment'] || row.treatment || '',
@@ -1036,15 +1490,14 @@ const processLaboratoryRow = async (row, userId, errors) => {
       clientId: row['ID'] || row.clientId || '',
       clientBirthDate: row['Birth Date'] ? new Date(row['Birth Date']) : undefined,
       clientPhone: row['phone'] || row.clientPhone || '',
-      farmLocation: row['Location'] || row.location || '',
-      speciesCounts: {
-        sheep: parseInt(row['Sheep'] || row.sheepCount || 0),
-        goats: parseInt(row['Goats'] || row.goatsCount || 0),
-        camel: parseInt(row['Camel'] || row.camelCount || 0),
-        cattle: parseInt(row['Cattle'] || row.cattleCount || 0),
-        horse: parseInt(row['Horse'] || row.horseCount || 0),
-        other: row['Other (Species)'] || row.otherSpecies || ''
-      },
+      farmLocation: row['Location'] || row.location || 'N/A',
+      // Animal counts as separate fields for better display
+      sheep: parseInt(row['Sheep'] || row.sheepCount || 0),
+      goats: parseInt(row['Goats'] || row.goatsCount || 0),
+      camel: parseInt(row['Camel'] || row.camelCount || 0),
+      cattle: parseInt(row['Cattle'] || row.cattleCount || 0),
+      horse: parseInt(row['Horse'] || row.horseCount || 0),
+      otherSpecies: row['Other (Species)'] || row.otherSpecies || '',
       collector: row['Sample Collector'] || row.collector || '',
       sampleType: row['Sample Type'] || row.sampleType || 'Blood',
       sampleNumber: row['Samples Number'] || row.sampleNumber || '',
@@ -1075,21 +1528,33 @@ const processEquineHealthRow = async (row, userId, errors) => {
 
     // Find or create client using new field names
     const client = await findOrCreateClient({
-      name: row['Name'] || row.name || row.clientName,
-      nationalId: row['ID'] || row.id || row.nationalId,
-      phone: row['Phone'] || row.phone,
-      village: row['Location'] || row.location,
-      detailedAddress: row['Location'] || row.location
+      Name: row['Name'],
+      ID: row['ID'],
+      Phone: row['Phone'],
+      Location: row['Location'],
+      name: row.name,
+      id: row.id,
+      phone: row.phone,
+      location: row.location,
+      clientName: row.clientName,
+      clientId: row.clientId,
+      clientPhone: row.clientPhone,
+      clientVillage: row.clientVillage,
+      clientAddress: row.clientAddress
     }, userId);
     
     if (!client) {
       throw new Error('Client not found and could not be created');
     }
 
-    // Validate date
-    const dateValue = new Date(row['Date'] || row.date);
-    if (isNaN(dateValue.getTime())) {
-      throw new Error('Invalid date format');
+    // Validate date - handle multiple date formats using enhanced parser
+    const dateString = row['Date'] || row.date || row.DATE;
+    console.log(`🔍 Processing date: ${dateString}`);
+    
+    const dateValue = parseDateField(dateString);
+    
+    if (!dateValue || isNaN(dateValue.getTime())) {
+      throw new Error(`Invalid date format: ${dateString}`);
     }
 
     // Create equine health record with new field names
@@ -1097,13 +1562,14 @@ const processEquineHealthRow = async (row, userId, errors) => {
       serialNo: row['Serial No'] || row.serialNo || `EH-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       date: dateValue,
       client: client._id,
-      farmLocation: row['Location'] || row.location || '',
+      farmLocation: row['Location'] || row.location || 'N/A',
       coordinates: {
         latitude: parseFloat(row['N Coordinate'] || row.latitude || 0),
         longitude: parseFloat(row['E Coordinate'] || row.longitude || 0)
       },
-      supervisor: row.supervisor || '',
-      vehicleNo: row.vehicleNo || '',
+      supervisor: row['Supervisor'] || row.supervisor || '',
+      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
+      // Animal counts as separate fields for better display
       horseCount: parseInt(row.horseCount || 1),
       diagnosis: row['Diagnosis'] || row.diagnosis || '',
       interventionCategory: row['Intervention Category'] || row.interventionCategory || 'Routine',
@@ -1132,46 +1598,40 @@ router.get('/clients/export', auth, handleExport(Client, {}, [
 ], 'clients'));
 
 router.get('/vaccination/export', auth, handleExport(Vaccination, {}, [
-  'Serial No', 'Date', 'Name', 'ID', 'Birth Date', 'Phone', 'Location', 
-  'N Coordinate', 'E Coordinate', 'Supervisor', 'Team', 'Sheep', 'F. Sheep', 
-  'Vaccinated Sheep', 'Goats', 'F. Goats', 'Vaccinated Goats', 'Camel', 
-  'F. Camel', 'Vaccinated Camels', 'Cattle', 'F. Cattle', 'Vaccinated Cattle', 
-  'Herd Number', 'Herd Females', 'Total Vaccinated', 'Herd Health', 
-  'Animals Handling', 'Labours', 'Reachable Location', 'Request Date', 
-  'Situation', 'Request Fulfilling Date', 'Vaccine', 'Category', 'Remarks'
+  'serialNo', 'date', 'client', 'farmLocation', 'supervisor', 'team', 'vehicleNo', 
+  'vaccineType', 'vaccineCategory', 'sheep', 'sheepFemale', 'sheepVaccinated', 
+  'goats', 'goatsFemale', 'goatsVaccinated', 'camel', 'camelFemale', 'camelVaccinated', 
+  'cattle', 'cattleFemale', 'cattleVaccinated', 'herdNumber', 'herdFemales', 
+  'totalVaccinated', 'herdHealth', 'animalsHandling', 'labours', 'reachableLocation', 'remarks'
 ], 'vaccination'));
 
 router.get('/parasite-control/export', auth, handleExport(ParasiteControl, {}, [
-  'Serial No', 'Date', 'Name', 'ID', 'Date of Birth', 'Phone', 'E', 'N', 
-  'Supervisor', 'Vehicle No.', 'Total Sheep', 'Young sheep', 'Female Sheep', 
-  'Treated Sheep', 'Total Goats', 'Young Goats', 'Female Goats', 'Treated Goats', 
-  'Total Camel', 'Young Camels', 'Female Camels', 'Treated Camels', 'Total Cattle', 
-  'Young Cattle', 'Female Cattle', 'Treated Cattle', 'Total Herd', 'Total Young', 
-  'Total Female', 'Total Treated', 'Insecticide Used', 'Type', 'Volume (ml)', 
-  'Category', 'Status', 'Size (sqM)', 'Insecticide', 'Volume', 'Herd Health Status', 
-  'Complying to instructions', 'Request Date', 'Request Situation', 'Request Fulfilling Date', 'Remarks'
+  'serialNo', 'date', 'client', 'herdLocation', 'supervisor', 'vehicleNo', 
+  'sheepTotal', 'sheepYoung', 'sheepFemale', 'sheepTreated', 'goatsTotal', 
+  'goatsYoung', 'goatsFemale', 'goatsTreated', 'camelTotal', 'camelYoung', 
+  'camelFemale', 'camelTreated', 'cattleTotal', 'cattleYoung', 'cattleFemale', 
+  'cattleTreated', 'horseTotal', 'horseYoung', 'horseFemale', 'horseTreated', 
+  'totalHerd', 'totalYoung', 'totalFemale', 'totalTreated', 'insecticide', 
+  'animalBarnSizeSqM', 'breedingSites', 'parasiteControlVolume', 
+  'parasiteControlStatus', 'herdHealthStatus', 'complyingToInstructions', 'remarks'
 ], 'parasite-control'));
 
 router.get('/mobile-clinics/export', auth, handleExport(MobileClinic, {}, [
-  'Serial No', 'Date', 'Name', 'ID', 'Birth Date', 'Phone', 'Holding Code', 
-  'Location', 'N Coordinate', 'E Coordinate', 'Supervisor', 'Vehicle No.', 
-  'Sheep', 'Goats', 'Camel', 'Horse', 'Cattle', 'Diagnosis', 
-  'Intervention Category', 'Treatment', 'Request Date', 'Request Status', 
-  'Request Fulfilling Date', 'category', 'Remarks'
+  'serialNo', 'date', 'client', 'farmLocation', 'supervisor', 'vehicleNo', 
+  'sheep', 'goats', 'camel', 'cattle', 'horse', 'diagnosis', 'interventionCategory', 
+  'treatment', 'medicationsUsed', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'mobile-clinics'));
 
 router.get('/laboratories/export', auth, handleExport(Laboratory, {}, [
-  'Serial', 'date', 'Sample Code', 'Name', 'ID', 'Birth Date', 'phone', 
-  'Location', 'N', 'E', 'Sheep', 'Goats', 'Camel', 'Horse', 'Cattle', 
-  'Other (Species)', 'Sample Collector', 'Sample Type', 'Samples Number', 
-  'positive cases', 'Negative Cases', 'Remarks'
+  'serialNo', 'date', 'sampleCode', 'clientName', 'clientId', 'clientPhone', 
+  'sheep', 'goats', 'camel', 'cattle', 'horse', 'otherSpecies', 'collector', 
+  'sampleType', 'sampleNumber', 'positiveCases', 'negativeCases', 'testResults', 'remarks'
 ], 'laboratories'));
 
 router.get('/equine-health/export', auth, handleExport(EquineHealth, {}, [
-  'Serial No', 'Date', 'Name', 'ID', 'Birth Date', 'Phone', 'Location', 
-  'N Coordinate', 'E Coordinate', 'Diagnosis', 'Intervention Category', 
-  'Treatment', 'Request Date', 'Request Status', 'Request Fulfilling Date', 
-  'category', 'Remarks'
+  'serialNo', 'date', 'client', 'farmLocation', 'coordinates', 'supervisor', 
+  'vehicleNo', 'horseCount', 'diagnosis', 'interventionCategory', 
+  'treatment', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'equine-health'));
 
 // Template routes

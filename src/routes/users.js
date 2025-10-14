@@ -61,7 +61,7 @@ router.get('/',
   auth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, role, section, search, active } = req.query;
+    const { page = 1, limit = 30, role, section, search, active } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter

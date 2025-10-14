@@ -38,9 +38,20 @@ const checkSectionAccess = (req, res, next) => {
  */
 const checkSectionAccessWithMessage = (sectionName) => {
   return (req, res, next) => {
-    if (req.user.role === 'section_supervisor') {
+    if (req.user && req.user.role === 'section_supervisor') {
       const userModule = getSupervisorModule(req.user.section);
-      const requestedModule = req.baseUrl.split('/').pop();
+      
+      // تحويل اسم القسم إلى اسم الوحدة
+      const sectionToModuleMap = {
+        'مكافحة الطفيليات': 'parasite-control',
+        'التطعيم': 'vaccination',
+        'التطعيمات': 'vaccination',
+        'العيادات المتنقلة': 'mobile-clinics',
+        'المختبرات': 'laboratories',
+        'صحة الخيول': 'equine-health'
+      };
+      
+      const requestedModule = sectionToModuleMap[sectionName];
       
       if (userModule !== requestedModule && userModule !== 'all') {
         return res.status(403).json({

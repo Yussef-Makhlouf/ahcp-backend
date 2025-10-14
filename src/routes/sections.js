@@ -48,7 +48,7 @@ const router = express.Router();
 router.get('/',
   auth,
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, search, active } = req.query;
+    const { page = 1, limit = 30, search, active } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter (isActive removed - all sections are active)
