@@ -87,6 +87,9 @@ const mongoose = require('mongoose');
  *         totalAnimals:
  *           type: number
  *           description: Total number of animals owned
+ *         createdBy:
+ *           type: string
+ *           description: ID of user who created this client
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -230,7 +233,7 @@ const clientSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: [true, 'Created by user is required']
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

@@ -277,15 +277,15 @@ const vaccinationSchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Remarks cannot exceed 1000 characters']
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  updatedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }
+  // createdBy: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'User',
+  //   required: true
+  // },
+  // updatedBy: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'User'
+  // }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

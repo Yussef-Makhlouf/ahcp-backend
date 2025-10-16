@@ -27,7 +27,7 @@ const villagesRoutes = require('./routes/villages');
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
-const { auth: authMiddleware, authorizeSection } = require('./middleware/auth');
+const { auth: authMiddleware } = require('./middleware/auth');
 const devAuth = require('./middleware/dev-auth');
 const devNoAuth = require('./middleware/dev-no-auth');
 
@@ -109,7 +109,7 @@ if (process.env.NODE_ENV === 'production') {
 // Compression middlewarea
 app.use(compression());
 if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('dev'));
+  app.use(morgan('combined'));
 }
 
 // Body parsing middleware

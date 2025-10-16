@@ -4,6 +4,7 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { handleExport, handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
 const { authorizeSection } = require('../middleware/auth');
 
@@ -77,7 +78,6 @@ router.get('/',
     let records;
     try {
       records = await Laboratory.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1, priority: -1 })
@@ -242,7 +242,7 @@ router.get('/pending',
   asyncHandler(async (req, res) => {
     const pendingTests = await Laboratory.find({
       testStatus: { $in: ['Pending', 'In Progress'] }
-    }).populate('client', 'name nationalId phone village');
+    });
 
     res.json({
       success: true,
@@ -272,7 +272,7 @@ router.get('/overdue',
     const overdueTests = await Laboratory.find({
       testStatus: { $in: ['Pending', 'In Progress'] },
       date: { $lt: overdueDate }
-    }).populate('client', 'name nationalId phone village');
+    });
 
     res.json({
       success: true,
@@ -316,7 +316,6 @@ router.get('/export',
     if (testStatus) filter.testStatus = testStatus;
 
     const records = await Laboratory.find(filter)
-      .populate('client', 'name nationalId phone village')
       .sort({ date: -1 });
 
     if (format === 'csv') {
@@ -380,7 +379,6 @@ router.get('/:id',
 
   asyncHandler(async (req, res) => {
     const record = await Laboratory.findById(req.params.id)
-      .populate('client', 'name nationalId phone village detailedAddress')
       .populate('createdBy', 'name email role')
       .populate('updatedBy', 'name email role');
 
@@ -440,7 +438,7 @@ router.post('/',
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record;
 
     res.status(201).json({
       success: true,
@@ -479,7 +477,8 @@ router.post('/',
  */
 router.put('/:id',
   auth,
-  authorizeSection('Laboratory'),
+  authorize('super_admin', 'section_supervisor'),
+  checkSectionAccessWithMessage('المختبرات'),
   validate(schemas.laboratoryCreate),
   asyncHandler(async (req, res) => {
     const record = await Laboratory.findById(req.params.id);
@@ -511,7 +510,7 @@ router.put('/:id',
     Object.assign(record, req.body);
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village');
+    await record;
 
     res.json({
       success: true,
@@ -842,7 +841,7 @@ router.post('/import',
       const savedRecord = await newRecord.save();
       
       // إرجاع السجل مع بيانات العميل للعرض
-      return await LaboratoryModel.findById(savedRecord._id).populate('client', 'name nationalId phone');
+      return await LaboratoryModel.findById(savedRecord._id);
 
     } catch (error) {
       console.error('Error processing laboratory row:', error);

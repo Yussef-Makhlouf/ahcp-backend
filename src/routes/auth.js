@@ -1,11 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 const { validate, schemas } = require('../middleware/validation');
 const { auth, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { authorizeSection } = require('../middleware/auth');
+const { sendPasswordResetEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -610,7 +611,7 @@ router.get('/supervisors',
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
       
-      // Prevent caching for fresh data
+      // Set headers to prevent caching and ensure 200 OK responses
       res.set({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
@@ -708,19 +709,44 @@ router.get('/supervisors/by-section/:section',
       
       console.log(`🔍 Fetching supervisors for section: ${section}`);
       
-      // Get supervisors for specific section
-      const supervisors = await User.find(
-        {
-          role: { $in: ['super_admin', 'section_supervisor'] },
-          section: section,
-          isActive: true
-        },
+      // Get supervisors for specific section with flexible matching
+      const query = {
+        role: 'section_supervisor', // Only section supervisors, no super_admin
+        isActive: true
+      };
+
+      // Add section filter - support both exact match and contains
+      if (section && section !== 'all') {
+        query.$or = [
+          { section: section }, // Exact match
+          { section: { $regex: section, $options: 'i' } } // Case insensitive contains
+        ];
+      }
+
+      let supervisors = await User.find(
+        query,
         'name email role section',
         {
           sort: { name: 1 },
           lean: true
         }
       );
+      
+      // إذا لم نجد مشرفين للقسم المحدد، نجلب المشرفين العامين كـ fallback
+      if (supervisors.length === 0 && section && section !== 'all') {
+        console.log(`⚠️ No supervisors found for section: ${section}, falling back to super_admin`);
+        supervisors = await User.find(
+          {
+            role: 'super_admin',
+            isActive: true
+          },
+          'name email role section',
+          {
+            sort: { name: 1 },
+            lean: true
+          }
+        );
+      }
       
       console.log(`✅ Found ${supervisors.length} supervisors for section: ${section}`);
       
@@ -729,7 +755,8 @@ router.get('/supervisors/by-section/:section',
         data: supervisors,
         section: section,
         count: supervisors.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        fallback: supervisors.length > 0 && supervisors[0]?.role === 'super_admin'
       });
     } catch (error) {
       console.error('❌ Error fetching supervisors by section:', error);
@@ -739,6 +766,280 @@ router.get('/supervisors/by-section/:section',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/logout',
+  auth,
+  asyncHandler(async (req, res) => {
+    // في نظام JWT، لا نحتاج لتنفيذ خاص على الخادم للـ logout
+    // يمكن إضافة token إلى blacklist إذا أردنا ذلك
+    
+    res.json({
+      success: true,
+      message: 'تم تسجيل الخروج بنجاح'
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Password reset email sent
+ *       404:
+ *         description: User not found
+ */
+router.post('/forgot-password',
+  asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'البريد الإلكتروني مطلوب',
+        error: 'EMAIL_REQUIRED'
+      });
+    }
+
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'لا يوجد مستخدم بهذا البريد الإلكتروني',
+        error: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'الحساب غير مفعل',
+        error: 'ACCOUNT_DEACTIVATED'
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    // Set token and expiration (15 minutes)
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+
+    // Send email
+    try {
+      const emailResult = await sendPasswordResetEmail(user.email, resetUrl, user.name);
+      
+      if (emailResult.success) {
+        console.log('📧 Password reset email sent successfully to:', user.email);
+        res.json({
+          success: true,
+          message: 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
+          data: {
+            resetUrl: process.env.NODE_ENV === 'development' ? resetUrl : undefined
+          }
+        });
+      } else {
+        console.error('❌ Failed to send email:', emailResult.error);
+        // Still return success but log the error
+        res.json({
+          success: true,
+          message: 'تم إنشاء رابط إعادة التعيين، ولكن فشل في إرسال البريد الإلكتروني',
+          data: {
+            resetUrl: resetUrl // Always return URL in case email fails
+          }
+        });
+      }
+    } catch (emailError) {
+      console.error('❌ Email service error:', emailError);
+      // Fallback: return the reset URL even if email fails
+      res.json({
+        success: true,
+        message: 'تم إنشاء رابط إعادة التعيين، ولكن فشل في إرسال البريد الإلكتروني',
+        data: {
+          resetUrl: resetUrl
+        }
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password',
+  asyncHandler(async (req, res) => {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز وكلمة المرور مطلوبان',
+        error: 'MISSING_FIELDS'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل',
+        error: 'PASSWORD_TOO_SHORT'
+      });
+    }
+
+    // Hash the token to compare with stored token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid token
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز غير صحيح أو منتهي الصلاحية',
+        error: 'INVALID_TOKEN'
+      });
+    }
+
+    // Update password and clear reset token
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'تم تغيير كلمة المرور بنجاح'
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/auth/verify-reset-token:
+ *   post:
+ *     summary: Verify password reset token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token is valid
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-reset-token',
+  asyncHandler(async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز مطلوب',
+        error: 'TOKEN_REQUIRED'
+      });
+    }
+
+    // Hash the token to compare with stored token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid token
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرمز غير صحيح أو منتهي الصلاحية',
+        error: 'INVALID_TOKEN'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'الرمز صحيح',
+      data: {
+        email: user.email,
+        name: user.name
+      }
+    });
   })
 );
 

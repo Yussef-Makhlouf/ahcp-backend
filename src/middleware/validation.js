@@ -119,7 +119,16 @@ const schemas = {
   parasiteControlCreate: Joi.object({
     serialNo: Joi.string().max(20).required(),
     date: Joi.date().max('now').required(),
-    client: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    client: Joi.alternatives().try(
+      Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
+      Joi.object({
+        name: Joi.string().required(),
+        nationalId: Joi.string().required(),
+        phone: Joi.string().optional(),
+        village: Joi.string().optional(),
+        detailedAddress: Joi.string().optional()
+      }) // Client object for create/update
+    ).required(),
     herdLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
@@ -184,7 +193,18 @@ const schemas = {
   vaccinationCreate: Joi.object({
     serialNo: Joi.string().max(20).required(),
     date: Joi.date().max('now').required(),
-    client: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    client: Joi.alternatives().try(
+      Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
+      Joi.string().valid('temp-client-id') // Temporary ID for client creation
+    ).required(),
+    clientData: Joi.object({
+      name: Joi.string().required(),
+      nationalId: Joi.string().required(),
+      phone: Joi.string().required(),
+      village: Joi.string().optional(),
+      detailedAddress: Joi.string().optional(),
+      birthDate: Joi.date().optional()
+    }).optional(),
     farmLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
@@ -239,13 +259,15 @@ const schemas = {
     remarks: Joi.string().max(1000).optional()
   }),
 
-  // Laboratory schemas
+  // Laboratory schemas - Updated to match table structure
   laboratoryCreate: Joi.object({
-    sampleCode: Joi.string().max(20).required(),
-    sampleType: Joi.string().valid('Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin').required(),
-    collector: Joi.string().max(100).required(),
+    serialNo: Joi.number().integer().min(0).required(),
     date: Joi.date().max('now').required(),
-    client: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    sampleCode: Joi.string().max(20).required(),
+    clientName: Joi.string().max(100).required(),
+    clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
+    clientBirthDate: Joi.date().optional(),
+    clientPhone: Joi.string().pattern(/^\d{9}$/).required(),
     farmLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
@@ -256,15 +278,14 @@ const schemas = {
       goats: Joi.number().min(0).default(0),
       camel: Joi.number().min(0).default(0),
       cattle: Joi.number().min(0).default(0),
-      horse: Joi.number().min(0).default(0)
-    }).optional(),
-    testType: Joi.string().valid('Parasitology', 'Bacteriology', 'Virology', 'Serology', 'Biochemistry', 'Hematology', 'Pathology').required(),
+      horse: Joi.number().min(0).default(0),
+      other: Joi.string().max(100).allow('').optional()
+    }).required(),
+    collector: Joi.string().max(100).required(),
+    sampleType: Joi.string().valid('Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin').required(),
+    sampleNumber: Joi.string().max(20).required(),
     positiveCases: Joi.number().min(0).default(0),
     negativeCases: Joi.number().min(0).default(0),
-    priority: Joi.string().valid('Low', 'Normal', 'High', 'Urgent').default('Normal'),
-    expectedCompletionDate: Joi.date().optional(),
-    laboratoryTechnician: Joi.string().max(100).optional(),
-    equipment: Joi.string().max(100).optional(),
     remarks: Joi.string().max(1000).optional()
   }),
 
@@ -281,6 +302,54 @@ const schemas = {
     endDate: Joi.date().optional(),
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10)
+  }),
+
+  // Parasite Control update schema (all fields optional)
+  parasiteControlUpdate: Joi.object({
+    serialNo: Joi.string().max(20).optional(),
+    date: Joi.date().max('now').optional(),
+    client: Joi.alternatives().try(
+      Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
+      Joi.object({
+        name: Joi.string().required(),
+        nationalId: Joi.string().required(),
+        phone: Joi.string().optional(),
+        village: Joi.string().optional(),
+        detailedAddress: Joi.string().optional()
+      })
+    ).optional(),
+    herdLocation: Joi.string().max(200).optional(),
+    coordinates: Joi.object({
+      latitude: Joi.number().min(-90).max(90).optional(),
+      longitude: Joi.number().min(-180).max(180).optional()
+    }).optional(),
+    supervisor: Joi.string().max(100).optional(),
+    vehicleNo: Joi.string().max(20).optional(),
+    herdCounts: Joi.object().pattern(Joi.string(), Joi.object({
+      total: Joi.number().min(0).default(0),
+      young: Joi.number().min(0).default(0),
+      female: Joi.number().min(0).default(0),
+      treated: Joi.number().min(0).default(0)
+    })).optional(),
+    insecticide: Joi.object({
+      type: Joi.string().max(100).optional(),
+      method: Joi.string().max(100).optional(),
+      volumeMl: Joi.number().min(0).optional(),
+      status: Joi.string().valid('Sprayed', 'Not Sprayed').optional(),
+      category: Joi.string().max(50).optional()
+    }).optional(),
+    animalBarnSizeSqM: Joi.number().min(0).optional(),
+    breedingSites: Joi.string().max(500).optional(),
+    parasiteControlVolume: Joi.number().min(0).optional(),
+    parasiteControlStatus: Joi.string().max(100).optional(),
+    herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'Under Treatment').optional(),
+    complyingToInstructions: Joi.boolean().optional(),
+    request: Joi.object({
+      date: Joi.date().optional(),
+      situation: Joi.string().valid('Open', 'Closed', 'Pending').optional(),
+      fulfillingDate: Joi.date().optional()
+    }).optional(),
+    remarks: Joi.string().max(1000).optional()
   })
 };
 

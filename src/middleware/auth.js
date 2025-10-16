@@ -197,85 +197,19 @@ const updateLastLogin = async (req, res, next) => {
 };
 
 /**
- * Section-based authorization middleware
- * Allows access only to users whose section matches the required section OR super_admin
- * @param {string} sectionName - The section name to authorize
+ * Get supervisor module from section name
  */
-const authorizeSection = (sectionName) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required.',
-        error: 'AUTH_REQUIRED'
-      });
-    }
-    // Super admin can access all sections
-    if (req.user.role === 'super_admin') {
-      return next();
-    }
-
-    // Check if user's section matches the required section
-    if (req.user.section !== sectionName) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. This endpoint is only accessible to ${sectionName} section or super admin.`,
-        error: 'SECTION_ACCESS_DENIED',
-        requiredSection: sectionName,
-        userSection: req.user.section,
-        userRole: req.user.role
-      });
-    }
-
-    next();
+const getSupervisorModule = (section) => {
+  const sectionToModuleMap = {
+    'مكافحة الطفيليات': 'parasite-control',
+    'التطعيمات': 'vaccination',
+    'العيادات المتنقلة': 'mobile-clinics',
+    'المختبرات': 'laboratories',
+    'صحة الخيول': 'equine-health',
+    'الإدارة العامة': 'all'
   };
-};
-
-/**
- * Combined role and section authorization middleware
- * Allows access based on both role and section requirements
- * @param {Array<string>} allowedRoles - Array of allowed roles
- * @param {string} requiredSection - Required section (optional, null means any section)
- */
-const authorizeRoleAndSection = (allowedRoles, requiredSection = null) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required.',
-        error: 'AUTH_REQUIRED'
-      });
-    }
-
-    // Check role
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Insufficient permissions.',
-        error: 'INSUFFICIENT_PERMISSIONS',
-        requiredRoles: allowedRoles,
-        userRole: req.user.role
-      });
-    }
-
-    // Super admin bypasses section check
-    if (req.user.role === 'super_admin') {
-      return next();
-    }
-
-    // Check section if required
-    if (requiredSection && req.user.section !== requiredSection) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. This endpoint requires ${requiredSection} section access.`,
-        error: 'SECTION_ACCESS_DENIED',
-        requiredSection: requiredSection,
-        userSection: req.user.section
-      });
-    }
-
-    next();
-  };
+  
+  return sectionToModuleMap[section] || 'all';
 };
 
 module.exports = {
@@ -286,5 +220,6 @@ module.exports = {
   optionalAuth,
   ownerOrAdmin,
   validateApiKey,
-  updateLastLogin
+  updateLastLogin,
+  getSupervisorModule
 };

@@ -8,21 +8,37 @@ const { asyncHandler } = require('../middleware/errorHandler');
 
 const router = express.Router();
 
-// Ensure upload directory exists
+// Ensure upload directory exists (skip in serverless environment)
 const uploadDir = process.env.UPLOAD_PATH || './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(uploadDir) && process.env.VERCEL !== '1') {
+  try {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  } catch (error) {
+    console.warn('Could not create upload directory:', error.message);
+  }
 }
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // In serverless environment, use memory storage
+    if (process.env.VERCEL === '1') {
+      cb(null, '/tmp'); // Use /tmp directory in serverless
+      return;
+    }
+    
     const subDir = req.params.type || 'general';
     const fullPath = path.join(uploadDir, subDir);
     
     // Create subdirectory if it doesn't exist
     if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
+      try {
+        fs.mkdirSync(fullPath, { recursive: true });
+      } catch (error) {
+        console.warn('Could not create subdirectory:', error.message);
+        cb(null, '/tmp'); // Fallback to /tmp
+        return;
+      }
     }
     
     cb(null, fullPath);
