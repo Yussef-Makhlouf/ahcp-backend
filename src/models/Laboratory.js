@@ -130,15 +130,9 @@ const laboratorySchema = new mongoose.Schema({
     min: [0, 'Serial number cannot be negative'],
     unique: true 
   },
-  date: { 
-    type: Date, 
-    required: [true, 'Date is required'], 
-    validate: { 
-      validator: function(date) { 
-        return date <= new Date(); 
-      }, 
-      message: 'Date cannot be in the future' 
-    } 
+  date: {
+    type: Date,
+    required: [true, 'Date is required']
   },
   sampleCode: { 
     type: String, 

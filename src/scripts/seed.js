@@ -389,7 +389,7 @@ const sampleParasiteControl = [
     parasiteControlVolume: 2300,
     parasiteControlStatus: 'Completed',
     herdHealthStatus: 'Healthy',
-    complyingToInstructions: true,
+    complyingToInstructions: 'Comply',
     request: {
       date: new Date('2024-09-05'),
       situation: 'Closed',
@@ -423,7 +423,7 @@ const sampleParasiteControl = [
     parasiteControlVolume: 0,
     parasiteControlStatus: 'Pending',
     herdHealthStatus: 'Healthy',
-    complyingToInstructions: true,
+    complyingToInstructions: 'Comply',
     request: {
       date: new Date('2024-09-05'),
       situation: 'Closed',

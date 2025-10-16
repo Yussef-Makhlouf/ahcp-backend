@@ -262,7 +262,10 @@ if (uploadRoutes) {
   console.log('✅ Loading upload routes with authentication');
   app.use('/api/upload', selectedAuth, uploadRoutes);
 }
-if (villagesRoutes && selectedAuth) app.use('/api/villages', selectedAuth, villagesRoutes);
+if (villagesRoutes && selectedAuth) {
+  console.log('✅ Loading villages routes with authentication');
+  app.use('/api/villages', selectedAuth, villagesRoutes);
+}
 
 // Import/Export routes
 if (importExportRoutes) {

@@ -118,7 +118,7 @@ const schemas = {
   // Parasite Control schemas
   parasiteControlCreate: Joi.object({
     serialNo: Joi.string().max(20).required(),
-    date: Joi.date().max('now').required(),
+    date: Joi.date().max('now').optional(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.object({
@@ -179,10 +179,10 @@ const schemas = {
     breedingSites: Joi.string().max(500).optional(),
     parasiteControlVolume: Joi.number().min(0).required(),
     parasiteControlStatus: Joi.string().max(100).required(),
-    herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'Under Treatment').required(),
-    complyingToInstructions: Joi.boolean().default(true),
+    herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'ٍSporadic Cases').required(),
+    complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').default('Comply'),
     request: Joi.object({
-      date: Joi.date().required(),
+      date: Joi.date().optional(),
       situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
@@ -192,7 +192,7 @@ const schemas = {
   // Vaccination schemas
   vaccinationCreate: Joi.object({
     serialNo: Joi.string().max(20).required(),
-    date: Joi.date().max('now').required(),
+    date: Joi.date().max('now').optional(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.string().valid('temp-client-id') // Temporary ID for client creation
@@ -252,7 +252,7 @@ const schemas = {
     labours: Joi.string().valid('Available', 'Not Available').required(),
     reachableLocation: Joi.string().valid('Easy', 'Hard to reach').required(),
     request: Joi.object({
-      date: Joi.date().required(),
+      date: Joi.date().optional(),
       situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
@@ -262,7 +262,7 @@ const schemas = {
   // Laboratory schemas - Updated to match table structure
   laboratoryCreate: Joi.object({
     serialNo: Joi.number().integer().min(0).required(),
-    date: Joi.date().max('now').required(),
+    date: Joi.date().max('now').optional(),
     sampleCode: Joi.string().max(20).required(),
     clientName: Joi.string().max(100).required(),
     clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
@@ -343,18 +343,56 @@ const schemas = {
     parasiteControlVolume: Joi.number().min(0).optional(),
     parasiteControlStatus: Joi.string().max(100).optional(),
     herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'Under Treatment').optional(),
-    complyingToInstructions: Joi.boolean().optional(),
+    complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').optional(),
     request: Joi.object({
       date: Joi.date().optional(),
       situation: Joi.string().valid('Open', 'Closed', 'Pending').optional(),
       fulfillingDate: Joi.date().optional()
     }).optional(),
     remarks: Joi.string().max(1000).optional()
+  }),
+
+  // Village schemas
+  villageCreate: Joi.object({
+    serialNumber: Joi.string().min(1).max(50).required(),
+    sector: Joi.string().min(2).max(100).required(),
+    nameArabic: Joi.string().min(2).max(100).required(),
+    nameEnglish: Joi.string().min(2).max(100).required(),
+    isActive: Joi.boolean().default(true)
+  }),
+
+  villageUpdate: Joi.object({
+    serialNumber: Joi.string().min(1).max(50).optional(),
+    sector: Joi.string().min(2).max(100).optional(),
+    nameArabic: Joi.string().min(2).max(100).optional(),
+    nameEnglish: Joi.string().min(2).max(100).optional(),
+    isActive: Joi.boolean().optional()
+  }),
+
+  villageQuery: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(50),
+    search: Joi.string().optional(),
+    sector: Joi.string().optional(),
+    isActive: Joi.boolean().optional()
+  }),
+
+  // Bulk delete schema - accepts serial numbers instead of ObjectIds
+  bulkDeleteSchema: Joi.object({
+    ids: Joi.array().items(Joi.string().min(1).max(50)).min(1).required()
   })
 };
+
+// Village validation functions
+const validateVillage = validate(schemas.villageCreate);
+const validateVillageUpdate = validate(schemas.villageUpdate);
+const validateVillageQuery = validateQuery(schemas.villageQuery);
 
 module.exports = {
   validate,
   validateQuery,
-  schemas
+  schemas,
+  validateVillage,
+  validateVillageUpdate,
+  validateVillageQuery
 };

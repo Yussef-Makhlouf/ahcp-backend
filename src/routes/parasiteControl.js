@@ -125,7 +125,7 @@ router.get('/',
     let records;
     try {
       records = await ParasiteControl.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress')
+        .populate('client', 'name nationalId phone village detailedAddress birthDate')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
@@ -318,13 +318,12 @@ router.get('/export',
           'Type': record.insecticide?.method || '',
           'Volume (ml)': record.insecticide?.volumeMl || 0,
           'Category': record.insecticide?.category || '',
-          'Status': record.insecticide?.status || '',
+          'Insecticide Status': record.insecticide?.status || '',
           'Size (sqM)': record.animalBarnSizeSqM || 0,
           'Insecticide': record.parasiteControlStatus || '',
           'Volume': record.parasiteControlVolume || 0,
-          'Status': record.herdHealthStatus || '',
           'Herd Health Status': record.herdHealthStatus || '',
-          'Complying to instructions': record.complyingToInstructions ? 'Yes' : 'No',
+          'Complying to instructions': record.complyingToInstructions || 'Comply',
           'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
           'Request Situation': record.request?.situation || '',
           'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
@@ -924,181 +923,6 @@ router.get('/template',
   })
 );
 
-/**
- * @swagger
- * /api/parasite-control/import:
- *   post:
- *     summary: Import parasite control records from CSV
- *     tags: [Parasite Control]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               file:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Import completed
- */
-router.post('/import',
-  auth,
-  asyncHandler(async (req, res) => {
-    // Use authenticated user for import
-    // req.user is already set by auth middleware
-    
-    // Call handleImport with proper context
-    await handleImport(req, res, ParasiteControl, Client, async (row, user, ClientModel, ParasiteControlModel, errors) => {
-    // Validate required fields - using flexible field names
-    const serialNo = row['Serial No'] || row.serialNo || row['Serial'] || row.serial;
-    const date = row['Date'] || row.date || row.DATE;
-    const name = row['Name'] || row.name || row.clientName || row['Client Name'];
-    
-    if (!serialNo || !date || !name) {
-      errors.push({
-        row: row.rowNumber,
-        field: 'required',
-        message: 'Missing required fields: Serial No, Date, or Name'
-      });
-      return;
-    }
-    
-    // Check if serial number already exists and generate unique one if needed
-    let finalSerialNo = serialNo;
-    const existingRecord = await ParasiteControlModel.findOne({ serialNo: finalSerialNo });
-    if (existingRecord) {
-      // Generate a unique serial number by appending timestamp
-      const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
-      finalSerialNo = `${serialNo}-${timestamp}`;
-      
-      // Double check the new serial number doesn't exist
-      const duplicateCheck = await ParasiteControlModel.findOne({ serialNo: finalSerialNo });
-      if (duplicateCheck) {
-        // If still duplicate, add random number
-        finalSerialNo = `${serialNo}-${timestamp}-${Math.floor(Math.random() * 1000)}`;
-      }
-      
-      console.log(`⚠️  Serial number '${serialNo}' already exists. Generated new serial: '${finalSerialNo}'`);
-    }
-    
-    // Create client data object for findOrCreateClient function
-    const clientData = {
-      clientName: name,
-      clientNationalId: row['ID'] || row.id || row.ID,
-      clientPhone: row['Phone'] || row.phone || row.Phone,
-      clientVillage: '', // Will be set from detailedAddress if needed
-      clientDetailedAddress: ''
-    };
-    
-    // Find or create client
-    const client = await findOrCreateClient(clientData, user._id, ClientModel);
-    if (!client) {
-      errors.push({
-        row: row.rowNumber,
-        field: 'client',
-        message: 'Could not create or find client'
-      });
-      return;
-    }
-    
-    // Update client with birth date if provided
-    if (row['Date of Birth'] && client) {
-      try {
-        client.birthDate = new Date(row['Date of Birth']);
-        await client.save();
-      } catch (birthDateError) {
-        console.warn('Could not set birth date:', birthDateError.message);
-      }
-    }
-    
-    // Parse coordinates
-    const coordinates = {};
-    if (row['E'] && !isNaN(parseFloat(row['E']))) {
-      coordinates.latitude = parseFloat(row['E']);
-    }
-    if (row['N'] && !isNaN(parseFloat(row['N']))) {
-      coordinates.longitude = parseFloat(row['N']);
-    }
-    
-    // Create parasite control record with new column mapping
-    const parasiteControlData = {
-      serialNo: serialNo, // Use the potentially modified serial number
-      date: new Date(row['Date']),
-      client: client._id,
-      herdLocation: row['Supervisor'] || '', // Using supervisor as location for now
-      coordinates: Object.keys(coordinates).length > 0 ? coordinates : undefined,
-      supervisor: row['Supervisor'] || '',
-      vehicleNo: row['Vehicle No.'] || '',
-      herdCounts: {
-        sheep: {
-          total: parseInt(row['Total Sheep']) || 0,
-          young: parseInt(row['Young sheep']) || 0,
-          female: parseInt(row['Female Sheep']) || 0,
-          treated: parseInt(row['Treated Sheep']) || 0
-        },
-        goats: {
-          total: parseInt(row['Total Goats']) || 0,
-          young: parseInt(row['Young Goats']) || 0,
-          female: parseInt(row['Female Goats']) || 0,
-          treated: parseInt(row['Treated Goats']) || 0
-        },
-        camel: {
-          total: parseInt(row['Total Camel']) || 0,
-          young: parseInt(row['Young Camels']) || 0,
-          female: parseInt(row['Female Camels']) || 0,
-          treated: parseInt(row['Treated Camels']) || 0
-        },
-        cattle: {
-          total: parseInt(row['Total Cattle']) || 0,
-          young: parseInt(row['Young Cattle']) || 0,
-          female: parseInt(row['Female Cattle']) || 0,
-          treated: parseInt(row['Treated Cattle']) || 0
-        },
-        horse: {
-          total: 0, // Not included in new format
-          young: 0,
-          female: 0,
-          treated: 0
-        }
-      },
-      animalBarnSizeSqM: parseInt(row['Size (sqM)']) || 0,
-      parasiteControlVolume: parseInt(row['Volume']) || 0,
-      parasiteControlStatus: row['Insecticide'] || '',
-      herdHealthStatus: ['Healthy', 'Sick', 'Under Treatment'].includes(row['Herd Health Status']) 
-        ? row['Herd Health Status'] 
-        : 'Healthy', // تحويل القيم للصيغة المطلوبة
-      complyingToInstructions: row['Complying to instructions'] === 'Yes' || row['Complying to instructions'] === 'true',
-      insecticide: {
-        type: row['Insecticide Used'] || '',
-        method: row['Type'] || '',
-        volumeMl: parseInt(row['Volume (ml)']) || 0,
-        status: row['Status'] === 'Sprayed' ? 'Sprayed' : 'Not Sprayed', // تحويل القيم للصيغة المطلوبة
-        category: row['Category'] || ''
-      },
-      request: {
-        date: new Date(row['Request Date'] || row['Date']),
-        situation: ['Open', 'Closed', 'Pending'].includes(row['Request Situation']) 
-          ? row['Request Situation'] 
-          : 'Open', // تحويل القيم للصيغة المطلوبة
-        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
-      },
-      remarks: row['Remarks'] || '',
-      createdBy: user._id
-    };
-    
-    const parasiteControl = new ParasiteControlModel(parasiteControlData);
-    await parasiteControl.save();
-    
-    // Populate client data for response
-    await parasiteControl.populate('client', 'name nationalId phone village detailedAddress birthDate');
-    return parasiteControl;
-  });
-  })
-);
+// Import route moved to centralized import-export.js
 
 module.exports = router;

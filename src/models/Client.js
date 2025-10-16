@@ -167,19 +167,13 @@ const clientSchema = new mongoose.Schema({
     match: [/^\d{10,14}$/, 'National ID must be between 10-14 digits']
   },
   birthDate: {
-    type: Date,
-    validate: {
-      validator: function(date) {
-        return date <= new Date();
-      },
-      message: 'Birth date cannot be in the future'
-    }
+    type: Date
   },
   phone: {
     type: String,
     required: [true, 'Phone number is required'],
     trim: true,
-    match: [/^[\+]?[0-9\s\-\(\)]{10,15}$/, 'Please enter a valid phone number']
+    match: [/^[\+]?[0-9\s\-\(\)]{8,15}$/, 'Please enter a valid phone number']
   },
   email: {
     type: String,

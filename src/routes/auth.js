@@ -542,57 +542,6 @@ router.get('/users',
   })
 );
 
-/**
- * @swagger
- * /api/auth/users/{id}/toggle-status:
- *   put:
- *     summary: Toggle user active status (Admin only)
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     responses:
- *       200:
- *         description: User status updated successfully
- *       403:
- *         description: Access denied
- *       404:
- *         description: User not found
- */
-router.put('/users/:id/toggle-status',
-  auth,
-  authorize('super_admin'),
-  asyncHandler(async (req, res) => {
-    const { id } = req.params;
-
-    const user = await User.findById(id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-        error: 'USER_NOT_FOUND'
-      });
-    }
-
-    // Toggle status
-    user.isActive = !user.isActive;
-    await user.save();
-
-    res.json({
-      success: true,
-      message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: {
-        user
-      }
-    });
-  })
-);
 
 /**
  * @swagger

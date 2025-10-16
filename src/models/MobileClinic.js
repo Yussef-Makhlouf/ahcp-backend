@@ -159,13 +159,7 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Date is required'],
-    validate: {
-      validator: function(date) {
-        return date <= new Date();
-      },
-      message: 'Date cannot be in the future'
-    }
+    required: [true, 'Date is required']
   },
   client: {
     type: mongoose.Schema.Types.ObjectId,

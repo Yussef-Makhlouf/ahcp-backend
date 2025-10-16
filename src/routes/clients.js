@@ -96,7 +96,7 @@ router.get('/',
   auth,
   validateQuery(schemas.paginationQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, status, village, search, animalType } = req.query;
+    const { page = 1, limit = 30, status, village, search, animalType, includeServices = 'true' } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
@@ -118,11 +118,171 @@ router.get('/',
     let total = 0;
     
     try {
-      clients = await Client.find(filter)
-        .populate('createdBy', 'name email')
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ createdAt: -1 });
+      if (includeServices === 'true') {
+        // Use aggregation pipeline to gather data from all forms
+        const aggregationPipeline = [
+          { $match: filter },
+          {
+            $lookup: {
+              from: 'mobileclinics',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'mobileClinics'
+            }
+          },
+          {
+            $lookup: {
+              from: 'vaccinations',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'vaccinations'
+            }
+          },
+          {
+            $lookup: {
+              from: 'equinehealths',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'equineHealths'
+            }
+          },
+          {
+            $lookup: {
+              from: 'laboratories',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'laboratories'
+            }
+          },
+          {
+            $lookup: {
+              from: 'parasitecontrols',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'parasiteControls'
+            }
+          },
+          {
+            $addFields: {
+              // Aggregate services received
+              servicesReceived: {
+                $concatArrays: [
+                  { $map: { input: '$mobileClinics', as: 'mc', in: 'mobile_clinic' } },
+                  { $map: { input: '$vaccinations', as: 'v', in: 'vaccination' } },
+                  { $map: { input: '$equineHealths', as: 'eh', in: 'equine_health' } },
+                  { $map: { input: '$laboratories', as: 'l', in: 'laboratory' } },
+                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } }
+                ]
+              },
+              // Get birth date from any form that has it
+              birthDateFromForms: {
+                $let: {
+                  vars: {
+                    vaccinationBirthDate: { $arrayElemAt: ['$vaccinations.client.birthDate', 0] },
+                    laboratoryBirthDate: { $arrayElemAt: ['$laboratories.clientBirthDate', 0] },
+                    mobileClinicBirthDate: { $arrayElemAt: ['$mobileClinics.client.birthDate', 0] }
+                  },
+                  in: {
+                    $cond: {
+                      if: { $ne: ['$$vaccinationBirthDate', null] },
+                      then: '$$vaccinationBirthDate',
+                      else: {
+                        $cond: {
+                          if: { $ne: ['$$laboratoryBirthDate', null] },
+                          then: '$$laboratoryBirthDate',
+                          else: '$$mobileClinicBirthDate'
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              // Count total visits
+              totalVisits: {
+                $add: [
+                  { $size: '$mobileClinics' },
+                  { $size: '$vaccinations' },
+                  { $size: '$equineHealths' },
+                  { $size: '$laboratories' },
+                  { $size: '$parasiteControls' }
+                ]
+              },
+              // Get last service date
+              lastServiceDate: {
+                $let: {
+                  vars: {
+                    allDates: {
+                      $concatArrays: [
+                        { $map: { input: '$mobileClinics', as: 'mc', in: '$$mc.date' } },
+                        { $map: { input: '$vaccinations', as: 'v', in: '$$v.date' } },
+                        { $map: { input: '$equineHealths', as: 'eh', in: '$$eh.date' } },
+                        { $map: { input: '$laboratories', as: 'l', in: '$$l.date' } },
+                        { $map: { input: '$parasiteControls', as: 'pc', in: '$$pc.date' } }
+                      ]
+                    }
+                  },
+                  in: { $max: '$$allDates' }
+                }
+              }
+            }
+          },
+          {
+            $project: {
+              // Keep all original client fields
+              name: 1,
+              nationalId: 1,
+              phone: 1,
+              email: 1,
+              village: 1,
+              detailedAddress: 1,
+              birthDate: 1,
+              status: 1,
+              animals: 1,
+              availableServices: 1,
+              coordinates: 1,
+              createdBy: 1,
+              updatedBy: 1,
+              createdAt: 1,
+              updatedAt: 1,
+              // Add aggregated fields
+              servicesReceived: 1,
+              birthDateFromForms: 1,
+              totalVisits: 1,
+              lastServiceDate: 1,
+              // Add individual service counts
+              mobileClinicCount: { $size: '$mobileClinics' },
+              vaccinationCount: { $size: '$vaccinations' },
+              equineHealthCount: { $size: '$equineHealths' },
+              laboratoryCount: { $size: '$laboratories' },
+              parasiteControlCount: { $size: '$parasiteControls' }
+            }
+          },
+          { $sort: { createdAt: -1 } },
+          { $skip: skip },
+          { $limit: parseInt(limit) }
+        ];
+
+        clients = await Client.aggregate(aggregationPipeline);
+        
+        // Populate createdBy and updatedBy fields
+        for (let client of clients) {
+          if (client.createdBy) {
+            const createdByUser = await Client.findById(client._id).populate('createdBy', 'name email');
+            client.createdBy = createdByUser?.createdBy;
+          }
+          if (client.updatedBy) {
+            const updatedByUser = await Client.findById(client._id).populate('updatedBy', 'name email');
+            client.updatedBy = updatedByUser?.updatedBy;
+          }
+        }
+      } else {
+        // Simple query without aggregation
+        clients = await Client.find(filter)
+          .populate('createdBy', 'name email')
+          .skip(skip)
+          .limit(parseInt(limit))
+          .sort({ createdAt: -1 });
+      }
     } catch (findError) {
       console.error('Error finding clients:', findError);
       clients = [];

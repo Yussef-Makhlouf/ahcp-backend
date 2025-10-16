@@ -221,13 +221,7 @@ const parasiteControlSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Date is required'],
-    validate: {
-      validator: function(date) {
-        return date <= new Date();
-      },
-      message: 'Date cannot be in the future'
-    }
+    required: [true, 'Date is required']
   },
   client: {
     type: mongoose.Schema.Types.ObjectId,
@@ -305,9 +299,10 @@ const parasiteControlSchema = new mongoose.Schema({
     }
   },
   complyingToInstructions: {
-    type: Boolean,
+    type: String,
+    enum: ['Comply', 'Not Comply', 'Partially Comply'],
     required: [true, 'Compliance status is required'],
-    default: true
+    default: 'Comply'
   },
   request: {
     type: requestSchema,

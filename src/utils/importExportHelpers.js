@@ -151,7 +151,28 @@ const findOrCreateClient = async (row, userId, ClientModel = Client) => {
   if (!client && (row.clientName || row.client_name || row.name)) {
     const clientName = row.clientName || row.client_name || row.name;
     const nationalId = row.clientNationalId || row.clientId || row.nationalId || `TEMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const phone = row.clientPhone || row.client_phone || row.phone || '';
+    let phone = row.clientPhone || row.client_phone || row.phone || '';
+    
+    // Format phone number for Saudi Arabia if it's a local number
+    if (phone && !phone.startsWith('+')) {
+      // If it's a 9-digit number starting with 5, add +966
+      if (phone.length === 9 && phone.startsWith('5')) {
+        phone = `+966${phone}`;
+      }
+      // If it's a 10-digit number starting with 05, replace 0 with +966
+      else if (phone.length === 10 && phone.startsWith('05')) {
+        phone = `+966${phone.substring(1)}`;
+      }
+      // If it's a 13-digit number starting with 966, add +
+      else if (phone.length === 13 && phone.startsWith('966')) {
+        phone = `+${phone}`;
+      }
+      // If it's a 12-digit number starting with 966, add +
+      else if (phone.length === 12 && phone.startsWith('966')) {
+        phone = `+${phone}`;
+      }
+    }
+    
     const village = row.clientVillage || row.client_village || row.village || '';
     const detailedAddress = row.clientAddress || row.client_address || row.address || '';
     

@@ -237,13 +237,7 @@ const equineHealthSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Date is required'],
-    validate: {
-      validator: function(date) {
-        return date <= new Date();
-      },
-      message: 'Date cannot be in the future'
-    }
+    required: [true, 'Date is required']
   },
   client: {
     name: {
@@ -257,6 +251,9 @@ const equineHealthSchema = new mongoose.Schema({
       required: [true, 'Client national ID is required'],
       trim: true,
       match: [/^\d{10,14}$/, 'National ID must be between 10-14 digits']
+    },
+    birthDate: {
+      type: Date
     },
     phone: {
       type: String,

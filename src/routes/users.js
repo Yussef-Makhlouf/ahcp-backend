@@ -730,56 +730,6 @@ router.put('/:id/change-password',
   })
 );
 
-/**
- * @swagger
- * /api/users/{id}/toggle-status:
- *   put:
- *     summary: Toggle user active status
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     responses:
- *       200:
- *         description: User status updated successfully
- *       404:
- *         description: User not found
- */
-router.put('/:id/toggle-status',
-  auth,
-  authorize('super_admin'),
-  asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'المستخدم غير موجود',
-        error: 'USER_NOT_FOUND'
-      });
-    }
-
-    // Toggle status
-    user.isActive = !user.isActive;
-    await user.save();
-
-    res.json({
-      success: true,
-      message: `تم ${user.isActive ? 'تفعيل' : 'إلغاء تفعيل'} المستخدم بنجاح`,
-      data: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        isActive: user.isActive
-      }
-    });
-  })
-);
 
 /**
  * @swagger

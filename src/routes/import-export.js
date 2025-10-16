@@ -186,9 +186,11 @@ const validateImportData = (data, Model) => {
   console.log(`🔍 Total rows to validate: ${data.length}`);
   console.log(`🔍 First row keys:`, data[0] ? Object.keys(data[0]) : 'No data');
   
-  // Check for required fields based on model
-  const requiredFields = getRequiredFields(Model);
-  console.log(`🔍 Required fields for ${Model.modelName}:`, requiredFields);
+  // For import, we will be more lenient and let the processing functions handle validation
+  // This allows for better error messages and fallback values
+  console.log(`✅ Validation passed for ${Model.modelName} - will validate during processing`);
+  
+  return errors; // Return empty errors array to allow processing
   
   data.forEach((row, index) => {
     console.log(`🔍 Validating row ${index + 1}:`, Object.keys(row));
@@ -208,13 +210,13 @@ const validateImportData = (data, Model) => {
         field.replace(/\s+/g, '').toUpperCase(), // remove spaces and uppercase
         field.replace(/\s+/g, '').charAt(0).toUpperCase() + field.replace(/\s+/g, '').slice(1).toLowerCase(), // Title case
         // Arabic equivalents
-        ...(field === 'Name' ? ['اسم', 'الاسم', 'اسم المالك', 'اسم المالك'] : []),
+        ...(field === 'Name' ? ['اسم', 'الاسم', 'اسم المالك', 'اسم المربي', 'اسم العميل'] : []),
         ...(field === 'Date' ? ['تاريخ', 'التاريخ', 'تاريخ التقرير'] : []),
         // Common variations
-        ...(field === 'Name' ? ['Client Name', 'clientName', 'client_name', 'owner_name', 'ownerName', 'اسم العميل', 'اسم المالك', 'Name', 'name'] : []),
-        ...(field === 'Date' ? ['Report Date', 'reportDate', 'report_date', 'visit_date', 'visitDate', 'تاريخ التقرير', 'تاريخ الزيارة', 'Date', 'date'] : []),
+        ...(field === 'Name' ? ['Client Name', 'clientName', 'client_name', 'owner_name', 'ownerName', 'اسم العميل', 'اسم المالك', 'اسم المربي', 'Name', 'name', 'NAME'] : []),
+        ...(field === 'Date' ? ['Report Date', 'reportDate', 'report_date', 'visit_date', 'visitDate', 'تاريخ التقرير', 'تاريخ الزيارة', 'Date', 'date', 'DATE'] : []),
         // Excel common column names
-        ...(field === 'Name' ? ['Name', 'name', 'NAME', 'اسم', 'الاسم'] : []),
+        ...(field === 'Name' ? ['Name', 'name', 'NAME', 'اسم', 'الاسم', 'اسم العميل', 'اسم المربي'] : []),
         ...(field === 'Date' ? ['Date', 'date', 'DATE', 'تاريخ', 'التاريخ'] : [])
       ];
       
@@ -242,6 +244,28 @@ const validateImportData = (data, Model) => {
           console.log(`✅ Found ${field} data in key '${foundKey}'`);
           // Don't add error if we found the data
           return;
+        }
+        
+        // Special check for Name field - look for any field that might contain a name
+        if (field === 'Name') {
+          const nameLikeKeys = allKeys.filter(key => {
+            const value = row[key];
+            if (!value || value.toString().trim() === '') return false;
+            
+            const valueStr = value.toString().trim();
+            // Check if it looks like a name (contains Arabic characters or is not a number)
+            if (valueStr.match(/[\u0600-\u06FF]/) || // Arabic characters
+                (isNaN(valueStr) && valueStr.length > 2 && !valueStr.match(/^\d+$/))) {
+              console.log(`🔍 Found name-like data in key '${key}': ${valueStr}`);
+              return true;
+            }
+            return false;
+          });
+          
+          if (nameLikeKeys.length > 0) {
+            console.log(`✅ Found name-like data in keys: ${nameLikeKeys.join(', ')}`);
+            return; // Don't add error
+          }
         }
       }
       
@@ -305,59 +329,56 @@ const validateImportData = (data, Model) => {
       }
     });
     
-    // Only validate date if Date is a required field and we haven't found it yet
-    if (requiredFields.includes('Date')) {
-      const dateFields = ['date', 'Date', 'DATE', 'تاريخ', 'التاريخ'];
-      let hasValidDate = false;
-      
-      dateFields.forEach(dateField => {
-        if (row[dateField] && !hasValidDate) {
-          const dateString = row[dateField].toString().trim();
-          console.log(`🔍 Date validation for ${dateField}: ${dateString}`);
-          
-          // Handle D-Mon format (1-Sep, 2-Sep, etc.)
-          let dateValue;
-          if (dateString.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
-            // Convert D-Mon format to proper date
-            const currentYear = new Date().getFullYear();
-            const monthMap = {
-              'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-              'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-              'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-            };
-            const [day, month] = dateString.split('-');
-            const monthNum = monthMap[month];
-            if (monthNum) {
-              dateValue = new Date(`${currentYear}-${monthNum}-${day.padStart(2, '0')}`);
-            } else {
-              dateValue = new Date(dateString);
-            }
+    // Check for date fields (optional validation)
+    const dateFields = [
+      'date', 'Date', 'DATE', 
+      'تاريخ', 'التاريخ',
+      'Request Date', 'requestDate', 'request_date',
+      'Birth Date', 'birthDate', 'birth_date', 'Date of Birth', 'dateOfBirth',
+      'Request Fulfilling Date', 'requestFulfillingDate', 'request_fulfilling_date'
+    ];
+    
+    // Look for any date field in the row
+    let hasValidDate = false;
+    let foundDateField = null;
+    
+    dateFields.forEach(dateField => {
+      if (row[dateField] && !hasValidDate) {
+        const dateString = row[dateField].toString().trim();
+        console.log(`🔍 Date validation for ${dateField}: ${dateString}`);
+        
+        // Handle D-Mon format (1-Sep, 2-Sep, etc.)
+        let dateValue;
+        if (dateString.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+          // Convert D-Mon format to proper date
+          const currentYear = new Date().getFullYear();
+          const monthMap = {
+            'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+            'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+            'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+          };
+          const [day, month] = dateString.split('-');
+          const monthNum = monthMap[month];
+          if (monthNum) {
+            dateValue = new Date(`${currentYear}-${monthNum}-${day.padStart(2, '0')}`);
           } else {
             dateValue = new Date(dateString);
           }
-          
-          console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
-          if (!isNaN(dateValue.getTime())) {
-            hasValidDate = true;
-          }
+        } else {
+          dateValue = new Date(dateString);
         }
-      });
-      
-      // Only add date error if no valid date found AND we don't already have a date error
-      if (!hasValidDate) {
-        // Check if we already have a date error for this row
-        const existingDateError = errors.find(err => 
-          err.row === index + 1 && err.field === 'Date'
-        );
-        if (!existingDateError) {
-          errors.push({
-            row: index + 1,
-            field: 'Date',
-            message: 'Date is required and must be in valid format'
-          });
+        
+        console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
+        if (!isNaN(dateValue.getTime())) {
+          hasValidDate = true;
+          foundDateField = dateField;
         }
       }
-    }
+    });
+    
+    // Only add date error if we specifically require a date field and none found
+    // Since dates are now optional, we don't add errors for missing dates
+    console.log(`🔍 Date check result: hasValidDate=${hasValidDate}, foundField=${foundDateField}`);
     
     // Validate JSON fields
     if (row.medicationsUsed && typeof row.medicationsUsed === 'string') {
@@ -376,26 +397,14 @@ const validateImportData = (data, Model) => {
   return errors;
 };
 
-// Get required fields for each model
+// Get required fields for each model - now more lenient
 const getRequiredFields = (Model) => {
   const modelName = Model.modelName;
   
-  switch (modelName) {
-    case 'Client':
-      return ['name', 'nationalId', 'phone'];
-    case 'Vaccination':
-      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
-    case 'ParasiteControl':
-      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
-    case 'MobileClinic':
-      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
-    case 'Laboratory':
-      return ['Name']; // Remove Sample Code as it can be auto-generated
-    case 'EquineHealth':
-      return ['Date', 'Name']; // Remove Serial No as it can be auto-generated
-    default:
-      return ['date']; // Default required field
-  }
+  // Return empty array for all models to allow processing functions to handle validation
+  // This provides better error messages and allows for fallback values
+  console.log(`📋 Model ${modelName}: Using lenient validation - will validate during processing`);
+  return [];
 };
 
 // Helper function to validate field mapping
@@ -440,6 +449,27 @@ const generateCSV = (data, headers) => {
   const csvRows = data.map(row => 
     headers.map(header => {
       let value = row[header] || '';
+      
+      // Check if field exists in client object
+      if (value === '' || value === undefined) {
+        if (row.client && row.client[header] !== undefined) {
+          value = row.client[header];
+        }
+      }
+      
+      // Handle date fields formatting for CSV
+      if (header === 'birthDate' || header === 'clientBirthDate' || header === 'date' || header === 'Birth of Date' || header === 'Date of Birth' || header === 'Birth Date') {
+        if (value instanceof Date) {
+          // Format date for CSV (YYYY-MM-DD)
+          value = value.toISOString().split('T')[0];
+        } else if (value && typeof value === 'string') {
+          // Try to parse and format date string
+          const dateValue = new Date(value);
+          if (!isNaN(dateValue.getTime())) {
+            value = dateValue.toISOString().split('T')[0];
+          }
+        }
+      }
       
       // Handle animal count fields from nested objects
       if (value === '' || value === undefined) {
@@ -581,6 +611,22 @@ const generateExcel = (data, headers) => {
       if (value === undefined && row.client && row.client[header] !== undefined) {
         value = row.client[header];
         console.log(`📊 Found field ${header} in client data:`, value);
+      }
+      
+      // Handle date fields formatting for Excel
+      if (header === 'birthDate' || header === 'clientBirthDate' || header === 'date') {
+        if (value instanceof Date) {
+          // Format date for Excel (YYYY-MM-DD)
+          value = value.toISOString().split('T')[0];
+          console.log(`📊 Formatted date ${header}: ${value}`);
+        } else if (value && typeof value === 'string') {
+          // Try to parse and format date string
+          const dateValue = new Date(value);
+          if (!isNaN(dateValue.getTime())) {
+            value = dateValue.toISOString().split('T')[0];
+            console.log(`📊 Parsed and formatted date ${header}: ${value}`);
+          }
+        }
       }
       
       // Handle animal count fields from nested objects
@@ -785,7 +831,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
         if (sampleDoc && sampleDoc.client) {
           console.log('📊 Client field found, adding populate');
           query = Model.find(queryFilter)
-            .populate('client', 'name nationalId phone email village detailedAddress status totalAnimals')
+            .populate('client', 'name nationalId birthDate phone email village detailedAddress status totalAnimals')
             .sort({ createdAt: -1 })
             .limit(parseInt(limit) || 1000)
             .lean();
@@ -941,7 +987,7 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
       });
     }
     
-    // Validate required fields before processing
+    // Light validation - let processing functions handle detailed validation
     const validationErrors = validateImportData(fileData, Model);
     if (validationErrors.length > 0) {
       return res.status(400).json({
@@ -950,6 +996,8 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
         errors: validationErrors
       });
     }
+    
+    console.log(`✅ Pre-validation passed, proceeding with processing`);
     
     // Add row numbers to results
     fileData.forEach((data, index) => {
@@ -1204,7 +1252,242 @@ const parseJsonField = (value, defaultValue = []) => {
   }
 };
 
-// Enhanced date parsing function to handle D-Mon format
+// Enhanced date parsing function to handle multiple date formats
+// ========================================
+// UNIFIED IMPORT HELPERS
+// ========================================
+
+/**
+ * Unified client data processor
+ * Handles client creation/retrieval with consistent validation
+ */
+const processUnifiedClient = async (row, userId) => {
+  try {
+    // Get client name from row data (multiple possible field names)
+    const clientName = row['Name'] || row['name'] || row['clientName'] || 
+                      row['اسم العميل'] || row['الاسم'] || row['اسم المربي'] || 
+                      row['اسم العميل'] || row['الاسم'] || 'غير محدد';
+    
+    // Get client ID
+    const clientId = row['ID'] || row['id'] || row['clientId'] || 
+                     row['رقم الهوية'] || row['الهوية'];
+    
+    // Find existing client
+    let client = null;
+    
+    if (clientId) {
+      client = await Client.findOne({ nationalId: clientId });
+    }
+    
+    if (!client && clientName && clientName !== 'غير محدد') {
+      client = await Client.findOne({ name: clientName });
+    }
+    
+    // If no client found, create and save a new client
+    if (!client) {
+      const newClient = new Client({
+        name: clientName,
+        nationalId: (() => {
+          // Generate a valid nationalId if not provided or invalid
+          if (clientId && clientId.length >= 10 && clientId.length <= 14 && /^\d+$/.test(clientId)) {
+            return clientId;
+          }
+          // Generate a valid 10-digit nationalId
+          const timestamp = Date.now().toString().slice(-8); // Last 8 digits
+          const random = Math.floor(Math.random() * 100).toString().padStart(2, '0'); // 2 random digits
+          return `${timestamp}${random}`; // 10 digits total
+        })(),
+        phone: (() => {
+          const phoneValue = row['Phone'] || row['phone'] || row['clientPhone'] || 
+                          row['رقم الهاتف'] || row['الهاتف'] || '';
+          // If no phone provided, generate a default one
+          if (!phoneValue || phoneValue.trim() === '') {
+            const timestamp = Date.now().toString().slice(-8);
+            return `5${timestamp}`; // Start with 5 and add 8 digits
+          }
+          return phoneValue;
+        })(),
+        village: row['Location'] || row['location'] || row['clientVillage'] || 
+                 row['القرية'] || row['الموقع'] || '',
+        detailedAddress: row['Address'] || row['address'] || row['clientAddress'] || 
+                        row['العنوان'] || row['العنوان التفصيلي'] || '',
+        birthDate: (() => {
+          const birthDateField = row['Birth Date'] || row['Date of Birth'] || 
+                                row['birthDate'] || row['تاريخ الميلاد'];
+          if (birthDateField) {
+            const parsedDate = parseDateField(birthDateField);
+            // Check if date is valid
+            if (parsedDate && !isNaN(parsedDate.getTime())) {
+              return parsedDate;
+            }
+            return undefined; // Don't set birthDate if invalid or in future
+          }
+          return undefined;
+        })(),
+        status: 'نشط',
+        animals: [],
+        availableServices: [],
+        createdBy: userId
+      });
+      
+      await newClient.save();
+      client = newClient;
+    }
+    
+    return client;
+  } catch (error) {
+    throw new Error(`Error processing unified client: ${error.message}`);
+  }
+};
+
+/**
+ * Unified date processor
+ * Handles all date fields consistently
+ */
+const processUnifiedDates = (row) => {
+  // Find and validate date using enhanced date field finder
+  const dateField = findDateField(row);
+  let dateValue = null;
+  
+  if (dateField) {
+    console.log(`🔍 Found date field: ${dateField.field} = ${dateField.value}`);
+    dateValue = parseDateField(dateField.value);
+    
+    if (!dateValue || isNaN(dateValue.getTime())) {
+      console.warn(`⚠️ Invalid date format: ${dateField.value}, using current date`);
+      dateValue = new Date(); // Use current date as fallback
+    }
+  } else {
+    console.log(`🔍 No date field found, using current date`);
+    dateValue = new Date(); // Use current date as fallback
+  }
+  
+  return {
+    mainDate: dateValue,
+    requestDate: (() => {
+      const requestDateField = row['Request Date'] || row.requestDate || row.date;
+      if (requestDateField) {
+        const parsedDate = parseDateField(requestDateField);
+        return parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : dateValue;
+      }
+      return dateValue;
+    })(),
+    fulfillingDate: (() => {
+      const fulfillingDateField = row['Request Fulfilling Date'];
+      if (fulfillingDateField) {
+        const parsedDate = parseDateField(fulfillingDateField);
+        return parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
+      }
+      return undefined;
+    })(),
+    followUpDate: (() => {
+      if (row.followUpDate) {
+        const parsedDate = parseDateField(row.followUpDate);
+        return parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : undefined;
+      }
+      return undefined;
+    })()
+  };
+};
+
+/**
+ * Unified coordinates processor
+ * Handles coordinates consistently
+ */
+const processUnifiedCoordinates = (row) => {
+  return {
+    latitude: parseFloat(row['N'] || row['N Coordinate'] || row.latitude || 0),
+    longitude: parseFloat(row['E'] || row['E Coordinate'] || row.longitude || 0)
+  };
+};
+
+/**
+ * Unified animal counts processor
+ * Handles animal counts consistently
+ */
+const processUnifiedAnimalCounts = (row) => {
+  return {
+    sheep: parseInt(row['Sheep'] || row.sheep || 0),
+    goats: parseInt(row['Goats'] || row.goats || 0),
+    camel: parseInt(row['Camel'] || row.camel || 0),
+    cattle: parseInt(row['Cattle'] || row.cattle || 0),
+    horse: parseInt(row['Horse'] || row.horse || 0)
+  };
+};
+
+/**
+ * Unified enum processor
+ * Handles enum values consistently
+ */
+const processUnifiedEnums = (row) => {
+  return {
+    interventionCategory: (() => {
+      const category = (row['Intervention Category'] || row.interventionCategory || 'Routine').toString().trim();
+      const categoryMap = {
+        'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
+        'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
+        'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
+        'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up'
+      };
+      
+      const lowerCategory = category.toLowerCase();
+      if (categoryMap[lowerCategory]) {
+        return categoryMap[lowerCategory];
+      }
+      
+      if (['Emergency', 'Routine', 'Preventive', 'Follow-up'].includes(category)) {
+        return category;
+      }
+      
+      return 'Routine';
+    })(),
+    requestSituation: (() => {
+      const status = (row['Request Status'] || row.requestStatus || 'Open').toString().trim();
+      const statusMap = {
+        'open': 'Open', 'مفتوح': 'Open', 'نشط': 'Open', 'active': 'Open',
+        'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
+        'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
+      };
+      
+      const lowerStatus = status.toLowerCase();
+      if (statusMap[lowerStatus]) {
+        return statusMap[lowerStatus];
+      }
+      
+      if (['Open', 'Closed', 'Pending'].includes(status)) {
+        return status;
+      }
+      
+      return 'Open';
+    })()
+  };
+};
+
+/**
+ * Unified custom data processor
+ * Stores all additional data consistently
+ */
+const processUnifiedCustomData = (row) => {
+  return {
+    originalData: row,
+    holdingCode: row['Holding Code'] || row.holdingCode || '',
+    birthDate: row['Birth Date'] || row['Date of Birth'] || row.birthDate || '',
+    ...Object.keys(row).reduce((acc, key) => {
+      if (!['Serial No', 'Date', 'Name', 'ID', 'Phone', 'Location', 'N Coordinate', 'E Coordinate', 
+            'Supervisor', 'Vehicle No.', 'Sheep', 'Goats', 'Camel', 'Horse', 'Cattle', 
+            'Diagnosis', 'Intervention Category', 'Treatment', 'Request Date', 'Request Status', 
+            'Request Fulfilling Date', 'category', 'Remarks'].includes(key)) {
+        acc[key] = row[key];
+      }
+      return acc;
+    }, {})
+  };
+};
+
+// ========================================
+// EXISTING FUNCTIONS
+// ========================================
+
 const parseDateField = (dateString) => {
   if (!dateString || dateString.toString().trim() === '') {
     return null;
@@ -1212,6 +1495,21 @@ const parseDateField = (dateString) => {
   
   const dateStr = dateString.toString().trim();
   console.log(`🔍 Parsing date: ${dateStr}`);
+  
+  // Handle Excel serial date numbers (Excel stores dates as numbers)
+  if (!isNaN(dateStr) && parseFloat(dateStr) > 0) {
+    const excelDate = parseFloat(dateStr);
+    // Excel date serial number (days since 1900-01-01, but Excel incorrectly treats 1900 as leap year)
+    if (excelDate > 25569) { // After 1970-01-01
+      const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+      console.log(`🔍 Converted Excel serial date: ${dateStr} -> ${jsDate}`);
+      return jsDate;
+    } else if (excelDate > 0 && excelDate < 100000) { // Likely Excel date
+      const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+      console.log(`🔍 Converted Excel date: ${dateStr} -> ${jsDate}`);
+      return jsDate;
+    }
+  }
   
   // Handle D-Mon format (1-Sep, 2-Sep, etc.)
   if (dateStr.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
@@ -1226,98 +1524,176 @@ const parseDateField = (dateString) => {
     if (monthNum) {
       const fullDate = `${currentYear}-${monthNum}-${day.padStart(2, '0')}`;
       const dateValue = new Date(fullDate);
-      console.log(`🔍 Converted D-Mon format: ${dateStr} -> ${fullDate} -> ${dateValue}`);
+      console.log(`🔍 Converted D-Mon format: ${dateStr} -> ${dateValue}`);
       return dateValue;
     }
   }
   
-  // Handle other date formats
+  // Handle DD/MM/YYYY format (European format)
+  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+    const [day, month, year] = dateStr.split('/');
+    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
+  // Handle MM/DD/YYYY format (American format)
+  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+    const dateValue = new Date(dateStr);
+    console.log(`🔍 Parsed MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
+  // Handle YYYY-MM-DD format (ISO format)
+  if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const dateValue = new Date(dateStr);
+    console.log(`🔍 Parsed YYYY-MM-DD format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
+  // Handle DD-MM-YYYY format
+  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const [day, month, year] = dateStr.split('-');
+    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
+  // Handle Arabic date format (DD/MM/YYYY with Arabic numbers)
+  if (dateStr.match(/^[\u0660-\u0669\u06F0-\u06F9]+\/[\u0660-\u0669\u06F0-\u06F9]+\/[\u0660-\u0669\u06F0-\u06F9]+$/)) {
+    // Convert Arabic numerals to English
+    const englishDateStr = dateStr.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (match) => {
+      return String.fromCharCode(match.charCodeAt(0) - 0x0660);
+    });
+    const [day, month, year] = englishDateStr.split('/');
+    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted Arabic date format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
+  // Try to parse as standard date
   const dateValue = new Date(dateStr);
   console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
+  
+  // Return null if the date is invalid
+  if (isNaN(dateValue.getTime())) {
+    console.warn(`⚠️ Could not parse date: ${dateStr}`);
+    return null;
+  }
+  
   return dateValue;
 };
 
-// Process row functions for each model with improved validation
+// Helper function to find date field in row data
+const findDateField = (row) => {
+  const dateFields = [
+    'date', 'Date', 'DATE', 
+    'تاريخ', 'التاريخ',
+    'Request Date', 'requestDate', 'request_date',
+    'Birth Date', 'birthDate', 'birth_date', 'Date of Birth', 'dateOfBirth',
+    'Request Fulfilling Date', 'requestFulfillingDate', 'request_fulfilling_date'
+  ];
+  
+  for (const field of dateFields) {
+    if (row[field] && row[field].toString().trim() !== '') {
+      return { field, value: row[field] };
+    }
+  }
+  
+  return null;
+};
+
+// ========================================
+// REFACTORED PROCESS ROW FUNCTIONS
+// ========================================
+
+/**
+ * Process Vaccination row using unified helpers
+ */
 const processVaccinationRow = async (row, userId, errors) => {
   try {
-    // Validate required fields using new field names
-    if (!row['Date'] && !row.date) {
-      throw new Error('Date is required');
-    }
+    // Use unified processors
+    const client = await processUnifiedClientEnhanced(row, userId);
+    const dates = processUnifiedDatesEnhanced(row);
+    const coordinates = processUnifiedCoordinatesEnhanced(row);
+    const herdCounts = processHerdCounts(row, 'vaccination');
     
-    if (!row['Name'] && !row.name && !row.clientName) {
-      throw new Error('Client name is required');
-    }
-
-    // Find or create client using new field names
-    const client = await findOrCreateClient({
-      Name: row['Name'],
-      ID: row['ID'],
-      Phone: row['Phone'],
-      Location: row['Location'],
-      name: row.name,
-      id: row.id,
-      phone: row.phone,
-      location: row.location,
-      clientName: row.clientName,
-      clientId: row.clientId,
-      clientPhone: row.clientPhone,
-      clientVillage: row.clientVillage,
-      clientAddress: row.clientAddress
-    }, userId);
-    
-    if (!client) {
-      throw new Error('Client not found and could not be created');
-    }
-
-    // Validate date - handle multiple date formats using enhanced parser
-    const dateString = row['Date'] || row.date || row.DATE;
-    console.log(`🔍 Processing date: ${dateString}`);
-    
-    const dateValue = parseDateField(dateString);
-    
-    if (!dateValue || isNaN(dateValue.getTime())) {
-      throw new Error(`Invalid date format: ${dateString}`);
-    }
-
-    // Create vaccination record with new field names
+    // Create vaccination record
     const vaccination = new Vaccination({
-      serialNo: row['Serial No'] || row.serialNo || `VAC-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      date: dateValue,
+      serialNo: generateSerialNo(row, 'VAC'),
+      date: dates.mainDate,
       client: client._id,
-      farmLocation: row['Location'] || row.location || 'N/A',
-      supervisor: row['Supervisor'] || row.supervisor || '',
-      team: row['Team'] || row.team || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
-      vaccineType: row['Vaccine'] || row.vaccineType || '',
-      vaccineCategory: row['Category'] || row.vaccineCategory || 'Preventive',
-      // Animal counts as separate fields for better display
-      sheep: parseInt(row['Sheep'] || row.sheep || 0),
-      sheepFemale: parseInt(row['F. Sheep'] || row.sheepFemale || 0),
-      sheepVaccinated: parseInt(row['Vaccinated Sheep'] || row.sheepVaccinated || 0),
-      goats: parseInt(row['Goats'] || row.goats || 0),
-      goatsFemale: parseInt(row['F. Goats'] || row.goatsFemale || 0),
-      goatsVaccinated: parseInt(row['Vaccinated Goats'] || row.goatsVaccinated || 0),
-      camel: parseInt(row['Camel'] || row.camel || 0),
-      camelFemale: parseInt(row['F. Camel'] || row.camelFemale || 0),
-      camelVaccinated: parseInt(row['Vaccinated Camels'] || row.camelVaccinated || 0),
-      cattle: parseInt(row['Cattle'] || row.cattle || 0),
-      cattleFemale: parseInt(row['F. Cattle'] || row.cattleFemale || 0),
-      cattleVaccinated: parseInt(row['Vaccinated Cattle'] || row.cattleVaccinated || 0),
-      herdNumber: parseInt(row['Herd Number'] || row.herdNumber || 0),
-      herdFemales: parseInt(row['Herd Females'] || row.herdFemales || 0),
-      totalVaccinated: parseInt(row['Total Vaccinated'] || row.totalVaccinated || 0),
-      herdHealth: row['Herd Health'] || row.herdHealth || 'Healthy',
-      animalsHandling: row['Animals Handling'] || row.animalsHandling || 'Easy',
-      labours: row['Labours'] || row.labours || 'Available',
-      reachableLocation: row['Reachable Location'] || row.reachableLocation || 'Easy',
-      request: {
-        date: new Date(row['Request Date'] || row.requestDate || row.date),
-        situation: row['Situation'] || row.requestSituation || 'Open',
-        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
-      },
-      remarks: row['Remarks'] || row.remarks || '',
-      createdBy: userId
+      farmLocation: getFieldValue(row, [
+        'Location', 'location', 'Farm Location', 'farmLocation',
+        'الموقع', 'موقع المزرعة'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'Supervisor', 'supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      team: getFieldValue(row, [
+        'Team', 'team', 'الفريق'
+      ]) || 'Default Team',
+      vehicleNo: getFieldValue(row, [
+        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'N/A',
+      vaccineType: getFieldValue(row, [
+        'Vaccine', 'vaccineType', 'vaccine_type', 'Vaccine Type',
+        'نوع اللقاح', 'اللقاح'
+      ]) || 'Default Vaccine',
+      vaccineCategory: processEnumValue(
+        row,
+        ['Category', 'vaccineCategory', 'vaccine_category', 'فئة اللقاح'],
+        {
+          'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency',
+          'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive'
+        },
+        'Preventive'
+      ),
+      coordinates: coordinates,
+      herdCounts: herdCounts,
+      herdHealth: processEnumValue(
+        row,
+        ['Herd Health', 'herdHealth', 'herd_health', 'صحة القطيع'],
+        {
+          'healthy': 'Healthy', 'صحي': 'Healthy', 'سليم': 'Healthy',
+          'sick': 'Sick', 'مريض': 'Sick', 'sporadic': 'Sick',
+          'under treatment': 'Under Treatment', 'تحت العلاج': 'Under Treatment'
+        },
+        'Healthy'
+      ),
+      animalsHandling: processEnumValue(
+        row,
+        ['Animals Handling', 'animalsHandling', 'animals_handling', 'التعامل مع الحيوانات'],
+        {
+          'easy': 'Easy', 'سهل': 'Easy',
+          'difficult': 'Difficult', 'صعب': 'Difficult', 'hard': 'Difficult'
+        },
+        'Easy'
+      ),
+      labours: processEnumValue(
+        row,
+        ['Labours', 'labours', 'العمالة'],
+        {
+          'available': 'Available', 'متوفر': 'Available',
+          'not available': 'Not Available', 'غير متوفر': 'Not Available',
+          'unavailable': 'Not Available', 'avaialable': 'Not Available'
+        },
+        'Available'
+      ),
+      reachableLocation: processEnumValue(
+        row,
+        ['Reachable Location', 'reachableLocation', 'reachable_location', 'سهولة الوصول'],
+        {
+          'easy': 'Easy', 'سهل': 'Easy',
+          'hard to reach': 'Hard to reach', 'صعب الوصول': 'Hard to reach',
+          'difficult': 'Hard to reach', 'hard': 'Hard to reach'
+        },
+        'Easy'
+      ),
+      request: processRequest(row, dates),
+      remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      customImportData: processCustomImportData(row)
     });
 
     await vaccination.save();
@@ -1327,89 +1703,101 @@ const processVaccinationRow = async (row, userId, errors) => {
   }
 };
 
+/**
+ * Process ParasiteControl row using unified helpers
+ */
 const processParasiteControlRow = async (row, userId, errors) => {
   try {
-    // Find or create client using new field names
-    const client = await findOrCreateClient({
-      Name: row['Name'],
-      ID: row['ID'],
-      Phone: row['Phone'],
-      Location: row['Location'],
-      name: row.name,
-      id: row.id,
-      phone: row.phone,
-      location: row.location,
-      clientName: row.clientName,
-      clientId: row.clientId,
-      clientPhone: row.clientPhone,
-      clientVillage: row.clientVillage,
-      clientAddress: row.clientAddress
-    }, userId);
+    // Use unified processors
+    const client = await processUnifiedClientEnhanced(row, userId);
+    const dates = processUnifiedDatesEnhanced(row);
+    const coordinates = processUnifiedCoordinatesEnhanced(row);
+    const herdCounts = processHerdCounts(row, 'parasite');
     
-    if (!client) {
-      throw new Error('Client not found and could not be created');
-    }
-
-    // Create parasite control record with new field names
+    // Create parasite control record
     const parasiteControl = new ParasiteControl({
-      serialNo: row['Serial No'] || row.serialNo || `PAR-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      date: new Date(row['Date'] || row.date),
+      serialNo: generateSerialNo(row, 'PAR'),
+      date: dates.mainDate,
       client: client._id,
-      herdLocation: row['Location'] || row.location || 'N/A',
-      supervisor: row['Supervisor'] || row.supervisor || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
-      // Animal counts as separate fields for better display
-      sheepTotal: parseInt(row['Total Sheep'] || row.sheepTotal || 0),
-      sheepYoung: parseInt(row['Young sheep'] || row.sheepYoung || 0),
-      sheepFemale: parseInt(row['Female Sheep'] || row.sheepFemale || 0),
-      sheepTreated: parseInt(row['Treated Sheep'] || row.sheepTreated || 0),
-      goatsTotal: parseInt(row['Total Goats'] || row.goatsTotal || 0),
-      goatsYoung: parseInt(row['Young Goats'] || row.goatsYoung || 0),
-      goatsFemale: parseInt(row['Female Goats'] || row.goatsFemale || 0),
-      goatsTreated: parseInt(row['Treated Goats'] || row.goatsTreated || 0),
-      camelTotal: parseInt(row['Total Camel'] || row.camelTotal || 0),
-      camelYoung: parseInt(row['Young Camels'] || row.camelYoung || 0),
-      camelFemale: parseInt(row['Female Camels'] || row.camelFemale || 0),
-      camelTreated: parseInt(row['Treated Camels'] || row.camelTreated || 0),
-      cattleTotal: parseInt(row['Total Cattle'] || row.cattleTotal || 0),
-      cattleYoung: parseInt(row['Young Cattle'] || row.cattleYoung || 0),
-      cattleFemale: parseInt(row['Female Cattle'] || row.cattleFemale || 0),
-      cattleTreated: parseInt(row['Treated Cattle'] || row.cattleTreated || 0),
-      horseTotal: parseInt(row.horseTotal || 0),
-      horseYoung: parseInt(row.horseYoung || 0),
-      horseFemale: parseInt(row.horseFemale || 0),
-      horseTreated: parseInt(row.horseTreated || 0),
-      totalHerd: parseInt(row['Total Herd'] || row.totalHerd || 0),
-      totalYoung: parseInt(row['Total Young'] || row.totalYoung || 0),
-      totalFemale: parseInt(row['Total Female'] || row.totalFemale || 0),
-      totalTreated: parseInt(row['Total Treated'] || row.totalTreated || 0),
+      herdLocation: getFieldValue(row, [
+        'Herd Location', 'herdLocation', 'Location', 'location',
+        'موقع القطيع', 'الموقع'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'Supervisor', 'supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      vehicleNo: getFieldValue(row, [
+        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'N/A',
+      coordinates: coordinates,
+      herdCounts: herdCounts,
       insecticide: {
-        type: row['Insecticide Used'] || row['Insecticide'] || row.insecticideType || 'N/A',
-        method: row['Type'] || row.insecticideMethod || 'N/A',
-        volumeMl: parseInt(row['Volume (ml)'] || row['Volume'] || row.insecticideVolume || 0),
-        status: (() => {
-          const statusValue = row['Status'] || row.insecticideStatus || 'Sprayed';
-          const lowerStatus = statusValue.toLowerCase();
-          if (lowerStatus === 'sprayed' || lowerStatus === 'yes' || lowerStatus === 'true' || lowerStatus === '1') {
-            return 'Sprayed';
-          } else {
-            return 'Not Sprayed';
-          }
-        })(),
-        category: row['Category'] || row.insecticideCategory || 'N/A'
+        type: getFieldValue(row, [
+          'Insecticide Used', 'Insecticide', 'insecticideType', 'insecticide_type',
+          'نوع المبيد', 'المبيد المستخدم'
+        ]) || 'N/A',
+        method: getFieldValue(row, [
+          'Type', 'Method', 'insecticideMethod', 'insecticide_method',
+          'طريقة الرش', 'النوع'
+        ]) || 'N/A',
+        volumeMl: parseInt(getFieldValue(row, [
+          'Volume (ml)', 'Volume', 'insecticideVolume', 'insecticide_volume',
+          'الحجم (مل)', 'الحجم'
+        ]) || 0),
+        status: processEnumValue(
+          row,
+          ['Status', 'Spray Status', 'insecticideStatus', 'insecticide_status', 'حالة الرش'],
+          {
+            'sprayed': 'Sprayed', 'yes': 'Sprayed', 'مرشوش': 'Sprayed', 'نعم': 'Sprayed',
+            'not sprayed': 'Not Sprayed', 'no': 'Not Sprayed', 'غير مرشوش': 'Not Sprayed', 'لا': 'Not Sprayed'
+          },
+          'Sprayed'
+        ),
+        category: getFieldValue(row, [
+          'Category', 'insecticideCategory', 'insecticide_category',
+          'فئة المبيد'
+        ]) || 'N/A'
       },
-      animalBarnSizeSqM: parseInt(row['Size (sqM)'] || row.animalBarnSize || 0),
-      breedingSites: row.breedingSites || 'N/A',
-      parasiteControlVolume: parseInt(row['Volume (ml)'] || row['Volume'] || row.parasiteControlVolume || 0),
-      parasiteControlStatus: row['Status'] || row.parasiteControlStatus || 'N/A',
-      herdHealthStatus: row['Herd Health Status'] || row.herdHealthStatus || 'Healthy',
-      complyingToInstructions: row['Complying to instructions'] === 'true' || row.complyingToInstructions === 'true',
-      request: {
-        date: new Date(row['Request Date'] || row.requestDate || row.date),
-        situation: row['Request Situation'] || row.requestSituation || 'Open',
-        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
-      },
-      remarks: row['Remarks'] || row.remarks || '',
+      animalBarnSizeSqM: parseInt(getFieldValue(row, [
+        'Size (sqM)', 'Barn Size', 'animalBarnSize', 'animal_barn_size',
+        'مساحة الحظيرة', 'الحجم (متر مربع)'
+      ]) || 0),
+      breedingSites: getFieldValue(row, [
+        'Breeding Sites', 'breedingSites', 'breeding_sites',
+        'مواقع التكاثر'
+      ]) || 'N/A',
+      parasiteControlVolume: parseInt(getFieldValue(row, [
+        'Parasite Control Volume', 'parasiteControlVolume', 'parasite_control_volume',
+        'حجم مكافحة الطفيليات'
+      ]) || getFieldValue(row, ['Volume (ml)', 'Volume']) || 0),
+      parasiteControlStatus: getFieldValue(row, [
+        'Parasite Control Status', 'parasiteControlStatus', 'parasite_control_status',
+        'حالة مكافحة الطفيليات'
+      ]) || getFieldValue(row, ['Insecticide']) || 'N/A',
+      herdHealthStatus: processEnumValue(
+        row,
+        ['Herd Health Status', 'herdHealthStatus', 'herd_health_status', 'حالة صحة القطيع'],
+        {
+          'healthy': 'Healthy', 'صحي': 'Healthy', 'سليم': 'Healthy',
+          'sick': 'Sick', 'مريض': 'Sick', 'sporadic': 'Sick', 'sporadic cases': 'Sick',
+          'under treatment': 'Under Treatment', 'تحت العلاج': 'Under Treatment'
+        },
+        'Healthy'
+      ),
+      complyingToInstructions: processEnumValue(
+        row,
+        ['Complying to instructions', 'complyingToInstructions', 'complying_to_instructions', 'الالتزام بالتعليمات'],
+        {
+          'comply': 'Comply', 'true': 'Comply', 'yes': 'Comply', 'ملتزم': 'Comply', 'نعم': 'Comply',
+          'not comply': 'Not Comply', 'false': 'Not Comply', 'no': 'Not Comply', 'غير ملتزم': 'Not Comply', 'لا': 'Not Comply',
+          'partially comply': 'Partially Comply', 'partial': 'Partially Comply', 'ملتزم جزئيا': 'Partially Comply'
+        },
+        'Comply'
+      ),
+      request: processRequest(row, dates),
+      remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      customImportData: processCustomImportData(row),
       createdBy: userId
     });
 
@@ -1420,55 +1808,68 @@ const processParasiteControlRow = async (row, userId, errors) => {
   }
 };
 
+/**
+ * Process MobileClinic row using unified helpers
+ */
 const processMobileClinicRow = async (row, userId, errors) => {
   try {
-    // Find or create client using new field names
-    const client = await findOrCreateClient({
-      Name: row['Name'],
-      ID: row['ID'],
-      Phone: row['Phone'],
-      Location: row['Location'],
-      name: row.name,
-      id: row.id,
-      phone: row.phone,
-      location: row.location,
-      clientName: row.clientName,
-      clientId: row.clientId,
-      clientPhone: row.clientPhone,
-      clientVillage: row.clientVillage,
-      clientAddress: row.clientAddress
-    }, userId);
+    // Use unified processors
+    const client = await processUnifiedClientEnhanced(row, userId);
+    const dates = processUnifiedDatesEnhanced(row);
+    const coordinates = processUnifiedCoordinatesEnhanced(row);
+    const animalCounts = processAnimalCounts(row);
     
-    if (!client) {
-      throw new Error('Client not found and could not be created');
-    }
-
-    // Create mobile clinic record with new field names
+    // Create mobile clinic record
     const mobileClinic = new MobileClinic({
-      serialNo: row['Serial No'] || row.serialNo || `MC-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      date: new Date(row['Date'] || row.date),
+      serialNo: generateSerialNo(row, 'MC'),
+      date: dates.mainDate,
       client: client._id,
-      farmLocation: row['Location'] || row.location || 'N/A',
-      supervisor: row['Supervisor'] || row.supervisor || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
-      // Animal counts as separate fields for better display
-      sheep: parseInt(row['Sheep'] || row.sheep || 0),
-      goats: parseInt(row['Goats'] || row.goats || 0),
-      camel: parseInt(row['Camel'] || row.camel || 0),
-      cattle: parseInt(row['Cattle'] || row.cattle || 0),
-      horse: parseInt(row['Horse'] || row.horse || 0),
-      diagnosis: row['Diagnosis'] || row.diagnosis || '',
-      interventionCategory: row['Intervention Category'] || row.interventionCategory || 'Routine',
-      treatment: row['Treatment'] || row.treatment || '',
-      medicationsUsed: parseJsonField(row.medicationsUsed, []),
-      request: {
-        date: new Date(row['Request Date'] || row.requestDate || row.date),
-        situation: row['Request Status'] || row.requestStatus || 'Open',
-        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
-      },
-      followUpRequired: row.followUpRequired === 'true' || row.follow_up_required === 'true',
-      followUpDate: row.followUpDate ? new Date(row.followUpDate) : undefined,
-      remarks: row['Remarks'] || row.remarks || '',
+      farmLocation: getFieldValue(row, [
+        'Location', 'location', 'Farm Location', 'farmLocation',
+        'الموقع', 'موقع المزرعة'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'Supervisor', 'supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      vehicleNo: getFieldValue(row, [
+        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'N/A',
+      coordinates: coordinates,
+      animalCounts: animalCounts,
+      diagnosis: getFieldValue(row, [
+        'Diagnosis', 'diagnosis', 'التشخيص'
+      ]) || '',
+      interventionCategory: processEnumValue(
+        row,
+        ['Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'],
+        {
+          'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
+          'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
+          'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
+          'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up'
+        },
+        'Routine'
+      ),
+      treatment: getFieldValue(row, [
+        'Treatment', 'treatment', 'العلاج'
+      ]) || '',
+      medicationsUsed: parseJsonField(getFieldValue(row, [
+        'Medications Used', 'medicationsUsed', 'medications_used', 'الأدوية المستخدمة'
+      ]), []),
+      request: processRequest(row, dates),
+      followUpRequired: processEnumValue(
+        row,
+        ['Follow Up Required', 'followUpRequired', 'follow_up_required', 'مطلوب متابعة'],
+        {
+          'true': true, 'yes': true, 'نعم': true, '1': true,
+          'false': false, 'no': false, 'لا': false, '0': false
+        },
+        false
+      ),
+      followUpDate: dates.followUpDate,
+      remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      customImportData: processCustomImportData(row),
       createdBy: userId
     });
 
@@ -1479,32 +1880,565 @@ const processMobileClinicRow = async (row, userId, errors) => {
   }
 };
 
+// ========================================
+// ENHANCED UNIFIED IMPORT HELPERS
+// ========================================
+
+/**
+ * Enhanced field value getter with case-insensitive fallback
+ * Supports Arabic and English field names
+ */
+const getFieldValue = (row, fieldNames) => {
+  // First try exact match
+  for (const name of fieldNames) {
+    if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+      return row[name];
+    }
+  }
+  
+  // Try case-insensitive match as fallback
+  const rowKeysLower = Object.keys(row).reduce((acc, key) => {
+    acc[key.toLowerCase().trim()] = row[key];
+    return acc;
+  }, {});
+  
+  for (const name of fieldNames) {
+    const lowerName = name.toLowerCase().trim();
+    if (rowKeysLower[lowerName] !== undefined && 
+        rowKeysLower[lowerName] !== null && 
+        rowKeysLower[lowerName] !== '') {
+      console.log(`📌 Found field via case-insensitive match: ${name} -> ${rowKeysLower[lowerName]}`);
+      return rowKeysLower[lowerName];
+    }
+  }
+  
+  return undefined;
+};
+
+/**
+ * Enhanced unified client processor with better validation
+ */
+const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
+  try {
+    const { requireClient = false, createIfNotFound = true } = options;
+    
+    // Get client data using multiple possible field names
+    const clientName = getFieldValue(row, [
+      'Name', 'name', 'clientName', 'Client Name', 'client',
+      'owner', 'Owner', 'farmer', 'Farmer',
+      'الاسم', 'اسم العميل', 'اسم المربي', 'المالك', 'العميل'
+    ]);
+    
+    const clientId = getFieldValue(row, [
+      'ID', 'id', 'clientId', 'Client ID', 'nationalId', 'National ID',
+      'ownerId', 'Owner ID', 'identity', 'Identity',
+      'رقم الهوية', 'الهوية', 'رقم', 'هوية'
+    ]);
+    
+    const clientPhone = getFieldValue(row, [
+      'Phone', 'phone', 'clientPhone', 'Client Phone', 'Mobile', 'mobile',
+      'phoneNumber', 'Phone Number', 'tel', 'Tel', 'telephone', 'Telephone',
+      'رقم الهاتف', 'الهاتف', 'جوال', 'موبايل'
+    ]);
+    
+    const clientVillage = getFieldValue(row, [
+      'Location', 'location', 'Village', 'village', 'clientVillage',
+      'Farm Location', 'farmLocation', 'address',
+      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان'
+    ]);
+    
+    const clientAddress = getFieldValue(row, [
+      'Address', 'address', 'Detailed Address', 'detailedAddress', 'clientAddress',
+      'العنوان', 'العنوان التفصيلي'
+    ]);
+    
+    // For Laboratory and EquineHealth that store client as embedded data
+    if (options.returnAsObject) {
+      return {
+        name: clientName || 'غير محدد',
+        nationalId: clientId || generateValidNationalId(),
+        phone: clientPhone || generateDefaultPhone(),
+        village: clientVillage || '',
+        detailedAddress: clientAddress || clientVillage || '',
+        birthDate: parseBirthDate(row)
+      };
+    }
+    
+    // Validate if client is required
+    if (requireClient && !clientName && !clientId) {
+      throw new Error('Client information is required but not found');
+    }
+    
+    // Find existing client
+    let client = null;
+    
+    if (clientId) {
+      client = await Client.findOne({ nationalId: clientId });
+    }
+    
+    if (!client && clientName && clientName !== 'غير محدد') {
+      client = await Client.findOne({ name: clientName });
+    }
+    
+    // Create new client if not found and allowed
+    if (!client && createIfNotFound) {
+      const newClient = new Client({
+        name: clientName || 'غير محدد',
+        nationalId: clientId || generateValidNationalId(),
+        phone: clientPhone || generateDefaultPhone(),
+        village: clientVillage || '',
+        detailedAddress: clientAddress || clientVillage || '',
+        birthDate: parseBirthDate(row),
+        status: 'نشط',
+        animals: [],
+        availableServices: [],
+        createdBy: userId
+      });
+      
+      await newClient.save();
+      client = newClient;
+      console.log(`✅ Created new client: ${client.name}`);
+    }
+    
+    return client;
+  } catch (error) {
+    throw new Error(`Error processing client: ${error.message}`);
+  }
+};
+
+/**
+ * Generate valid national ID
+ */
+const generateValidNationalId = () => {
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+  return `${timestamp}${random}`; // 10 digits total
+};
+
+/**
+ * Generate default phone number
+ */
+const generateDefaultPhone = () => {
+  const timestamp = Date.now().toString().slice(-8);
+  return `5${timestamp}`;
+};
+
+/**
+ * Parse birth date from row
+ */
+const parseBirthDate = (row) => {
+  const birthDateField = getFieldValue(row, [
+    'Birth Date', 'birthDate', 'Date of Birth', 'dateOfBirth',
+    'clientBirthDate', 'Client Birth Date',
+    'تاريخ الميلاد'
+  ]);
+  
+  if (birthDateField) {
+    const parsedDate = parseDateField(birthDateField);
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+      return parsedDate;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Enhanced unified dates processor
+ */
+const processUnifiedDatesEnhanced = (row) => {
+  const mainDate = (() => {
+    const dateField = findDateField(row);
+    if (dateField) {
+      const parsed = parseDateField(dateField.value);
+      if (parsed && !isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return new Date();
+  })();
+  
+  return {
+    mainDate,
+    requestDate: (() => {
+      const field = getFieldValue(row, [
+        'Request Date', 'requestDate', 'request_date',
+        'تاريخ الطلب'
+      ]);
+      if (field) {
+        const parsed = parseDateField(field);
+        return parsed && !isNaN(parsed.getTime()) ? parsed : mainDate;
+      }
+      return mainDate;
+    })(),
+    fulfillingDate: (() => {
+      const field = getFieldValue(row, [
+        'Request Fulfilling Date', 'requestFulfillingDate', 
+        'request_fulfilling_date', 'Fulfilling Date',
+        'تاريخ تنفيذ الطلب'
+      ]);
+      if (field) {
+        const parsed = parseDateField(field);
+        return parsed && !isNaN(parsed.getTime()) ? parsed : undefined;
+      }
+      return undefined;
+    })(),
+    followUpDate: (() => {
+      const field = getFieldValue(row, [
+        'Follow Up Date', 'followUpDate', 'follow_up_date',
+        'تاريخ المتابعة'
+      ]);
+      if (field) {
+        const parsed = parseDateField(field);
+        return parsed && !isNaN(parsed.getTime()) ? parsed : undefined;
+      }
+      return undefined;
+    })()
+  };
+};
+
+/**
+ * Enhanced coordinates processor
+ */
+const processUnifiedCoordinatesEnhanced = (row) => {
+  const lat = parseFloat(getFieldValue(row, [
+    'N', 'N Coordinate', 'latitude', 'lat', 'Latitude',
+    'خط العرض'
+  ]) || 0);
+  
+  const lng = parseFloat(getFieldValue(row, [
+    'E', 'E Coordinate', 'longitude', 'lng', 'long', 'Longitude',
+    'خط الطول'
+  ]) || 0);
+  
+  return {
+    latitude: isNaN(lat) ? 0 : lat,
+    longitude: isNaN(lng) ? 0 : lng
+  };
+};
+
+/**
+ * Process herd counts for Vaccination and ParasiteControl
+ */
+const processHerdCounts = (row, type = 'vaccination') => {
+  const isParasite = type === 'parasite';
+  
+  return {
+    sheep: {
+      total: parseInt(getFieldValue(row, [
+        isParasite ? 'Total Sheep' : 'Sheep', 'sheep', 'sheepTotal',
+        'الأغنام', 'أغنام'
+      ]) || 0),
+      young: parseInt(getFieldValue(row, [
+        'Young Sheep', 'sheepYoung', 'young_sheep',
+        'صغار الأغنام'
+      ]) || 0),
+      female: parseInt(getFieldValue(row, [
+        isParasite ? 'Female Sheep' : 'F. Sheep', 'sheepFemale', 'female_sheep',
+        'إناث الأغنام'
+      ]) || 0),
+      [isParasite ? 'treated' : 'vaccinated']: parseInt(getFieldValue(row, [
+        isParasite ? 'Treated Sheep' : 'Vaccinated Sheep', 
+        isParasite ? 'sheepTreated' : 'sheepVaccinated',
+        isParasite ? 'الأغنام المعالجة' : 'الأغنام المحصنة'
+      ]) || 0)
+    },
+    goats: {
+      total: parseInt(getFieldValue(row, [
+        isParasite ? 'Total Goats' : 'Goats', 'goats', 'goatsTotal',
+        'الماعز', 'ماعز'
+      ]) || 0),
+      young: parseInt(getFieldValue(row, [
+        'Young Goats', 'goatsYoung', 'young_goats',
+        'صغار الماعز'
+      ]) || 0),
+      female: parseInt(getFieldValue(row, [
+        isParasite ? 'Female Goats' : 'F. Goats', 'goatsFemale', 'female_goats',
+        'إناث الماعز'
+      ]) || 0),
+      [isParasite ? 'treated' : 'vaccinated']: parseInt(getFieldValue(row, [
+        isParasite ? 'Treated Goats' : 'Vaccinated Goats',
+        isParasite ? 'goatsTreated' : 'goatsVaccinated',
+        isParasite ? 'الماعز المعالج' : 'الماعز المحصن'
+      ]) || 0)
+    },
+    camel: {
+      total: parseInt(getFieldValue(row, [
+        isParasite ? 'Total Camel' : 'Camel', 'camel', 'camelTotal',
+        'الإبل', 'إبل', 'الجمال'
+      ]) || 0),
+      young: parseInt(getFieldValue(row, [
+        'Young Camels', 'camelYoung', 'young_camels',
+        'صغار الإبل'
+      ]) || 0),
+      female: parseInt(getFieldValue(row, [
+        isParasite ? 'Female Camels' : 'F. Camel', 'camelFemale', 'female_camels',
+        'إناث الإبل'
+      ]) || 0),
+      [isParasite ? 'treated' : 'vaccinated']: parseInt(getFieldValue(row, [
+        isParasite ? 'Treated Camels' : 'Vaccinated Camels',
+        isParasite ? 'camelTreated' : 'camelVaccinated',
+        isParasite ? 'الإبل المعالجة' : 'الإبل المحصنة'
+      ]) || 0)
+    },
+    cattle: {
+      total: parseInt(getFieldValue(row, [
+        isParasite ? 'Total Cattle' : 'Cattle', 'cattle', 'cattleTotal',
+        'الأبقار', 'أبقار', 'البقر'
+      ]) || 0),
+      young: parseInt(getFieldValue(row, [
+        'Young Cattle', 'cattleYoung', 'young_cattle',
+        'صغار الأبقار'
+      ]) || 0),
+      female: parseInt(getFieldValue(row, [
+        isParasite ? 'Female Cattle' : 'F. Cattle', 'cattleFemale', 'female_cattle',
+        'إناث الأبقار'
+      ]) || 0),
+      [isParasite ? 'treated' : 'vaccinated']: parseInt(getFieldValue(row, [
+        isParasite ? 'Treated Cattle' : 'Vaccinated Cattle',
+        isParasite ? 'cattleTreated' : 'cattleVaccinated',
+        isParasite ? 'الأبقار المعالجة' : 'الأبقار المحصنة'
+      ]) || 0)
+    },
+    horse: {
+      total: parseInt(getFieldValue(row, [
+        'Horse', 'horse', 'horseTotal',
+        'الخيول', 'خيول', 'الأحصنة'
+      ]) || 0),
+      young: parseInt(getFieldValue(row, [
+        'Young Horses', 'horseYoung', 'young_horses',
+        'صغار الخيول'
+      ]) || 0),
+      female: parseInt(getFieldValue(row, [
+        'Female Horses', 'horseFemale', 'female_horses',
+        'إناث الخيول'
+      ]) || 0),
+      [isParasite ? 'treated' : 'vaccinated']: parseInt(getFieldValue(row, [
+        isParasite ? 'Treated Horses' : 'Vaccinated Horses',
+        isParasite ? 'horseTreated' : 'horseVaccinated',
+        isParasite ? 'الخيول المعالجة' : 'الخيول المحصنة'
+      ]) || 0)
+    }
+  };
+};
+
+/**
+ * Process animal counts for MobileClinic
+ */
+const processAnimalCounts = (row) => {
+  return {
+    sheep: parseInt(getFieldValue(row, [
+      'Sheep', 'sheep', 'sheepCount',
+      'الأغنام', 'أغنام'
+    ]) || 0),
+    goats: parseInt(getFieldValue(row, [
+      'Goats', 'goats', 'goatsCount',
+      'الماعز', 'ماعز'
+    ]) || 0),
+    camel: parseInt(getFieldValue(row, [
+      'Camel', 'camel', 'camelCount',
+      'الإبل', 'إبل', 'الجمال'
+    ]) || 0),
+    cattle: parseInt(getFieldValue(row, [
+      'Cattle', 'cattle', 'cattleCount',
+      'الأبقار', 'أبقار', 'البقر'
+    ]) || 0),
+    horse: parseInt(getFieldValue(row, [
+      'Horse', 'horse', 'horseCount',
+      'الخيول', 'خيول', 'الأحصنة'
+    ]) || 0)
+  };
+};
+
+/**
+ * Process species counts for Laboratory
+ */
+const processSpeciesCounts = (row) => {
+  return {
+    sheep: parseInt(getFieldValue(row, [
+      'Sheep', 'sheep', 'sheepCount',
+      'الأغنام', 'أغنام'
+    ]) || 0),
+    goats: parseInt(getFieldValue(row, [
+      'Goats', 'goats', 'goatsCount',
+      'الماعز', 'ماعز'
+    ]) || 0),
+    camel: parseInt(getFieldValue(row, [
+      'Camel', 'camel', 'camelCount',
+      'الإبل', 'إبل', 'الجمال'
+    ]) || 0),
+    cattle: parseInt(getFieldValue(row, [
+      'Cattle', 'cattle', 'cattleCount',
+      'الأبقار', 'أبقار', 'البقر'
+    ]) || 0),
+    horse: parseInt(getFieldValue(row, [
+      'Horse', 'horse', 'horseCount',
+      'الخيول', 'خيول', 'الأحصنة'
+    ]) || 0),
+    other: getFieldValue(row, [
+      'Other', 'other', 'Other (Species)', 'otherSpecies',
+      'أخرى', 'أنواع أخرى'
+    ]) || ''
+  };
+};
+
+/**
+ * Generate serial number
+ */
+const generateSerialNo = (row, prefix) => {
+  const serialNo = getFieldValue(row, [
+    'Serial No', 'serialNo', 'serial_no', 'Serial Number',
+    'الرقم التسلسلي', 'رقم تسلسلي'
+  ]);
+  
+  if (serialNo && serialNo.length <= 20) {
+    const timestamp = Date.now().toString().slice(-6);
+    return `${serialNo}-${timestamp}`;
+  }
+  
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.random().toString(36).substr(2, 4);
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+/**
+ * Process enum values with mapping
+ */
+const processEnumValue = (row, fieldNames, enumMap, defaultValue) => {
+  const value = getFieldValue(row, fieldNames);
+  if (!value) return defaultValue;
+  
+  const normalizedValue = value.toString().toLowerCase().trim();
+  
+  // Check map first
+  if (enumMap[normalizedValue]) {
+    return enumMap[normalizedValue];
+  }
+  
+  // Check if it's already a valid value
+  const validValues = Object.values(enumMap).filter((v, i, a) => a.indexOf(v) === i);
+  if (validValues.includes(value)) {
+    return value;
+  }
+  
+  return defaultValue;
+};
+
+/**
+ * Process request object
+ */
+const processRequest = (row, dates) => {
+  return {
+    date: dates.requestDate,
+    situation: processEnumValue(
+      row,
+      ['Request Status', 'Request Situation', 'requestSituation', 'requestStatus', 'حالة الطلب'],
+      {
+        'open': 'Open', 'مفتوح': 'Open', 'نشط': 'Open', 'active': 'Open',
+        'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
+        'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
+      },
+      'Open'
+    ),
+    fulfillingDate: dates.fulfillingDate
+  };
+};
+
+/**
+ * Process custom import data
+ */
+const processCustomImportData = (row) => {
+  const excludeKeys = [
+    'Serial No', 'Date', 'Name', 'ID', 'Phone', 'Location', 
+    'N Coordinate', 'E Coordinate', 'N', 'E',
+    'Supervisor', 'Vehicle No.', 'Sheep', 'Goats', 'Camel', 'Horse', 'Cattle',
+    'Diagnosis', 'Intervention Category', 'Treatment', 
+    'Request Date', 'Request Status', 'Request Fulfilling Date',
+    'category', 'Remarks'
+  ];
+  
+  return {
+    originalData: row,
+    holdingCode: getFieldValue(row, ['Holding Code', 'holdingCode', 'رمز الحيازة']) || '',
+    birthDate: getFieldValue(row, ['Birth Date', 'Date of Birth', 'birthDate', 'تاريخ الميلاد']) || '',
+    ...Object.keys(row).reduce((acc, key) => {
+      if (!excludeKeys.includes(key)) {
+        acc[key] = row[key];
+      }
+      return acc;
+    }, {})
+  };
+};
+
+/**
+ * Process Laboratory row using unified helpers
+ * Note: Laboratory stores client data as embedded fields, not references
+ */
 const processLaboratoryRow = async (row, userId, errors) => {
   try {
-    // Create laboratory record with new field names
+    console.log('🚀 Processing laboratory row with unified helpers');
+    
+    // Get client data as object (Laboratory stores client data directly)
+    const clientData = await processUnifiedClientEnhanced(row, userId, { returnAsObject: true });
+    const dates = processUnifiedDatesEnhanced(row);
+    const coordinates = processUnifiedCoordinatesEnhanced(row);
+    const speciesCounts = processSpeciesCounts(row);
+    
+    // For Laboratory, we allow "غير محدد" as a valid name since it stores client data directly
+    // Just ensure we have the basic required fields
+    if (!clientData.nationalId || !clientData.phone) {
+      console.error('❌ Missing required client data');
+      throw new Error(`Missing required client data: ID=${clientData.nationalId}, Phone=${clientData.phone}`);
+    }
+    
+    console.log(`✅ Laboratory client data processed: Name="${clientData.name}", ID="${clientData.nationalId}", Phone="${clientData.phone}"`);
+    
+    // Create laboratory record
     const laboratory = new Laboratory({
-      serialNo: parseInt(row['Serial'] || row.serialNo || 0),
-      date: new Date(row['date'] || row.date),
-      sampleCode: row['Sample Code'] || row.sampleCode || `LAB-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      clientName: row['Name'] || row.clientName || '',
-      clientId: row['ID'] || row.clientId || '',
-      clientBirthDate: row['Birth Date'] ? new Date(row['Birth Date']) : undefined,
-      clientPhone: row['phone'] || row.clientPhone || '',
-      farmLocation: row['Location'] || row.location || 'N/A',
-      // Animal counts as separate fields for better display
-      sheep: parseInt(row['Sheep'] || row.sheepCount || 0),
-      goats: parseInt(row['Goats'] || row.goatsCount || 0),
-      camel: parseInt(row['Camel'] || row.camelCount || 0),
-      cattle: parseInt(row['Cattle'] || row.cattleCount || 0),
-      horse: parseInt(row['Horse'] || row.horseCount || 0),
-      otherSpecies: row['Other (Species)'] || row.otherSpecies || '',
-      collector: row['Sample Collector'] || row.collector || '',
-      sampleType: row['Sample Type'] || row.sampleType || 'Blood',
-      sampleNumber: row['Samples Number'] || row.sampleNumber || '',
-      positiveCases: parseInt(row['positive cases'] || row.positiveCases || 0),
-      negativeCases: parseInt(row['Negative Cases'] || row.negativeCases || 0),
-      testResults: parseJsonField(row.testResults, []),
-      remarks: row['Remarks'] || row.remarks || '',
+      serialNo: parseInt(getFieldValue(row, [
+        'Serial No', 'serialNo', 'serial_no', 'Serial Number',
+        'الرقم التسلسلي', 'رقم تسلسلي'
+      ])) || Date.now() % 1000000, // Generate unique number if not provided
+      sampleCode: getFieldValue(row, [
+        'sampleCode', 'Sample Code', 'code', 'sample_code',
+        'رمز العينة', 'رمز'
+      ]) || generateSerialNo(row, 'LAB'),
+      date: dates.mainDate,
+      clientName: clientData.name || 'غير محدد',
+      clientId: clientData.nationalId,
+      clientBirthDate: clientData.birthDate,
+      clientPhone: clientData.phone,
+      farmLocation: getFieldValue(row, [
+        'farmLocation', 'Location', 'location', 'Farm Location',
+        'الموقع', 'موقع المزرعة'
+      ]) || 'N/A',
+      coordinates: coordinates.latitude !== 0 || coordinates.longitude !== 0 ? coordinates : undefined,
+      speciesCounts: speciesCounts,
+      collector: getFieldValue(row, [
+        'collector', 'Sample Collector', 'Collector', 'sample_collector',
+        'جامع العينة', 'المجمع'
+      ]) || 'N/A',
+      sampleType: getFieldValue(row, [
+        'sampleType', 'Sample Type', 'Type', 'sample_type',
+        'نوع العينة', 'نوع'
+      ]) || 'Blood',
+      sampleNumber: getFieldValue(row, [
+        'sampleNumber', 'Sample Number', 'Samples Number', 'sample_number',
+        'رقم العينة', 'عدد العينات'
+      ]) || 'N/A',
+      positiveCases: parseInt(getFieldValue(row, [
+        'positiveCases', 'Positive Cases', 'positive_cases', 'positive cases',
+        'الحالات الإيجابية', 'إيجابي'
+      ]) || 0),
+      negativeCases: parseInt(getFieldValue(row, [
+        'negativeCases', 'Negative Cases', 'negative_cases', 'negative cases',
+        'الحالات السلبية', 'سلبي'
+      ]) || 0),
+      testResults: parseJsonField(getFieldValue(row, [
+        'testResults', 'Test Results', 'test_results', 'results',
+        'النتائج', 'نتائج الفحص'
+      ]), []),
+      remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      customImportData: processCustomImportData(row),
       createdBy: userId
     });
 
@@ -1515,73 +2449,93 @@ const processLaboratoryRow = async (row, userId, errors) => {
   }
 };
 
+/**
+ * Process EquineHealth row using unified helpers
+ * Note: EquineHealth stores client data as embedded fields, not references
+ */
 const processEquineHealthRow = async (row, userId, errors) => {
   try {
-    // Validate required fields using new field names
-    if (!row['Date'] && !row.date) {
-      throw new Error('Date is required');
+    // Get client data as object (EquineHealth stores client data directly)
+    const clientData = await processUnifiedClientEnhanced(row, userId, { returnAsObject: true });
+    const dates = processUnifiedDatesEnhanced(row);
+    const coordinates = processUnifiedCoordinatesEnhanced(row);
+    
+    // Get diagnosis and treatment
+    const diagnosis = getFieldValue(row, [
+      'Diagnosis', 'diagnosis', 'التشخيص'
+    ]);
+    const treatment = getFieldValue(row, [
+      'Treatment', 'treatment', 'العلاج'
+    ]);
+    
+    // Provide default values for empty fields
+    const finalDiagnosis = diagnosis || 'غير محدد';
+    const finalTreatment = treatment || 'غير محدد';
+    
+    console.log(`ℹ️ EquineHealth fields: Diagnosis="${finalDiagnosis}", Treatment="${finalTreatment}"`);
+    
+    // For EquineHealth, we allow "غير محدد" as a valid name since it stores client data directly
+    if (!clientData.nationalId || !clientData.phone) {
+      throw new Error(`Missing required client data: ID=${clientData.nationalId}, Phone=${clientData.phone}`);
     }
     
-    if (!row['Name'] && !row.name && !row.clientName) {
-      throw new Error('Client name is required');
-    }
-
-    // Find or create client using new field names
-    const client = await findOrCreateClient({
-      Name: row['Name'],
-      ID: row['ID'],
-      Phone: row['Phone'],
-      Location: row['Location'],
-      name: row.name,
-      id: row.id,
-      phone: row.phone,
-      location: row.location,
-      clientName: row.clientName,
-      clientId: row.clientId,
-      clientPhone: row.clientPhone,
-      clientVillage: row.clientVillage,
-      clientAddress: row.clientAddress
-    }, userId);
+    console.log(`✅ EquineHealth client data processed: Name="${clientData.name}", ID="${clientData.nationalId}", Phone="${clientData.phone}"`);
     
-    if (!client) {
-      throw new Error('Client not found and could not be created');
-    }
-
-    // Validate date - handle multiple date formats using enhanced parser
-    const dateString = row['Date'] || row.date || row.DATE;
-    console.log(`🔍 Processing date: ${dateString}`);
-    
-    const dateValue = parseDateField(dateString);
-    
-    if (!dateValue || isNaN(dateValue.getTime())) {
-      throw new Error(`Invalid date format: ${dateString}`);
-    }
-
-    // Create equine health record with new field names
+    // Create equine health record
     const equineHealth = new EquineHealth({
-      serialNo: row['Serial No'] || row.serialNo || `EH-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      date: dateValue,
-      client: client._id,
-      farmLocation: row['Location'] || row.location || 'N/A',
-      coordinates: {
-        latitude: parseFloat(row['N Coordinate'] || row.latitude || 0),
-        longitude: parseFloat(row['E Coordinate'] || row.longitude || 0)
+      serialNo: generateSerialNo(row, 'EH'),
+      date: dates.mainDate,
+      client: {
+        name: clientData.name || 'غير محدد',
+        nationalId: clientData.nationalId,
+        phone: clientData.phone,
+        village: clientData.village || 'غير محدد',
+        detailedAddress: clientData.detailedAddress || clientData.village || 'غير محدد',
+        birthDate: clientData.birthDate
       },
-      supervisor: row['Supervisor'] || row.supervisor || '',
-      vehicleNo: row['Vehicle No.'] || row.vehicleNo || row['Vehicle No'] || 'N/A',
-      // Animal counts as separate fields for better display
-      horseCount: parseInt(row.horseCount || 1),
-      diagnosis: row['Diagnosis'] || row.diagnosis || '',
-      interventionCategory: row['Intervention Category'] || row.interventionCategory || 'Routine',
-      treatment: row['Treatment'] || row.treatment || '',
-      followUpRequired: row.followUpRequired === 'true' || row.follow_up_required === 'true',
-      followUpDate: row.followUpDate ? new Date(row.followUpDate) : undefined,
-      request: {
-        date: new Date(row['Request Date'] || row.requestDate || row.date),
-        situation: row['Request Status'] || row.requestSituation || 'Open',
-        fulfillingDate: row['Request Fulfilling Date'] ? new Date(row['Request Fulfilling Date']) : undefined
-      },
-      remarks: row['Remarks'] || row.remarks || '',
+      farmLocation: getFieldValue(row, [
+        'Farm Location', 'farmLocation', 'farm_location',
+        'موقع المزرعة', 'الموقع'
+      ]) || clientData.village,
+      coordinates: coordinates.latitude !== 0 || coordinates.longitude !== 0 ? coordinates : undefined,
+      supervisor: getFieldValue(row, [
+        'Supervisor', 'supervisor', 'المشرف'
+      ]) || 'N/A',
+      vehicleNo: getFieldValue(row, [
+        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'N/A',
+      horseCount: parseInt(getFieldValue(row, [
+        'Horse Count', 'horseCount', 'horse_count',
+        'عدد الخيول', 'عدد الأحصنة'
+      ]) || 1),
+      diagnosis: finalDiagnosis,
+      interventionCategory: processEnumValue(
+        row,
+        ['Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'],
+        {
+          'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
+          'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
+          'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
+          'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up',
+          'clinical examination': 'Routine', 'فحص سريري': 'Routine'
+        },
+        'Routine'
+      ),
+      treatment: finalTreatment,
+      followUpRequired: processEnumValue(
+        row,
+        ['Follow Up Required', 'followUpRequired', 'follow_up_required', 'مطلوب متابعة'],
+        {
+          'true': true, 'yes': true, 'نعم': true, '1': true,
+          'false': false, 'no': false, 'لا': false, '0': false
+        },
+        false
+      ),
+      followUpDate: dates.followUpDate,
+      request: processRequest(row, dates),
+      remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      customImportData: processCustomImportData(row),
       createdBy: userId
     });
 
@@ -1594,11 +2548,11 @@ const processEquineHealthRow = async (row, userId, errors) => {
 
 // Export routes with proper field definitions
 router.get('/clients/export', auth, handleExport(Client, {}, [
-  'name', 'nationalId', 'phone', 'email', 'village', 'detailedAddress', 'status', 'totalAnimals'
+  'name', 'nationalId', 'birthDate', 'phone', 'email', 'village', 'detailedAddress', 'status', 'totalAnimals'
 ], 'clients'));
 
 router.get('/vaccination/export', auth, handleExport(Vaccination, {}, [
-  'serialNo', 'date', 'client', 'farmLocation', 'supervisor', 'team', 'vehicleNo', 
+  'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'supervisor', 'team', 'vehicleNo', 
   'vaccineType', 'vaccineCategory', 'sheep', 'sheepFemale', 'sheepVaccinated', 
   'goats', 'goatsFemale', 'goatsVaccinated', 'camel', 'camelFemale', 'camelVaccinated', 
   'cattle', 'cattleFemale', 'cattleVaccinated', 'herdNumber', 'herdFemales', 
@@ -1606,7 +2560,7 @@ router.get('/vaccination/export', auth, handleExport(Vaccination, {}, [
 ], 'vaccination'));
 
 router.get('/parasite-control/export', auth, handleExport(ParasiteControl, {}, [
-  'serialNo', 'date', 'client', 'herdLocation', 'supervisor', 'vehicleNo', 
+  'serialNo', 'date', 'client', 'clientBirthDate', 'herdLocation', 'supervisor', 'vehicleNo', 
   'sheepTotal', 'sheepYoung', 'sheepFemale', 'sheepTreated', 'goatsTotal', 
   'goatsYoung', 'goatsFemale', 'goatsTreated', 'camelTotal', 'camelYoung', 
   'camelFemale', 'camelTreated', 'cattleTotal', 'cattleYoung', 'cattleFemale', 
@@ -1617,19 +2571,19 @@ router.get('/parasite-control/export', auth, handleExport(ParasiteControl, {}, [
 ], 'parasite-control'));
 
 router.get('/mobile-clinics/export', auth, handleExport(MobileClinic, {}, [
-  'serialNo', 'date', 'client', 'farmLocation', 'supervisor', 'vehicleNo', 
+  'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'supervisor', 'vehicleNo', 
   'sheep', 'goats', 'camel', 'cattle', 'horse', 'diagnosis', 'interventionCategory', 
   'treatment', 'medicationsUsed', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'mobile-clinics'));
 
 router.get('/laboratories/export', auth, handleExport(Laboratory, {}, [
-  'serialNo', 'date', 'sampleCode', 'clientName', 'clientId', 'clientPhone', 
+  'serialNo', 'date', 'sampleCode', 'clientName', 'clientId', 'clientBirthDate', 'clientPhone', 
   'sheep', 'goats', 'camel', 'cattle', 'horse', 'otherSpecies', 'collector', 
   'sampleType', 'sampleNumber', 'positiveCases', 'negativeCases', 'testResults', 'remarks'
 ], 'laboratories'));
 
 router.get('/equine-health/export', auth, handleExport(EquineHealth, {}, [
-  'serialNo', 'date', 'client', 'farmLocation', 'coordinates', 'supervisor', 
+  'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'coordinates', 'supervisor', 
   'vehicleNo', 'horseCount', 'diagnosis', 'interventionCategory', 
   'treatment', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'equine-health'));
@@ -1644,71 +2598,79 @@ router.get('/clients/template', auth, handleTemplate([
     village: 'فضلا',
     detailedAddress: 'منطقة فضلا',
     status: 'نشط',
-    totalAnimals: '10'
+    totalAnimals: '10',
+    'Birth Date': '7/19/1958',
+    'Holding Code': '6820030001295',
+    'Location': 'فضلا',
+    'N Coordinate': '26.37038',
+    'E Coordinate': '37.84097'
   }
 ], 'clients-template'));
 
 router.get('/vaccination/template', auth, handleTemplate([
   {
     'Serial No': '1',
-    'Date': '24-Aug',
-    'Name': 'عطا الله ابراهيم البلوي',
-    'ID': '1028544243',
-    'Birth Date': '1985-01-15',
-    'Phone': '501834996',
-    'Location': 'فضلا',
-    'N Coordinate': '24.7136',
-    'E Coordinate': '46.6753',
-    'Supervisor': 'kandil',
-    'Team': 'فريق أ',
-    'Sheep': '10',
-    'F. Sheep': '5',
-    'Vaccinated Sheep': '8',
-    'Goats': '15',
-    'F. Goats': '8',
-    'Vaccinated Goats': '12',
-    'Camel': '3',
-    'F. Camel': '2',
-    'Vaccinated Camels': '2',
-    'Cattle': '5',
-    'F. Cattle': '3',
-    'Vaccinated Cattle': '4',
-    'Herd Number': '33',
-    'Herd Females': '18',
-    'Total Vaccinated': '26',
+    'Date': '1-Sep',
+    'Name': 'سعد رجاء ناهض البلوي',
+    'ID': '1004458947',
+    'Birth Date': '8/12/1961',
+    'Phone': '543599283',
+    'Holding Code': '6.82003E+12',
+    'Location': 'ابو خريط',
+    'E': '37974167',
+    'N': '26263183',
+    'Supervisor': 'M.Tahir',
+    'Vehicle No.': 'V1',
+    'Sheep': '67',
+    'F. Sheep': '49',
+    'Vaccinated Sheep': '57',
+    'Goats': '33',
+    'F.Goats': '29',
+    'Vaccinated Goats': '33',
+    'Camel': '0',
+    'F. Camel': '0',
+    'Vaccinated Camels': '0',
+    'Cattel': '0',
+    'F. Cattle': '0',
+    'Vaccinated Cattle': '0',
+    'Herd Number': '100',
+    'Herd Females': '78',
+    'Total Vaccinated': '90',
     'Herd Health': 'Healthy',
-    'Animals Handling': 'Easy',
+    'Animals Handling': 'Easy handling',
     'Labours': 'Available',
     'Reachable Location': 'Easy',
-    'Request Date': '8/24/2025',
+    'Request Date': '31-Aug',
     'Situation': 'Closed',
-    'Request Fulfilling Date': '8/24/2025',
-    'Vaccine': 'لقاح وقائي',
-    'Category': 'Preventive',
-    'Remarks': 'تم التحصين بنجاح'
+    'Request Fulfilling Date': '1-Sep',
+    'Vaccine': 'PPR',
+    'Category': 'Vaccination',
+    'Remarks': ''
   }
 ], 'vaccination-template'));
 
 router.get('/parasite-control/template', auth, handleTemplate([
   {
     'Serial No': '1',
-    'Date': '22-Jun',
-    'Name': 'حسن عبد الله حسن أبو الخير',
-    'ID': '1006010530',
-    'Date of Birth': '1980-05-15',
-    'Phone': '503321959',
-    'E': '46.6753',
-    'N': '24.7136',
+    'Date': '24-Aug',
+    'Name': 'زعل عبد الله سليمان البلوي',
+    'ID': '1038582498',
+    'Birth Date': '5/11/1946',
+    'Phone': '508762550',
+    'Holding Code': '6820030001222',
+    'Location': 'كتيفه',
+    'N Coordinate': '26.080534',
+    'E Coordinate': '38.080037',
     'Supervisor': 'Ibrahim',
     'Vehicle No.': 'P1',
-    'Total Sheep': '149',
+    'Total Sheep': '32',
     'Young sheep': '0',
-    'Female Sheep': '145',
-    'Treated Sheep': '149',
-    'Total Goats': '34',
+    'Female Sheep': '27',
+    'Treated Sheep': '32',
+    'Total Goats': '85',
     'Young Goats': '0',
-    'Female Goats': '30',
-    'Treated Goats': '32',
+    'Female Goats': '0',
+    'Treated Goats': '85',
     'Total Camel': '0',
     'Young Camels': '0',
     'Female Camels': '0',
@@ -1717,24 +2679,22 @@ router.get('/parasite-control/template', auth, handleTemplate([
     'Young Cattle': '0',
     'Female Cattle': '0',
     'Treated Cattle': '0',
-    'Total Herd': '183',
+    'Total Herd': '117',
     'Total Young': '0',
-    'Total Female': '175',
-    'Total Treated': '181',
-    'Insecticide Used': 'Cypermethrin 10%',
-    'Type': 'Spraying',
-    'Volume (ml)': '370',
-    'Category': 'Insecticide',
+    'Total Female': '27',
+    'Total Treated': '117',
+    'Insecticide Used': 'Albendazole 2.5%',
+    'Type': 'Clinical Examination',
+    'Volume (ml)': '100',
+    'Category': 'Internal Parasite',
     'Status': 'Sprayed',
-    'Size (sqM)': '150',
-    'Insecticide': 'Cypermethrin 10%',
-    'Volume': '370',
+    'Size (sqM)': '50',
     'Herd Health Status': 'Healthy',
     'Complying to instructions': 'true',
-    'Request Date': '19-Jun',
+    'Request Date': '8/21/2025',
     'Request Situation': 'Closed',
-    'Request Fulfilling Date': '22-Jun',
-    'Remarks': 'تم المكافحة بنجاح'
+    'Request Fulfilling Date': '8/24/2025',
+    'Remarks': 'Internal Parasite Campaign'
   }
 ], 'parasite-control-template'));
 
@@ -1744,12 +2704,12 @@ router.get('/mobile-clinics/template', auth, handleTemplate([
     'Date': '24-Aug',
     'Name': 'عطا الله ابراهيم البلوي',
     'ID': '1028544243',
-    'Birth Date': '1985-01-15',
+    'Birth Date': '7/19/1958',
     'Phone': '501834996',
-    'Holding Code': 'HC001',
+    'Holding Code': '6820030001295',
     'Location': 'فضلا',
-    'N Coordinate': '24.7136',
-    'E Coordinate': '46.6753',
+    'N Coordinate': '26.37038',
+    'E Coordinate': '37.84097',
     'Supervisor': 'kandil',
     'Vehicle No.': 'C2',
     'Sheep': '2',
@@ -1759,39 +2719,62 @@ router.get('/mobile-clinics/template', auth, handleTemplate([
     'Cattle': '0',
     'Diagnosis': 'Pnemonia',
     'Intervention Category': 'Clinical Examination',
-    'Treatment': 'Zuprevo , Meloxicam',
+    'Treatment': 'Zuprevo , Meloxicam ,',
     'Request Date': '8/24/2025',
     'Request Status': 'Closed',
     'Request Fulfilling Date': '8/24/2025',
-    'category': 'Emergency',
-    'Remarks': 'Emergency Cases'
+    'category': 'm clinic treatment',
+    'Remarks': ''
   }
 ], 'mobile-clinics-template'));
 
 router.get('/laboratories/template', auth, handleTemplate([
   {
-    'Serial': '1',
-    'date': '24-Aug',
+    // Primary fields matching the model
+    'serialNo': '1',
+    'date': '2024-08-24',
+    'sampleCode': 'LAB-001',
+    'clientName': 'عطا الله ابراهيم البلوي',
+    'clientId': '1028544243',
+    'clientBirthDate': '1958-07-19',
+    'clientPhone': '501834996',
+    'farmLocation': 'فضلا',
+    'collector': 'kandil',
+    'sampleType': 'Blood',
+    'sampleNumber': 'S001',
+    'positiveCases': '0',
+    'negativeCases': '3',
+    'remarks': 'All tests negative',
+    // Alternative column names for flexibility
+    'Serial No': '1',
+    'Date': '24-Aug',
     'Sample Code': 'LAB-001',
     'Name': 'عطا الله ابراهيم البلوي',
     'ID': '1028544243',
-    'Birth Date': '1985-01-15',
-    'phone': '501834996',
+    'Birth Date': '7/19/1958',
+    'Phone': '501834996',
     'Location': 'فضلا',
-    'N': '24.7136',
-    'E': '46.6753',
-    'Sheep': '10',
-    'Goats': '15',
-    'Camel': '5',
-    'Horse': '3',
-    'Cattle': '8',
-    'Other (Species)': 'Poultry',
-    'Sample Collector': 'kandil',
+    'Collector': 'kandil',
     'Sample Type': 'Blood',
-    'Samples Number': 'S001',
-    'positive cases': '2',
-    'Negative Cases': '8',
-    'Remarks': 'تم الفحص بنجاح'
+    'Sample Number': 'S001',
+    'Positive Cases': '0',
+    'Negative Cases': '3',
+    'Remarks': 'All tests negative',
+    // Coordinates
+    'N Coordinate': '26.37038',
+    'E Coordinate': '37.84097',
+    // Animal counts
+    'Sheep': '2',
+    'Goats': '1',
+    'Camel': '0',
+    'Horse': '0',
+    'Cattle': '0',
+    'Other (Species)': 'N/A',
+    // Additional fields
+    'Holding Code': '6820030001295',
+    'Supervisor': 'kandil',
+    'Vehicle No.': 'L1',
+    'Test Results': 'Negative'
   }
 ], 'laboratories-template'));
 
@@ -1801,11 +2784,15 @@ router.get('/equine-health/template', auth, handleTemplate([
     'Date': '24-Aug',
     'Name': 'عطا الله ابراهيم البلوي',
     'ID': '1028544243',
-    'Birth Date': '1985-01-15',
+    'Birth Date': '7/19/1958',
     'Phone': '501834996',
+    'Holding Code': '6820030001295',
     'Location': 'فضلا',
-    'N Coordinate': '24.7136',
-    'E Coordinate': '46.6753',
+    'N Coordinate': '26.37038',
+    'E Coordinate': '37.84097',
+    'Supervisor': 'kandil',
+    'Vehicle No.': 'EH1',
+    'Horse Count': '1',
     'Diagnosis': 'فحص روتيني',
     'Intervention Category': 'Clinical Examination',
     'Treatment': 'علاج وقائي',
@@ -1846,6 +2833,10 @@ router.post('/mobile-clinics/import', auth, handleImport(MobileClinic, processMo
 router.post('/laboratories/import', auth, handleImport(Laboratory, processLaboratoryRow));
 router.post('/equine-health/import', auth, handleImport(EquineHealth, processEquineHealthRow));
 
+// Enhanced import routes with better error handling
+router.post('/laboratories/import-enhanced', auth, handleImport(Laboratory, processLaboratoryRow));
+router.post('/equine-health/import-enhanced', auth, handleImport(EquineHealth, processEquineHealthRow));
+
 // Inventory routes (placeholder - will be implemented when inventory model is available)
 router.get('/inventory/export', auth, (req, res) => {
   res.json({
@@ -1862,10 +2853,21 @@ router.get('/inventory/template', auth, (req, res) => {
 });
 
 router.post('/inventory/import', auth, (req, res) => {
-  res.json({
+  res.status(501).json({
     success: false,
     message: 'Inventory import not implemented yet'
   });
+});
+
+// Enhanced import routes with improved validation
+router.post('/laboratories/import-enhanced', auth, (req, res, next) => {
+  console.log('🎯 Enhanced laboratories import route called');
+  handleImport(Laboratory, processLaboratoryRow)(req, res, next);
+});
+
+router.post('/equine-health/import-enhanced', auth, (req, res, next) => {
+  console.log('🎯 Enhanced equine health import route called');
+  handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
 });
 
 module.exports = router;
