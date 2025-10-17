@@ -681,6 +681,9 @@ const processEquineHealthRow = async (row, userId) => {
     throw new Error(`Error processing equine health row: ${error.message}`);
   }
 };
+/**
+ * Process Laboratory row from Dromo
+ */
 const processLaboratoryRow = async (row, userId) => {
   try {
     console.log('🔄 Processing laboratory row:', JSON.stringify(row, null, 2));
