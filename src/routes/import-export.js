@@ -933,34 +933,22 @@ const handleDromoWebhook = (Model, processRowFunction) => {
   return async (req, res) => {
     try {
       console.log('🎯 Dromo webhook called for:', Model.modelName);
+      console.log('🎯 Request skipAuth:', req.skipAuth);
+      console.log('🎯 Headers:', Object.keys(req.headers));
       
-      // Get user for import (try token first, fallback to admin)
-      let userId = null;
-      const authHeader = req.headers.authorization;
-      
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          const user = await User.findById(decoded.id);
-          if (user) userId = user._id;
-        } catch (err) {
-          console.log('⚠️ Invalid token in webhook, using admin fallback');
-        }
-      }
-      
-      // Use admin user as fallback
-      if (!userId) {
-        const adminUser = await User.findOne({ role: 'admin' });
-        userId = adminUser ? adminUser._id : null;
-      }
+      // Always use admin user for webhook imports
+      const adminUser = await User.findOne({ role: 'super_admin' });
+      const userId = adminUser ? adminUser._id : null;
       
       if (!userId) {
-        return res.status(401).json({
+        console.error('❌ No admin user found');
+        return res.status(500).json({
           success: false,
-          message: 'لا يوجد مستخدم صالح للاستيراد'
+          message: 'لا يوجد مستخدم إداري في النظام'
         });
       }
+      
+      console.log('✅ Using admin user:', adminUser.name, 'ID:', userId);
       
       // Get data from Dromo webhook (try multiple formats)
       let rows = null;

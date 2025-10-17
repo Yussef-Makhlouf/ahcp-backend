@@ -276,9 +276,51 @@ if (importExportRoutes) {
   
   // Special routes for Dromo webhooks (no auth required)
   console.log('✅ Loading Dromo webhook routes (no auth)');
-  app.use('/import-export', importExportRoutes);
+  
+  // Create specific webhook routes without any middleware
+  app.post('/import-export/vaccination/import-dromo', (req, res, next) => {
+    console.log('🎯 Direct webhook call for vaccination');
+    req.skipAuth = true;
+    next();
+  }, importExportRoutes);
+  
+  app.post('/import-export/laboratories/import-dromo', (req, res, next) => {
+    console.log('🎯 Direct webhook call for laboratories');
+    req.skipAuth = true;
+    next();
+  }, importExportRoutes);
+  
+  app.post('/import-export/parasite-control/import-dromo', (req, res, next) => {
+    console.log('🎯 Direct webhook call for parasite-control');
+    req.skipAuth = true;
+    next();
+  }, importExportRoutes);
+  
+  app.post('/import-export/mobile-clinics/import-dromo', (req, res, next) => {
+    console.log('🎯 Direct webhook call for mobile-clinics');
+    req.skipAuth = true;
+    next();
+  }, importExportRoutes);
+  
+  app.post('/import-export/equine-health/import-dromo', (req, res, next) => {
+    console.log('🎯 Direct webhook call for equine-health');
+    req.skipAuth = true;
+    next();
+  }, importExportRoutes);
 }
 
+
+// Test webhook endpoint
+app.post('/import-export/test-webhook', (req, res) => {
+  console.log('🧪 Test webhook called');
+  console.log('🧪 Headers:', req.headers);
+  console.log('🧪 Body:', req.body);
+  res.json({
+    success: true,
+    message: 'Test webhook working',
+    receivedData: req.body
+  });
+});
 
 // Test endpoint for debugging
 app.get('/test-routes', (req, res) => {
