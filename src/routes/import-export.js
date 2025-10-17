@@ -935,6 +935,11 @@ const handleDromoWebhook = (Model, processRowFunction) => {
       console.log('🎯 Dromo webhook called for:', Model.modelName);
       console.log('🎯 Request skipAuth:', req.skipAuth);
       console.log('🎯 Headers:', Object.keys(req.headers));
+      console.log('🎯 Table Type from header:', req.headers['x-table-type']);
+      console.log('🎯 Source:', req.headers['x-source']);
+      console.log('🎯 Request method:', req.method);
+      console.log('🎯 Request URL:', req.url);
+      console.log('🎯 Data rows count:', req.body?.data?.length || req.body?.validData?.length || 'unknown');
       
       // Always use admin user for webhook imports
       const adminUser = await User.findOne({ role: 'super_admin' });
@@ -949,6 +954,23 @@ const handleDromoWebhook = (Model, processRowFunction) => {
       }
       
       console.log('✅ Using admin user:', adminUser.name, 'ID:', userId);
+      
+      // Validate table type matches the model
+      const tableType = req.headers['x-table-type'];
+      const expectedTypes = {
+        'Vaccination': 'vaccination',
+        'ParasiteControl': 'parasite_control', 
+        'MobileClinic': 'mobile',
+        'Laboratory': 'laboratory',
+        'EquineHealth': 'equine_health'
+      };
+      
+      const expectedType = expectedTypes[Model.modelName];
+      if (tableType && expectedType && tableType !== expectedType) {
+        console.warn(`⚠️ Table type mismatch: expected ${expectedType}, got ${tableType}`);
+      } else {
+        console.log(`✅ Table type validation passed: ${Model.modelName} -> ${tableType}`);
+      }
       
       // Get data from Dromo webhook (try multiple formats)
       let rows = null;
@@ -1011,6 +1033,7 @@ const handleDromoWebhook = (Model, processRowFunction) => {
         successRows: savedRecords.length,
         errorRows: errors.length,
         errors: errors,
+        
         batchId: `dromo_${Date.now()}_${Model.modelName.toLowerCase()}`,
         debug: {
           totalInDatabase: dbCount,

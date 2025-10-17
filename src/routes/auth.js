@@ -124,6 +124,48 @@ router.post('/register',
  *       401:
  *         description: Invalid credentials
  */
+// GET route for login page info
+router.get('/login', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Login endpoint available',
+    method: 'POST',
+    requiredFields: ['email', 'password'],
+    availableRoles: ['super_admin', 'section_supervisor', 'field_worker']
+  });
+});
+
+// GET route for auth status
+router.get('/status', optionalAuth, (req, res) => {
+  res.json({
+    success: true,
+    authenticated: !!req.user,
+    user: req.user ? {
+      id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      role: req.user.role
+    } : null
+  });
+});
+
+// GET route for available endpoints
+router.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Authentication API',
+    endpoints: {
+      'POST /login': 'User login',
+      'POST /register': 'User registration',
+      'POST /logout': 'User logout',
+      'GET /me': 'Get current user',
+      'GET /status': 'Check auth status',
+      'POST /forgot-password': 'Request password reset',
+      'POST /reset-password': 'Reset password'
+    }
+  });
+});
+
 router.post('/login',
   validate(schemas.userLogin),
   asyncHandler(async (req, res) => {
