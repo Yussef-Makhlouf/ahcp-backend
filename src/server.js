@@ -55,7 +55,7 @@ app.use(helmet({
 
 // CORS configuration - آمن للإنتاج
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(',') || ['https://yourdomain.com'],
+  origin: process.env.CORS_ORIGIN?.split(',') || ['https://ahcp-dashboard.vercel.app'] || '*' || 'http://localhost:3000',
   credentials: true, // آمن للإنتاج
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
   allowedHeaders: [

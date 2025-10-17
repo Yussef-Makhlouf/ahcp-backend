@@ -90,7 +90,9 @@ const corsOptions = {
     'Pragma',
     'Expires',
     'X-CSRF-Token',
-    'X-Requested-With'
+    'X-Requested-With',
+    'X-Table-Type',
+    'X-Dromo-Webhook'
   ],
   exposedHeaders: [
     'Content-Length',
@@ -271,6 +273,10 @@ if (villagesRoutes && selectedAuth) {
 if (importExportRoutes) {
   console.log('✅ Loading import-export routes with authentication');
   app.use('/api/import-export', selectedAuth, importExportRoutes);
+  
+  // Special routes for Dromo webhooks (no auth required)
+  console.log('✅ Loading Dromo webhook routes (no auth)');
+  app.use('/import-export', importExportRoutes);
 }
 
 
