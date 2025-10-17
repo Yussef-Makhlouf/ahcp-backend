@@ -150,13 +150,15 @@ const processUnifiedClient = async (row, userId) => {
   });
 
   if (!client) {
-    // Create new client
+    // Create new client with proper validation
+    const validNationalId = clientId.length >= 10 ? clientId : clientId.padStart(10, '0');
+    
     client = new Client({
       name: clientName,
-      nationalId: clientId,
+      nationalId: validNationalId,
       phone: clientPhone,
       village: clientVillage || 'غير محدد',
-      status: 'active',
+      status: 'نشط', // Use Arabic status
       createdBy: userId
     });
     await client.save();
@@ -348,8 +350,337 @@ const processVaccinationRow = async (row, userId) => {
 };
 
 /**
- * Process Laboratory row from Dromo
+ * Process ParasiteControl row from Dromo
  */
+const processParasiteControlRow = async (row, userId) => {
+  try {
+    console.log('🔄 Processing parasite control row:', JSON.stringify(row, null, 2));
+    
+    const client = await processUnifiedClient(row, userId);
+    const dates = processUnifiedDates(row);
+    const herdCounts = processHerdCounts(row);
+    
+    const parasiteControl = new ParasiteControl({
+      serialNo: generateSerialNo(row, 'PAR'),
+      date: dates.mainDate,
+      client: client._id,
+      herdLocation: getFieldValue(row, [
+        'herdLocation', 'Herd Location', 'Location', 'location',
+        'موقع القطيع', 'الموقع', 'farmLocation'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'supervisor', 'Supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      vehicleNo: getFieldValue(row, [
+        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'V1',
+      herdCounts: herdCounts,
+      insecticide: {
+        type: getFieldValue(row, [
+          'insecticideType', 'Insecticide Used', 'Insecticide', 'insecticide_type',
+          'نوع المبيد', 'المبيد المستخدم'
+        ]) || 'Default Insecticide',
+        method: getFieldValue(row, [
+          'insecticideMethod', 'Type', 'Method', 'insecticide_method',
+          'طريقة الرش', 'النوع'
+        ]) || 'Spray',
+        volumeMl: parseInt(getFieldValue(row, [
+          'insecticideVolume', 'Volume (ml)', 'Volume', 'insecticide_volume',
+          'الحجم (مل)', 'الحجم'
+        ]) || 0),
+        status: processEnumValue(
+          row,
+          ['insecticideStatus', 'Status', 'insecticide_status', 'حالة المبيد'],
+          {
+            'sprayed': 'Sprayed',
+            'not sprayed': 'Not Sprayed',
+            'مرشوش': 'Sprayed',
+            'غير مرشوش': 'Not Sprayed'
+          },
+          'Sprayed'
+        ),
+        category: getFieldValue(row, [
+          'insecticideCategory', 'Category', 'insecticide_category',
+          'فئة المبيد'
+        ]) || 'General'
+      },
+      animalBarnSizeSqM: parseInt(getFieldValue(row, [
+        'animalBarnSize', 'Size (sqM)', 'Barn Size', 'animal_barn_size',
+        'مساحة الحظيرة', 'الحجم (متر مربع)'
+      ]) || 0),
+      breedingSites: getFieldValue(row, [
+        'breedingSites', 'Breeding Sites', 'breeding_sites',
+        'مواقع التكاثر'
+      ]) || 'N/A',
+      parasiteControlVolume: parseInt(getFieldValue(row, [
+        'parasiteControlVolume', 'Parasite Control Volume', 'parasite_control_volume',
+        'حجم مكافحة الطفيليات'
+      ]) || 0),
+      parasiteControlStatus: getFieldValue(row, [
+        'parasiteControlStatus', 'Parasite Control Status', 'parasite_control_status',
+        'حالة مكافحة الطفيليات'
+      ]) || 'Completed',
+      herdHealthStatus: processEnumValue(
+        row,
+        ['herdHealthStatus', 'Herd Health Status', 'herd_health_status', 'حالة صحة القطيع'],
+        {
+          'healthy': 'Healthy',
+          'sick': 'Sick',
+          'under treatment': 'Under Treatment',
+          'صحي': 'Healthy',
+          'مريض': 'Sick',
+          'تحت العلاج': 'Under Treatment'
+        },
+        'Healthy'
+      ),
+      ownerCompliance: processEnumValue(
+        row,
+        ['ownerCompliance', 'Owner Compliance', 'owner_compliance', 'امتثال المالك'],
+        {
+          'comply': 'Comply',
+          'not comply': 'Not Comply',
+          'ملتزم': 'Comply',
+          'غير ملتزم': 'Not Comply'
+        },
+        'Comply'
+      ),
+      request: {
+        date: dates.requestDate,
+        fulfillingDate: dates.requestFulfillingDate,
+        situation: processEnumValue(
+          row,
+          ['requestSituation', 'Request Situation', 'request_situation'],
+          {
+            'closed': 'Closed',
+            'open': 'Open',
+            'pending': 'Pending'
+          },
+          'Closed'
+        )
+      },
+      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      createdBy: userId
+    });
+
+    await parasiteControl.save();
+    console.log(`✅ Saved parasite control record: ${parasiteControl.serialNo} (${parasiteControl._id})`);
+    return parasiteControl;
+  } catch (error) {
+    console.error('❌ Error processing parasite control row:', error.message);
+    throw new Error(`Error processing parasite control row: ${error.message}`);
+  }
+};
+
+/**
+ * Process MobileClinic row from Dromo
+ */
+const processMobileClinicRow = async (row, userId) => {
+  try {
+    console.log('🔄 Processing mobile clinic row:', JSON.stringify(row, null, 2));
+    
+    const client = await processUnifiedClient(row, userId);
+    const dates = processUnifiedDates(row);
+    
+    // Process animal counts (different from herd counts)
+    const animalCounts = {
+      sheep: parseInt(getFieldValue(row, ['sheep', 'sheepTotal', 'Sheep']) || 0),
+      goats: parseInt(getFieldValue(row, ['goats', 'goatsTotal', 'Goats']) || 0),
+      camel: parseInt(getFieldValue(row, ['camel', 'camelTotal', 'Camel']) || 0),
+      cattle: parseInt(getFieldValue(row, ['cattle', 'cattleTotal', 'Cattle']) || 0),
+      horse: parseInt(getFieldValue(row, ['horse', 'horseTotal', 'Horse']) || 0)
+    };
+    
+    const mobileClinic = new MobileClinic({
+      serialNo: generateSerialNo(row, 'MC'),
+      date: dates.mainDate,
+      client: client._id,
+      farmLocation: getFieldValue(row, [
+        'farmLocation', 'Location', 'location', 'Farm Location',
+        'الموقع', 'موقع المزرعة'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'supervisor', 'Supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      vehicleNo: getFieldValue(row, [
+        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'V1',
+      animalCounts: animalCounts,
+      diagnosis: getFieldValue(row, [
+        'diagnosis', 'Diagnosis', 'التشخيص'
+      ]) || '',
+      interventionCategory: processEnumValue(
+        row,
+        ['interventionCategory', 'Intervention Category', 'intervention_category', 'فئة التدخل'],
+        {
+          'emergency': 'Emergency',
+          'routine': 'Routine',
+          'follow-up': 'Follow-up',
+          'طارئ': 'Emergency',
+          'روتيني': 'Routine',
+          'متابعة': 'Follow-up'
+        },
+        'Routine'
+      ),
+      treatment: getFieldValue(row, [
+        'treatment', 'Treatment', 'العلاج'
+      ]) || '',
+      medicationsUsed: getFieldValue(row, [
+        'medicationsUsed', 'Medications Used', 'medications_used', 'الأدوية المستخدمة'
+      ])?.split(',').map(med => med.trim()).filter(med => med) || [],
+      request: {
+        date: dates.requestDate,
+        fulfillingDate: dates.requestFulfillingDate,
+        situation: processEnumValue(
+          row,
+          ['requestSituation', 'Request Situation', 'request_situation'],
+          {
+            'closed': 'Closed',
+            'open': 'Open',
+            'pending': 'Pending'
+          },
+          'Closed'
+        )
+      },
+      followUpRequired: processEnumValue(
+        row,
+        ['followUpRequired', 'Follow Up Required', 'follow_up_required', 'متابعة مطلوبة'],
+        {
+          'yes': true,
+          'no': false,
+          'true': true,
+          'false': false,
+          'نعم': true,
+          'لا': false
+        },
+        false
+      ),
+      followUpDate: dates.requestFulfillingDate,
+      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      createdBy: userId
+    });
+
+    await mobileClinic.save();
+    console.log(`✅ Saved mobile clinic record: ${mobileClinic.serialNo} (${mobileClinic._id})`);
+    return mobileClinic;
+  } catch (error) {
+    console.error('❌ Error processing mobile clinic row:', error.message);
+    throw new Error(`Error processing mobile clinic row: ${error.message}`);
+  }
+};
+
+/**
+ * Process EquineHealth row from Dromo
+ */
+const processEquineHealthRow = async (row, userId) => {
+  try {
+    console.log('🔄 Processing equine health row:', JSON.stringify(row, null, 2));
+    
+    const client = await processUnifiedClient(row, userId);
+    const dates = processUnifiedDates(row);
+    
+    const equineHealth = new EquineHealth({
+      serialNo: generateSerialNo(row, 'EH'),
+      date: dates.mainDate,
+      client: client._id,
+      farmLocation: getFieldValue(row, [
+        'farmLocation', 'Location', 'location', 'Farm Location',
+        'الموقع', 'موقع المزرعة'
+      ]) || 'N/A',
+      supervisor: getFieldValue(row, [
+        'supervisor', 'Supervisor', 'المشرف'
+      ]) || 'Default Supervisor',
+      vehicleNo: getFieldValue(row, [
+        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
+        'رقم المركبة'
+      ]) || 'V1',
+      horseDetails: {
+        totalCount: parseInt(getFieldValue(row, [
+          'horseTotal', 'horse', 'Horse Total', 'total_horses',
+          'عدد الخيول', 'إجمالي الخيول'
+        ]) || 0),
+        maleCount: parseInt(getFieldValue(row, [
+          'horseMale', 'Horse Male', 'male_horses',
+          'الخيول الذكور', 'ذكور'
+        ]) || 0),
+        femaleCount: parseInt(getFieldValue(row, [
+          'horseFemale', 'Horse Female', 'female_horses',
+          'الخيول الإناث', 'إناث'
+        ]) || 0),
+        youngCount: parseInt(getFieldValue(row, [
+          'horseYoung', 'Horse Young', 'young_horses',
+          'المهور', 'صغار الخيول'
+        ]) || 0)
+      },
+      healthStatus: processEnumValue(
+        row,
+        ['healthStatus', 'Health Status', 'health_status', 'الحالة الصحية'],
+        {
+          'healthy': 'Healthy',
+          'sick': 'Sick',
+          'under treatment': 'Under Treatment',
+          'quarantine': 'Quarantine',
+          'صحي': 'Healthy',
+          'مريض': 'Sick',
+          'تحت العلاج': 'Under Treatment',
+          'حجر صحي': 'Quarantine'
+        },
+        'Healthy'
+      ),
+      serviceType: processEnumValue(
+        row,
+        ['serviceType', 'Service Type', 'service_type', 'نوع الخدمة'],
+        {
+          'vaccination': 'Vaccination',
+          'treatment': 'Treatment',
+          'checkup': 'Checkup',
+          'emergency': 'Emergency',
+          'تطعيم': 'Vaccination',
+          'علاج': 'Treatment',
+          'فحص': 'Checkup',
+          'طارئ': 'Emergency'
+        },
+        'Checkup'
+      ),
+      diagnosis: getFieldValue(row, [
+        'diagnosis', 'Diagnosis', 'التشخيص'
+      ]) || '',
+      treatment: getFieldValue(row, [
+        'treatment', 'Treatment', 'العلاج'
+      ]) || '',
+      medicationsUsed: getFieldValue(row, [
+        'medicationsUsed', 'Medications Used', 'medications_used', 'الأدوية المستخدمة'
+      ])?.split(',').map(med => med.trim()).filter(med => med) || [],
+      vaccinesGiven: getFieldValue(row, [
+        'vaccinesGiven', 'Vaccines Given', 'vaccines_given', 'اللقاحات المعطاة'
+      ])?.split(',').map(vac => vac.trim()).filter(vac => vac) || [],
+      followUpRequired: processEnumValue(
+        row,
+        ['followUpRequired', 'Follow Up Required', 'follow_up_required', 'متابعة مطلوبة'],
+        {
+          'yes': true,
+          'no': false,
+          'true': true,
+          'false': false,
+          'نعم': true,
+          'لا': false
+        },
+        false
+      ),
+      followUpDate: dates.requestFulfillingDate,
+      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      createdBy: userId
+    });
+
+    await equineHealth.save();
+    console.log(`✅ Saved equine health record: ${equineHealth.serialNo} (${equineHealth._id})`);
+    return equineHealth;
+  } catch (error) {
+    console.error('❌ Error processing equine health row:', error.message);
+    throw new Error(`Error processing equine health row: ${error.message}`);
+  }
+};
 const processLaboratoryRow = async (row, userId) => {
   try {
     console.log('🔄 Processing laboratory row:', JSON.stringify(row, null, 2));
@@ -490,13 +821,50 @@ const handleDromoImport = (Model, processRowFunction) => {
   };
 };
 
-// Define routes for each table type
-router.post('/vaccination/import-dromo', handleDromoImport(Vaccination, processVaccinationRow));
-router.post('/laboratories/import-dromo', handleDromoImport(Laboratory, processLaboratoryRow));
+// Test route
+router.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Dromo import routes are working!',
+    availableRoutes: [
+      'POST /import-export/vaccination/import-dromo',
+      'POST /import-export/laboratories/import-dromo'
+    ],
+    timestamp: new Date().toISOString()
+  });
+});
 
-// TODO: Add other processors
-// router.post('/parasite-control/import-dromo', handleDromoImport(ParasiteControl, processParasiteControlRow));
-// router.post('/mobile-clinics/import-dromo', handleDromoImport(MobileClinic, processMobileClinicRow));
-// router.post('/equine-health/import-dromo', handleDromoImport(EquineHealth, processEquineHealthRow));
+// Define routes for each table type
+router.post('/vaccination/import-dromo', (req, res, next) => {
+  console.log('🎯 Vaccination Dromo route called');
+  next();
+}, handleDromoImport(Vaccination, processVaccinationRow));
+
+router.post('/laboratories/import-dromo', (req, res, next) => {
+  console.log('🎯 Laboratory Dromo route called');
+  next();
+}, handleDromoImport(Laboratory, processLaboratoryRow));
+
+router.post('/parasite-control/import-dromo', (req, res, next) => {
+  console.log('🎯 Parasite Control Dromo route called');
+  next();
+}, handleDromoImport(ParasiteControl, processParasiteControlRow));
+
+router.post('/mobile-clinics/import-dromo', (req, res, next) => {
+  console.log('🎯 Mobile Clinics Dromo route called');
+  next();
+}, handleDromoImport(MobileClinic, processMobileClinicRow));
+
+router.post('/equine-health/import-dromo', (req, res, next) => {
+  console.log('🎯 Equine Health Dromo route called');
+  next();
+}, handleDromoImport(EquineHealth, processEquineHealthRow));
+
+console.log('✅ Dromo import routes registered:');
+console.log('  - POST /vaccination/import-dromo');
+console.log('  - POST /laboratories/import-dromo');
+console.log('  - POST /parasite-control/import-dromo');
+console.log('  - POST /mobile-clinics/import-dromo');
+console.log('  - POST /equine-health/import-dromo');
 
 module.exports = router;

@@ -95,6 +95,7 @@ const corsOptions = {
     'X-CSRF-Token',
     'X-Requested-With',
     'X-Table-Type',
+    'X-Source',
     'X-Dromo-Webhook'
   ],
   exposedHeaders: [
