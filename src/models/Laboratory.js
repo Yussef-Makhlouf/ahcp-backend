@@ -141,26 +141,32 @@ const laboratorySchema = new mongoose.Schema({
     trim: true, 
     maxlength: [20, 'Sample code cannot exceed 20 characters'] 
   },
-  clientName: { 
-    type: String, 
-    required: [true, 'Client name is required'], 
-    trim: true, 
-    maxlength: [100, 'Client name cannot exceed 100 characters'] 
-  },
-  clientId: { 
-    type: String, 
-    required: [true, 'Client ID is required'], 
-    trim: true, 
-    match: [/^\d{9,10}$/, 'Client ID must be 9 or 10 digits'] 
-  },
-  clientBirthDate: { 
-    type: Date 
-  },
-  clientPhone: { 
-    type: String, 
-    required: [true, 'Client phone is required'], 
-    trim: true, 
-    match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
+  client: {
+    _id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Client'
+    },
+    name: { 
+      type: String, 
+      required: [true, 'Client name is required'], 
+      trim: true, 
+      maxlength: [100, 'Client name cannot exceed 100 characters'] 
+    },
+    nationalId: { 
+      type: String, 
+      required: [true, 'Client national ID is required'], 
+      trim: true, 
+      match: [/^\d{9,10}$/, 'National ID must be 9 or 10 digits'] 
+    },
+    birthDate: { 
+      type: Date 
+    },
+    phone: { 
+      type: String, 
+      required: [true, 'Client phone is required'], 
+      trim: true, 
+      match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
+    }
   },
   farmLocation: { 
     type: String, 

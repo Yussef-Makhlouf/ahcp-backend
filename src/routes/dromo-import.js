@@ -13,753 +13,519 @@ const EquineHealth = require('../models/EquineHealth');
 const router = express.Router();
 
 /**
- * Enhanced field value getter with case-insensitive fallback
- * Supports Arabic and English field names
+ * Simple client creator - handles both old format and new mapped format
  */
-const getFieldValue = (row, fieldNames) => {
-  // First try exact match
-  for (const name of fieldNames) {
-    if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
-      return row[name];
+const createSimpleClient = async (clientData, userId) => {
+  try {
+    // Handle both old format (row object) and new format (clientData object)
+    const name = clientData.name || `مربي ${clientData.farmLocation || clientData.serialNo || 'غير محدد'}`;
+    const nationalId = clientData.nationalId || `${Date.now()}`.substring(0, 10).padStart(10, '1');
+    const phone = clientData.phone || `5${Math.floor(Math.random() * 100000000)}`.substring(0, 9);
+    const village = clientData.village || clientData.farmLocation || 'غير محدد';
+    const detailedAddress = clientData.detailedAddress || clientData.farmLocation || 'غير محدد';
+    
+    // Try to find existing client first
+    let client = await Client.findOne({ 
+      $or: [
+        { name: name },
+        { nationalId: nationalId },
+        { phone: phone },
+        { village: village }
+      ]
+    });
+    
+    if (!client) {
+      client = new Client({
+        name: name,
+        nationalId: nationalId,
+        phone: phone,
+        birthDate: clientData.birthDate || null,
+        village: village,
+        detailedAddress: detailedAddress,
+        holdingCode: clientData.holdingCode || '',
+        status: 'نشط',
+        createdBy: userId
+      });
+      
+      await client.save();
+      console.log(`✅ Created new client: ${client.name} (ID: ${client.nationalId})`);
+    } else {
+      console.log(`✅ Found existing client: ${client.name} (ID: ${client.nationalId})`);
     }
+    
+    return client;
+  } catch (error) {
+    console.error('❌ Error creating client:', error);
+    throw new Error(`Error creating client: ${error.message}`);
   }
-  
-  // Try case-insensitive match as fallback
-  const rowKeysLower = Object.keys(row).reduce((acc, key) => {
-    acc[key.toLowerCase().trim()] = row[key];
-    return acc;
-  }, {});
-  
-  for (const name of fieldNames) {
-    const lowerName = name.toLowerCase().trim();
-    if (rowKeysLower[lowerName] !== undefined && 
-        rowKeysLower[lowerName] !== null && 
-        rowKeysLower[lowerName] !== '') {
-      console.log(`📌 Found field via case-insensitive match: ${name} -> ${rowKeysLower[lowerName]}`);
-      return rowKeysLower[lowerName];
-    }
-  }
-  
-  return undefined;
 };
 
 /**
- * Generate serial number for records
+ * Simple date parser
  */
-const generateSerialNo = (row, prefix) => {
-  const serialNo = getFieldValue(row, [
-    'serialNo', 'Serial No', 'serial_no', 'id', 'ID',
-    'الرقم التسلسلي', 'رقم'
-  ]);
+const parseSimpleDate = (dateString) => {
+  if (!dateString) return null;
   
-  if (serialNo) {
-    return serialNo.toString();
-  }
-  
-  // Generate unique serial number
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
-/**
- * Parse date from various formats
- */
-const parseDate = (dateString) => {
-  if (!dateString) return new Date();
-  
-  // Handle D-Mon format (1-Sep, 2-Sep, etc.)
-  if (dateString.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
-    const currentYear = new Date().getFullYear();
-    const monthMap = {
-      'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-      'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-      'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-    };
-    const [day, month] = dateString.split('-');
-    const monthNum = monthMap[month];
-    if (monthNum) {
-      return new Date(`${currentYear}-${monthNum}-${day.padStart(2, '0')}`);
+  try {
+    // Handle D-Mon format (1-Sep, 2-Sep, etc.)
+    if (dateString.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
+      const currentYear = new Date().getFullYear();
+      const monthMap = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+      };
+      const [day, month] = dateString.split('-');
+      const monthNum = monthMap[month];
+      if (monthNum) {
+        return new Date(`${currentYear}-${monthNum}-${day.padStart(2, '0')}`);
+      }
     }
+    
+    // Try standard date parsing
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? null : date;
+  } catch (error) {
+    console.warn(`⚠️ Could not parse date: ${dateString}`);
+    return null;
   }
-  
-  return new Date(dateString);
 };
 
 /**
- * Process unified dates from row
+ * Map Dromo flat data to database structure for Laboratory
  */
-const processUnifiedDates = (row) => {
-  const mainDateField = getFieldValue(row, [
-    'date', 'Date', 'DATE', 'تاريخ', 'التاريخ'
-  ]);
-  
-  const mainDate = parseDate(mainDateField);
-  
+const mapDromoToLaboratory = (row) => {
   return {
-    mainDate,
-    requestDate: parseDate(getFieldValue(row, [
-      'requestDate', 'Request Date', 'request_date', 'تاريخ الطلب'
-    ])) || mainDate,
-    requestFulfillingDate: parseDate(getFieldValue(row, [
-      'requestFulfillingDate', 'Request Fulfilling Date', 'request_fulfilling_date'
-    ])) || mainDate
+    // Basic fields
+    serialNo: row.serialNo || `LAB-${Date.now()}`,
+    date: parseSimpleDate(row.date) || new Date(),
+    sampleCode: row.sampleCode || `SC-${Date.now()}`,
+    
+    // Client data - create from flat fields
+    clientData: {
+      name: row.name || row.client || 'غير محدد',
+      nationalId: row.id || row.nationalId || `${Date.now()}`.substring(0, 10),
+      phone: row.phone || `5${Math.floor(Math.random() * 100000000)}`.substring(0, 9),
+      birthDate: parseSimpleDate(row.birthDate),
+    },
+    
+    // Location data
+    farmLocation: row.farmLocation || row.location || 'غير محدد',
+    coordinates: {
+      latitude: parseFloat(row.latitude) || 0,
+      longitude: parseFloat(row.longitude) || 0
+    },
+    
+    // Sample data
+    sampleType: row.sampleType || 'غير محدد',
+    sampleNumber: row.sampleNumber || '',
+    collector: row.collector || 'غير محدد',
+    
+    // Test results
+    positiveCases: parseInt(row.positiveCases) || 0,
+    negativeCases: parseInt(row.negativeCases) || 0,
+    
+    // Species counts
+    speciesCounts: {
+      sheep: parseInt(row.sheepCount) || 0,
+      goats: parseInt(row.goatsCount) || 0,
+      cattle: parseInt(row.cattleCount) || 0,
+      camel: parseInt(row.camelCount) || 0,
+      horse: parseInt(row.horseCount) || 0,
+      other: row.otherSpecies || ''
+    },
+    
+    // Additional fields
+    remarks: row.remarks || ''
   };
 };
 
 /**
- * Process unified client data
+ * Map Dromo flat data to database structure for Vaccination
  */
-const processUnifiedClient = async (row, userId) => {
-  // Get client data using multiple possible field names
-  const clientName = getFieldValue(row, [
-    'Name', 'name', 'clientName', 'Client Name', 'client',
-    'owner', 'Owner', 'farmer', 'Farmer',
-    'الاسم', 'اسم العميل', 'اسم المربي', 'المالك', 'العميل'
-  ]);
-  
-  const clientId = getFieldValue(row, [
-    'ID', 'id', 'clientId', 'Client ID', 'nationalId', 'National ID',
-    'ownerId', 'Owner ID', 'identity', 'Identity',
-    'رقم الهوية', 'الهوية', 'رقم', 'هوية'
-  ]);
-  
-  const clientPhone = getFieldValue(row, [
-    'Phone', 'phone', 'clientPhone', 'Client Phone', 'Mobile', 'mobile',
-    'phoneNumber', 'Phone Number', 'tel', 'Tel', 'telephone', 'Telephone',
-    'رقم الهاتف', 'الهاتف', 'جوال', 'موبايل'
-  ]);
-  
-  const clientVillage = getFieldValue(row, [
-    'Location', 'location', 'Village', 'village', 'clientVillage',
-    'Farm Location', 'farmLocation', 'address',
-    'القرية', 'الموقع', 'موقع المزرعة', 'العنوان'
-  ]);
-
-  console.log(`🔍 Processing client: Name=${clientName}, ID=${clientId}, Phone=${clientPhone}`);
-
-  // If client data is missing, create a default client based on available data
-  if (!clientName || !clientId || !clientPhone) {
-    console.log('⚠️ Client data missing, creating default client...');
-    
-    // Use farm location or serial number to create unique client
-    const farmLocation = getFieldValue(row, [
-      'farmLocation', 'Farm Location', 'location', 'Location',
-      'موقع المزرعة', 'الموقع'
-    ]);
-    
-    const serialNo = getFieldValue(row, [
-      'serialNo', 'Serial No', 'serial', 'Serial',
-      'الرقم التسلسلي', 'رقم'
-    ]);
-    
-    const defaultName = clientName || `مربي ${farmLocation || serialNo || 'غير محدد'}`;
-    const defaultId = clientId || `${Date.now()}`.substring(0, 10).padStart(10, '1');
-    const defaultPhone = clientPhone || `050${Math.floor(Math.random() * 10000000)}`;
-    
-    console.log(`📝 Creating default client: ${defaultName}, ${defaultId}, ${defaultPhone}`);
-    
-    // Create and save the default client
-    const defaultClient = new Client({
-      name: defaultName,
-      nationalId: defaultId,
-      phone: defaultPhone,
-      village: clientVillage || farmLocation || 'غير محدد',
-      detailedAddress: farmLocation || 'غير محدد',
-      status: 'نشط',
-      createdBy: userId
-    });
-    
-    await defaultClient.save();
-    console.log(`✅ Created default client: ${defaultClient.name} (${defaultClient._id})`);
-    return defaultClient;
-  }
-
-  // Try to find existing client
-  let client = await Client.findOne({
-    $or: [
-      { nationalId: clientId },
-      { phone: clientPhone },
-      { name: clientName }
-    ]
-  });
-
-  if (!client) {
-    // Create new client with proper validation
-    const validNationalId = clientId.length >= 10 ? clientId : clientId.padStart(10, '0');
-    
-    client = new Client({
-      name: clientName,
-      nationalId: validNationalId,
-      phone: clientPhone,
-      village: clientVillage || 'غير محدد',
-      status: 'نشط', // Use Arabic status
-      createdBy: userId
-    });
-    await client.save();
-    console.log(`✅ Created new client: ${client.name} (${client._id})`);
-  } else {
-    console.log(`✅ Found existing client: ${client.name} (${client._id})`);
-  }
-
-  return client;
-};
-
-/**
- * Process herd counts from Dromo data
- */
-const processHerdCounts = (row) => {
+const mapDromoToVaccination = (row) => {
   return {
-    sheep: {
-      total: parseInt(getFieldValue(row, ['sheepTotal', 'sheep', 'Sheep Total']) || 0),
-      female: parseInt(getFieldValue(row, ['sheepFemale', 'Sheep Female']) || 0),
-      vaccinated: parseInt(getFieldValue(row, ['sheepVaccinated', 'Sheep Vaccinated']) || 0)
+    // Basic fields
+    serialNo: row.serialNo || `VAC-${Date.now()}`,
+    date: parseSimpleDate(row.date) || new Date(),
+    
+    // Client data - create from flat fields
+    clientData: {
+      name: row.name || row.client || 'غير محدد',
+      nationalId: row.id || row.nationalId || `${Date.now()}`.substring(0, 10),
+      phone: row.phone || `5${Math.floor(Math.random() * 100000000)}`.substring(0, 9),
+      birthDate: parseSimpleDate(row.birthDate),
+      village: row.location || row.farmLocation || 'غير محدد',
+      detailedAddress: row.location || row.farmLocation || 'غير محدد',
+      holdingCode: row.holdingCode || ''
     },
-    goats: {
-      total: parseInt(getFieldValue(row, ['goatsTotal', 'goats', 'Goats Total']) || 0),
-      female: parseInt(getFieldValue(row, ['goatsFemale', 'Goats Female']) || 0),
-      vaccinated: parseInt(getFieldValue(row, ['goatsVaccinated', 'Goats Vaccinated']) || 0)
+    
+    // Location and coordinates
+    farmLocation: row.location || row.farmLocation || 'غير محدد',
+    coordinates: {
+      latitude: parseFloat(row.e) || parseFloat(row.latitude) || 0,
+      longitude: parseFloat(row.n) || parseFloat(row.longitude) || 0
     },
-    camel: {
-      total: parseInt(getFieldValue(row, ['camelTotal', 'camel', 'Camel Total']) || 0),
-      female: parseInt(getFieldValue(row, ['camelFemale', 'Camel Female']) || 0),
-      vaccinated: parseInt(getFieldValue(row, ['camelVaccinated', 'Camel Vaccinated']) || 0)
+    
+    // Team and vehicle info
+    supervisor: row.supervisor || 'غير محدد',
+    team: row.team || 'غير محدد',
+    vehicleNo: row.vehicleNo || 'V1',
+    
+    // Vaccine info
+    vaccineType: row.vaccine || row.vaccineType || 'PPR',
+    vaccineCategory: row.category || row.vaccineCategory || 'Preventive',
+    
+    // Animal counts - map from flat structure to nested
+    herdCounts: {
+      sheep: {
+        total: parseInt(row.sheep) || 0,
+        young: 0, // Not provided in flat structure
+        female: parseInt(row.fSheep) || 0,
+        vaccinated: parseInt(row.vaccinatedSheep) || 0
+      },
+      goats: {
+        total: parseInt(row.goats) || 0,
+        young: 0,
+        female: parseInt(row.fGoats) || 0,
+        vaccinated: parseInt(row.vaccinatedGoats) || 0
+      },
+      camel: {
+        total: parseInt(row.camel) || 0,
+        young: 0,
+        female: parseInt(row.fCamel) || 0,
+        vaccinated: parseInt(row.vaccinatedCamels) || 0
+      },
+      cattle: {
+        total: parseInt(row.cattel) || parseInt(row.cattle) || 0,
+        young: 0,
+        female: parseInt(row.fCattle) || 0,
+        vaccinated: parseInt(row.vaccinatedCattle) || 0
+      },
+      horse: {
+        total: parseInt(row.herdNumber) || 0, // Using herdNumber for horses
+        young: 0,
+        female: parseInt(row.herdFemales) || 0,
+        vaccinated: parseInt(row.totalVaccinated) || 0
+      }
     },
-    cattle: {
-      total: parseInt(getFieldValue(row, ['cattleTotal', 'cattle', 'Cattle Total']) || 0),
-      female: parseInt(getFieldValue(row, ['cattleFemale', 'Cattle Female']) || 0),
-      vaccinated: parseInt(getFieldValue(row, ['cattleVaccinated', 'Cattle Vaccinated']) || 0)
+    
+    // Additional fields
+    herdHealth: row.herdHealth || 'Healthy',
+    animalsHandling: row.animalsHandling || 'Easy',
+    labours: row.labours || 'Available',
+    reachableLocation: row.reachableLocation || 'Easy',
+    
+    // Request info - map from flat to nested
+    request: {
+      date: parseSimpleDate(row.requestDate) || new Date(),
+      situation: row.situation || 'Closed',
+      fulfillingDate: parseSimpleDate(row.requestFulfillingDate) || new Date()
     },
-    horse: {
-      total: parseInt(getFieldValue(row, ['horseTotal', 'horse', 'Horse Total']) || 0),
-      female: parseInt(getFieldValue(row, ['horseFemale', 'Horse Female']) || 0),
-      vaccinated: parseInt(getFieldValue(row, ['horseVaccinated', 'Horse Vaccinated']) || 0)
-    }
+    
+    remarks: row.remarks || ''
   };
 };
 
 /**
- * Process enum values with mapping
- */
-const processEnumValue = (row, fieldNames, mapping, defaultValue) => {
-  const value = getFieldValue(row, fieldNames);
-  if (!value) return defaultValue;
-  
-  const lowerValue = value.toString().toLowerCase().trim();
-  for (const [key, mappedValue] of Object.entries(mapping)) {
-    if (key.toLowerCase() === lowerValue) {
-      return mappedValue;
-    }
-  }
-  
-  return defaultValue;
-};
-
-/**
- * Process Vaccination row from Dromo
+ * Process Vaccination row from Dromo - With proper mapping
  */
 const processVaccinationRow = async (row, userId) => {
   try {
     console.log('🔄 Processing vaccination row:', JSON.stringify(row, null, 2));
     
-    const client = await processUnifiedClient(row, userId);
-    const dates = processUnifiedDates(row);
-    const herdCounts = processHerdCounts(row);
+    // Map flat Dromo data to database structure
+    const mappedData = mapDromoToVaccination(row);
+    console.log('🔄 Mapped data:', JSON.stringify(mappedData, null, 2));
     
-    // Create vaccination record
+    // Create or find client using mapped client data
+    const client = await createSimpleClient(mappedData.clientData, userId);
+    
     const vaccination = new Vaccination({
-      serialNo: generateSerialNo(row, 'VAC'),
-      date: dates.mainDate,
+      serialNo: mappedData.serialNo,
+      date: mappedData.date,
       client: client._id,
-      farmLocation: getFieldValue(row, [
-        'farmLocation', 'Location', 'location', 'Farm Location',
-        'الموقع', 'موقع المزرعة'
-      ]) || 'N/A',
-      supervisor: getFieldValue(row, [
-        'supervisor', 'Supervisor', 'المشرف'
-      ]) || 'Default Supervisor',
-      team: getFieldValue(row, [
-        'team', 'Team', 'الفريق'
-      ]) || 'Default Team',
-      vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
-        'رقم المركبة'
-      ]) || 'V1',
-      vaccineType: getFieldValue(row, [
-        'vaccineType', 'Vaccine', 'vaccine_type', 'Vaccine Type',
-        'نوع اللقاح', 'اللقاح'
-      ]) || 'PPR',
-      vaccineCategory: processEnumValue(
-        row,
-        ['vaccineCategory', 'Category', 'vaccine_category', 'فئة اللقاح'],
-        {
-          'vaccination': 'Preventive',
-          'emergency': 'Emergency', 
-          'urgent': 'Emergency', 
-          'عاجل': 'Emergency',
-          'preventive': 'Preventive', 
-          'وقائي': 'Preventive', 
-          'prevention': 'Preventive'
-        },
-        'Preventive'
-      ),
-      herdCounts: herdCounts,
-      herdHealth: processEnumValue(
-        row,
-        ['herdHealth', 'Herd Health', 'herd_health', 'صحة القطيع'],
-        {
-          'healthy': 'Healthy', 
-          'صحي': 'Healthy', 
-          'سليم': 'Healthy',
-          'sick': 'Sick', 
-          'مريض': 'Sick', 
-          'sporadic': 'Sick',
-          'under treatment': 'Under Treatment', 
-          'تحت العلاج': 'Under Treatment'
-        },
-        'Healthy'
-      ),
-      animalsHandling: processEnumValue(
-        row,
-        ['animalsHandling', 'Animals Handling', 'animals_handling', 'التعامل مع الحيوانات'],
-        {
-          'easy handling': 'Easy',
-          'easy': 'Easy', 
-          'سهل': 'Easy',
-          'difficult': 'Difficult', 
-          'صعب': 'Difficult', 
-          'hard': 'Difficult'
-        },
-        'Easy'
-      ),
-      labours: processEnumValue(
-        row,
-        ['labours', 'Labours', 'العمالة'],
-        {
-          'available': 'Available', 
-          'متوفر': 'Available',
-          'not available': 'Not Available', 
-          'غير متوفر': 'Not Available',
-          'unavailable': 'Not Available'
-        },
-        'Available'
-      ),
-      reachableLocation: processEnumValue(
-        row,
-        ['reachableLocation', 'Reachable Location', 'reachable_location', 'سهولة الوصول'],
-        {
-          'easy': 'Easy', 
-          'سهل': 'Easy',
-          'hard to reach': 'Hard to reach', 
-          'صعب الوصول': 'Hard to reach',
-          'difficult': 'Hard to reach', 
-          'hard': 'Hard to reach'
-        },
-        'Easy'
-      ),
-      request: {
-        date: dates.requestDate,
-        fulfillingDate: dates.requestFulfillingDate,
-        situation: processEnumValue(
-          row,
-          ['requestSituation', 'Request Situation', 'request_situation'],
-          {
-            'closed': 'Closed',
-            'open': 'Open',
-            'pending': 'Pending'
-          },
-          'Closed'
-        )
-      },
-      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      farmLocation: mappedData.farmLocation,
+      coordinates: mappedData.coordinates,
+      supervisor: mappedData.supervisor,
+      team: mappedData.team,
+      vehicleNo: mappedData.vehicleNo,
+      vaccineType: mappedData.vaccineType,
+      vaccineCategory: mappedData.vaccineCategory,
+      herdCounts: mappedData.herdCounts,
+      herdHealth: mappedData.herdHealth,
+      animalsHandling: mappedData.animalsHandling,
+      labours: mappedData.labours,
+      reachableLocation: mappedData.reachableLocation,
+      request: mappedData.request,
+      remarks: mappedData.remarks,
       createdBy: userId
     });
 
     await vaccination.save();
-    console.log(`✅ Saved vaccination record: ${vaccination.serialNo} (${vaccination._id})`);
+    console.log(`✅ Created vaccination record: ${vaccination.serialNo}`);
     return vaccination;
   } catch (error) {
-    console.error('❌ Error processing vaccination row:', error.message);
+    console.error('❌ Error in processVaccinationRow:', error);
     throw new Error(`Error processing vaccination row: ${error.message}`);
   }
 };
 
 /**
- * Process ParasiteControl row from Dromo
+ * Process ParasiteControl row from Dromo - Simplified
  */
 const processParasiteControlRow = async (row, userId) => {
   try {
     console.log('🔄 Processing parasite control row:', JSON.stringify(row, null, 2));
     
-    const client = await processUnifiedClient(row, userId);
-    const dates = processUnifiedDates(row);
-    const herdCounts = processHerdCounts(row);
+    const client = await createSimpleClient(row, userId);
+    const mainDate = parseSimpleDate(row.date) || new Date();
     
     const parasiteControl = new ParasiteControl({
-      serialNo: generateSerialNo(row, 'PAR'),
-      date: dates.mainDate,
-      client: client._id,
-      herdLocation: getFieldValue(row, [
-        'herdLocation', 'Herd Location', 'Location', 'location',
-        'موقع القطيع', 'الموقع', 'farmLocation'
-      ]) || 'N/A',
-      supervisor: getFieldValue(row, [
-        'supervisor', 'Supervisor', 'المشرف'
-      ]) || 'Default Supervisor',
-      vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
-        'رقم المركبة'
-      ]) || 'V1',
-      herdCounts: herdCounts,
+      serialNo: row.serialNo || `PAR-${Date.now()}`,
+      date: mainDate,
+      client: {
+        _id: client._id,
+        name: client.name,
+        nationalId: client.nationalId,
+        phone: client.phone,
+        birthDate: client.birthDate
+      },
+      herdLocation: row.herdLocation || row.farmLocation || 'غير محدد',
+      supervisor: row.supervisor || 'غير محدد',
+      vehicleNo: row.vehicleNo || 'V1',
+      coordinates: {
+        latitude: parseFloat(row.latitude) || 0,
+        longitude: parseFloat(row.longitude) || 0
+      },
+      herdCounts: {
+        sheep: {
+          total: parseInt(row.sheepTotal) || 0,
+          female: parseInt(row.sheepFemale) || 0,
+          treated: parseInt(row.sheepTreated) || parseInt(row.sheepTotal) || 0
+        },
+        goats: {
+          total: parseInt(row.goatsTotal) || 0,
+          female: parseInt(row.goatsFemale) || 0,
+          treated: parseInt(row.goatsTreated) || parseInt(row.goatsTotal) || 0
+        },
+        cattle: {
+          total: parseInt(row.cattleTotal) || 0,
+          female: parseInt(row.cattleFemale) || 0,
+          treated: parseInt(row.cattleTreated) || parseInt(row.cattleTotal) || 0
+        }
+      },
       insecticide: {
-        type: getFieldValue(row, [
-          'insecticideType', 'Insecticide Used', 'Insecticide', 'insecticide_type',
-          'نوع المبيد', 'المبيد المستخدم'
-        ]) || 'Default Insecticide',
-        method: getFieldValue(row, [
-          'insecticideMethod', 'Type', 'Method', 'insecticide_method',
-          'طريقة الرش', 'النوع'
-        ]) || 'Spray',
-        volumeMl: parseInt(getFieldValue(row, [
-          'insecticideVolume', 'Volume (ml)', 'Volume', 'insecticide_volume',
-          'الحجم (مل)', 'الحجم'
-        ]) || 0),
-        status: processEnumValue(
-          row,
-          ['insecticideStatus', 'Status', 'insecticide_status', 'حالة المبيد'],
-          {
-            'sprayed': 'Sprayed',
-            'not sprayed': 'Not Sprayed',
-            'مرشوش': 'Sprayed',
-            'غير مرشوش': 'Not Sprayed'
-          },
-          'Sprayed'
-        ),
-        category: getFieldValue(row, [
-          'insecticideCategory', 'Category', 'insecticide_category',
-          'فئة المبيد'
-        ]) || 'General'
+        type: row.insecticideType || 'غير محدد',
+        method: row.insecticideMethod || 'Spray',
+        volumeMl: parseInt(row.insecticideVolume) || 0,
+        status: row.insecticideStatus || 'Sprayed',
+        category: row.insecticideCategory || 'General'
       },
-      animalBarnSizeSqM: parseInt(getFieldValue(row, [
-        'animalBarnSize', 'Size (sqM)', 'Barn Size', 'animal_barn_size',
-        'مساحة الحظيرة', 'الحجم (متر مربع)'
-      ]) || 0),
-      breedingSites: getFieldValue(row, [
-        'breedingSites', 'Breeding Sites', 'breeding_sites',
-        'مواقع التكاثر'
-      ]) || 'N/A',
-      parasiteControlVolume: parseInt(getFieldValue(row, [
-        'parasiteControlVolume', 'Parasite Control Volume', 'parasite_control_volume',
-        'حجم مكافحة الطفيليات'
-      ]) || 0),
-      parasiteControlStatus: getFieldValue(row, [
-        'parasiteControlStatus', 'Parasite Control Status', 'parasite_control_status',
-        'حالة مكافحة الطفيليات'
-      ]) || 'Completed',
-      herdHealthStatus: processEnumValue(
-        row,
-        ['herdHealthStatus', 'Herd Health Status', 'herd_health_status', 'حالة صحة القطيع'],
-        {
-          'healthy': 'Healthy',
-          'sick': 'Sick',
-          'under treatment': 'Under Treatment',
-          'صحي': 'Healthy',
-          'مريض': 'Sick',
-          'تحت العلاج': 'Under Treatment'
-        },
-        'Healthy'
-      ),
-      ownerCompliance: processEnumValue(
-        row,
-        ['ownerCompliance', 'Owner Compliance', 'owner_compliance', 'امتثال المالك'],
-        {
-          'comply': 'Comply',
-          'not comply': 'Not Comply',
-          'ملتزم': 'Comply',
-          'غير ملتزم': 'Not Comply'
-        },
-        'Comply'
-      ),
+      animalBarnSizeSqM: parseInt(row.animalBarnSize) || 0,
+      breedingSites: row.breedingSites || 'غير محدد',
+      parasiteControlVolume: parseInt(row.parasiteControlVolume) || 0,
+      parasiteControlStatus: row.parasiteControlStatus || 'Completed',
+      herdHealthStatus: row.herdHealthStatus || 'Healthy',
+      ownerCompliance: row.ownerCompliance || 'Comply',
       request: {
-        date: dates.requestDate,
-        fulfillingDate: dates.requestFulfillingDate,
-        situation: processEnumValue(
-          row,
-          ['requestSituation', 'Request Situation', 'request_situation'],
-          {
-            'closed': 'Closed',
-            'open': 'Open',
-            'pending': 'Pending'
-          },
-          'Closed'
-        )
+        date: parseSimpleDate(row.requestDate) || mainDate,
+        fulfillingDate: parseSimpleDate(row.requestFulfillingDate) || mainDate,
+        situation: row.requestSituation || 'Closed'
       },
-      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      remarks: row.remarks || '',
       createdBy: userId
     });
 
     await parasiteControl.save();
-    console.log(`✅ Saved parasite control record: ${parasiteControl.serialNo} (${parasiteControl._id})`);
+    console.log(`✅ Created parasite control record: ${parasiteControl.serialNo}`);
     return parasiteControl;
   } catch (error) {
-    console.error('❌ Error processing parasite control row:', error.message);
+    console.error('❌ Error in processParasiteControlRow:', error);
     throw new Error(`Error processing parasite control row: ${error.message}`);
   }
 };
 
 /**
- * Process MobileClinic row from Dromo
+ * Process MobileClinic row from Dromo - Simplified
  */
 const processMobileClinicRow = async (row, userId) => {
   try {
     console.log('🔄 Processing mobile clinic row:', JSON.stringify(row, null, 2));
     
-    const client = await processUnifiedClient(row, userId);
-    const dates = processUnifiedDates(row);
-    
-    // Process animal counts (different from herd counts)
-    const animalCounts = {
-      sheep: parseInt(getFieldValue(row, ['sheep', 'sheepTotal', 'Sheep']) || 0),
-      goats: parseInt(getFieldValue(row, ['goats', 'goatsTotal', 'Goats']) || 0),
-      camel: parseInt(getFieldValue(row, ['camel', 'camelTotal', 'Camel']) || 0),
-      cattle: parseInt(getFieldValue(row, ['cattle', 'cattleTotal', 'Cattle']) || 0),
-      horse: parseInt(getFieldValue(row, ['horse', 'horseTotal', 'Horse']) || 0)
-    };
+    const client = await createSimpleClient(row, userId);
+    const mainDate = parseSimpleDate(row.date) || new Date();
     
     const mobileClinic = new MobileClinic({
-      serialNo: generateSerialNo(row, 'MC'),
-      date: dates.mainDate,
-      client: client._id,
-      farmLocation: getFieldValue(row, [
-        'farmLocation', 'Location', 'location', 'Farm Location',
-        'الموقع', 'موقع المزرعة'
-      ]) || 'N/A',
-      supervisor: getFieldValue(row, [
-        'supervisor', 'Supervisor', 'المشرف'
-      ]) || 'Default Supervisor',
-      vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
-        'رقم المركبة'
-      ]) || 'V1',
-      animalCounts: animalCounts,
-      diagnosis: getFieldValue(row, [
-        'diagnosis', 'Diagnosis', 'التشخيص'
-      ]) || '',
-      interventionCategory: processEnumValue(
-        row,
-        ['interventionCategory', 'Intervention Category', 'intervention_category', 'فئة التدخل'],
-        {
-          'emergency': 'Emergency',
-          'routine': 'Routine',
-          'follow-up': 'Follow-up',
-          'طارئ': 'Emergency',
-          'روتيني': 'Routine',
-          'متابعة': 'Follow-up'
-        },
-        'Routine'
-      ),
-      treatment: getFieldValue(row, [
-        'treatment', 'Treatment', 'العلاج'
-      ]) || '',
-      medicationsUsed: getFieldValue(row, [
-        'medicationsUsed', 'Medications Used', 'medications_used', 'الأدوية المستخدمة'
-      ])?.split(',').map(med => med.trim()).filter(med => med) || [],
-      request: {
-        date: dates.requestDate,
-        fulfillingDate: dates.requestFulfillingDate,
-        situation: processEnumValue(
-          row,
-          ['requestSituation', 'Request Situation', 'request_situation'],
-          {
-            'closed': 'Closed',
-            'open': 'Open',
-            'pending': 'Pending'
-          },
-          'Closed'
-        )
+      serialNo: row.serialNo || `MC-${Date.now()}`,
+      date: mainDate,
+      client: {
+        _id: client._id,
+        name: client.name,
+        nationalId: client.nationalId,
+        phone: client.phone,
+        birthDate: client.birthDate
       },
-      followUpRequired: processEnumValue(
-        row,
-        ['followUpRequired', 'Follow Up Required', 'follow_up_required', 'متابعة مطلوبة'],
-        {
-          'yes': true,
-          'no': false,
-          'true': true,
-          'false': false,
-          'نعم': true,
-          'لا': false
-        },
-        false
-      ),
-      followUpDate: dates.requestFulfillingDate,
-      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      farmLocation: row.farmLocation || 'غير محدد',
+      supervisor: row.supervisor || 'غير محدد',
+      vehicleNo: row.vehicleNo || 'V1',
+      coordinates: {
+        latitude: parseFloat(row.latitude) || 0,
+        longitude: parseFloat(row.longitude) || 0
+      },
+      animalCounts: {
+        sheep: parseInt(row.sheep) || 0,
+        goats: parseInt(row.goats) || 0,
+        cattle: parseInt(row.cattle) || 0,
+        camel: parseInt(row.camel) || 0,
+        horse: parseInt(row.horse) || 0
+      },
+      diagnosis: row.diagnosis || '',
+      interventionCategory: row.interventionCategory || 'Routine',
+      treatment: row.treatment || '',
+      medicationsUsed: row.medicationsUsed ? row.medicationsUsed.split(',').map(med => ({ 
+        name: med.trim(), 
+        dosage: '1 dose', 
+        quantity: 1, 
+        route: 'Oral' 
+      })) : [],
+      request: {
+        date: parseSimpleDate(row.requestDate) || mainDate,
+        situation: row.requestSituation || 'Closed'
+      },
+      followUpRequired: row.followUpRequired === 'yes' || row.followUpRequired === true,
+      remarks: row.remarks || '',
       createdBy: userId
     });
 
     await mobileClinic.save();
-    console.log(`✅ Saved mobile clinic record: ${mobileClinic.serialNo} (${mobileClinic._id})`);
+    console.log(`✅ Created mobile clinic record: ${mobileClinic.serialNo}`);
     return mobileClinic;
   } catch (error) {
-    console.error('❌ Error processing mobile clinic row:', error.message);
+    console.error('❌ Error in processMobileClinicRow:', error);
     throw new Error(`Error processing mobile clinic row: ${error.message}`);
   }
 };
 
 /**
- * Process EquineHealth row from Dromo
- */
-const processEquineHealthRow = async (row, userId) => {
-  try {
-    console.log('🔄 Processing equine health row:', JSON.stringify(row, null, 2));
-    
-    const client = await processUnifiedClient(row, userId);
-    const dates = processUnifiedDates(row);
-    
-    const equineHealth = new EquineHealth({
-      serialNo: generateSerialNo(row, 'EH'),
-      date: dates.mainDate,
-      client: client._id,
-      farmLocation: getFieldValue(row, [
-        'farmLocation', 'Location', 'location', 'Farm Location',
-        'الموقع', 'موقع المزرعة'
-      ]) || 'N/A',
-      supervisor: getFieldValue(row, [
-        'supervisor', 'Supervisor', 'المشرف'
-      ]) || 'Default Supervisor',
-      vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
-        'رقم المركبة'
-      ]) || 'V1',
-      horseDetails: {
-        totalCount: parseInt(getFieldValue(row, [
-          'horseTotal', 'horse', 'Horse Total', 'total_horses',
-          'عدد الخيول', 'إجمالي الخيول'
-        ]) || 0),
-        maleCount: parseInt(getFieldValue(row, [
-          'horseMale', 'Horse Male', 'male_horses',
-          'الخيول الذكور', 'ذكور'
-        ]) || 0),
-        femaleCount: parseInt(getFieldValue(row, [
-          'horseFemale', 'Horse Female', 'female_horses',
-          'الخيول الإناث', 'إناث'
-        ]) || 0),
-        youngCount: parseInt(getFieldValue(row, [
-          'horseYoung', 'Horse Young', 'young_horses',
-          'المهور', 'صغار الخيول'
-        ]) || 0)
-      },
-      healthStatus: processEnumValue(
-        row,
-        ['healthStatus', 'Health Status', 'health_status', 'الحالة الصحية'],
-        {
-          'healthy': 'Healthy',
-          'sick': 'Sick',
-          'under treatment': 'Under Treatment',
-          'quarantine': 'Quarantine',
-          'صحي': 'Healthy',
-          'مريض': 'Sick',
-          'تحت العلاج': 'Under Treatment',
-          'حجر صحي': 'Quarantine'
-        },
-        'Healthy'
-      ),
-      serviceType: processEnumValue(
-        row,
-        ['serviceType', 'Service Type', 'service_type', 'نوع الخدمة'],
-        {
-          'vaccination': 'Vaccination',
-          'treatment': 'Treatment',
-          'checkup': 'Checkup',
-          'emergency': 'Emergency',
-          'تطعيم': 'Vaccination',
-          'علاج': 'Treatment',
-          'فحص': 'Checkup',
-          'طارئ': 'Emergency'
-        },
-        'Checkup'
-      ),
-      diagnosis: getFieldValue(row, [
-        'diagnosis', 'Diagnosis', 'التشخيص'
-      ]) || '',
-      treatment: getFieldValue(row, [
-        'treatment', 'Treatment', 'العلاج'
-      ]) || '',
-      medicationsUsed: getFieldValue(row, [
-        'medicationsUsed', 'Medications Used', 'medications_used', 'الأدوية المستخدمة'
-      ])?.split(',').map(med => med.trim()).filter(med => med) || [],
-      vaccinesGiven: getFieldValue(row, [
-        'vaccinesGiven', 'Vaccines Given', 'vaccines_given', 'اللقاحات المعطاة'
-      ])?.split(',').map(vac => vac.trim()).filter(vac => vac) || [],
-      followUpRequired: processEnumValue(
-        row,
-        ['followUpRequired', 'Follow Up Required', 'follow_up_required', 'متابعة مطلوبة'],
-        {
-          'yes': true,
-          'no': false,
-          'true': true,
-          'false': false,
-          'نعم': true,
-          'لا': false
-        },
-        false
-      ),
-      followUpDate: dates.requestFulfillingDate,
-      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
-      createdBy: userId
-    });
-
-    await equineHealth.save();
-    console.log(`✅ Saved equine health record: ${equineHealth.serialNo} (${equineHealth._id})`);
-    return equineHealth;
-  } catch (error) {
-    console.error('❌ Error processing equine health row:', error.message);
-    throw new Error(`Error processing equine health row: ${error.message}`);
-  }
-};
-/**
- * Process Laboratory row from Dromo
+ * Process Laboratory row from Dromo - Simplified
  */
 const processLaboratoryRow = async (row, userId) => {
   try {
     console.log('🔄 Processing laboratory row:', JSON.stringify(row, null, 2));
     
-    const client = await processUnifiedClient(row, userId);
-    const dates = processUnifiedDates(row);
+    // Map flat Dromo data to database structure
+    const mappedData = mapDromoToLaboratory(row);
+    console.log('🔄 Mapped laboratory data:', JSON.stringify(mappedData, null, 2));
     
-    // Process species counts
-    const speciesCounts = {
-      sheep: parseInt(getFieldValue(row, ['sheep', 'sheepTotal', 'Sheep']) || 0),
-      goats: parseInt(getFieldValue(row, ['goats', 'goatsTotal', 'Goats']) || 0),
-      camel: parseInt(getFieldValue(row, ['camel', 'camelTotal', 'Camel']) || 0),
-      cattle: parseInt(getFieldValue(row, ['cattle', 'cattleTotal', 'Cattle']) || 0),
-      horse: parseInt(getFieldValue(row, ['horse', 'horseTotal', 'Horse']) || 0)
-    };
+    // Create or find client
+    const client = await createSimpleClient(mappedData.clientData, userId);
     
     const laboratory = new Laboratory({
-      sampleCode: generateSerialNo(row, 'LAB'),
-      date: dates.mainDate,
-      client: client._id,
-      collector: getFieldValue(row, [
-        'collector', 'Collector', 'جامع العينة'
-      ]) || 'Default Collector',
-      sampleType: getFieldValue(row, [
-        'sampleType', 'Sample Type', 'sample_type', 'نوع العينة'
-      ]) || 'Blood',
-      speciesCounts: speciesCounts,
-      positiveCases: parseInt(getFieldValue(row, [
-        'positiveCases', 'Positive Cases', 'positive_cases', 'الحالات الإيجابية'
-      ]) || 0),
-      negativeCases: parseInt(getFieldValue(row, [
-        'negativeCases', 'Negative Cases', 'negative_cases', 'الحالات السلبية'
-      ]) || 0),
-      remarks: getFieldValue(row, ['remarks', 'Remarks', 'ملاحظات']) || '',
+      serialNo: parseInt(mappedData.serialNo) || Date.now() % 1000000,
+      sampleCode: mappedData.sampleCode,
+      date: mappedData.date,
+      client: {
+        _id: client._id,
+        name: client.name,
+        nationalId: client.nationalId,
+        phone: client.phone,
+        birthDate: client.birthDate
+      },
+      farmLocation: mappedData.farmLocation,
+      coordinates: mappedData.coordinates,
+      speciesCounts: mappedData.speciesCounts,
+      collector: mappedData.collector,
+      sampleType: mappedData.sampleType,
+      sampleNumber: mappedData.sampleNumber,
+      positiveCases: mappedData.positiveCases,
+      negativeCases: mappedData.negativeCases,
+      testResults: [],
+      remarks: mappedData.remarks,
       createdBy: userId
     });
 
     await laboratory.save();
-    console.log(`✅ Saved laboratory record: ${laboratory.sampleCode} (${laboratory._id})`);
+    console.log(`✅ Created laboratory record: ${laboratory.sampleCode} for client: ${client.name}`);
     return laboratory;
   } catch (error) {
-    console.error('❌ Error processing laboratory row:', error.message);
+    console.error('❌ Error in processLaboratoryRow:', error);
     throw new Error(`Error processing laboratory row: ${error.message}`);
+  }
+};
+
+/**
+ * Process EquineHealth row from Dromo - Simplified
+ */
+const processEquineHealthRow = async (row, userId) => {
+  try {
+    console.log('🔄 Processing equine health row:', JSON.stringify(row, null, 2));
+    
+    const client = await createSimpleClient(row, userId);
+    const mainDate = parseSimpleDate(row.date) || new Date();
+    
+    const equineHealth = new EquineHealth({
+      serialNo: row.serialNo || `EH-${Date.now()}`,
+      date: mainDate,
+      client: {
+        name: client.name,
+        nationalId: client.nationalId,
+        phone: client.phone,
+        birthDate: client.birthDate,
+        village: client.village,
+        detailedAddress: client.detailedAddress
+      },
+      farmLocation: row.farmLocation || 'غير محدد',
+      supervisor: row.supervisor || 'غير محدد',
+      vehicleNo: row.vehicleNo || 'V1',
+      coordinates: {
+        latitude: parseFloat(row.latitude) || 0,
+        longitude: parseFloat(row.longitude) || 0
+      },
+      horseCount: 1, // Match the single horse detail we're creating
+      horseDetails: [{
+        id: `H-${Date.now()}`,
+        breed: row.horseBreed || 'غير محدد',
+        age: parseInt(row.horseAge) || 5,
+        gender: row.horseGender === 'Male' ? 'ذكر' : (row.horseGender === 'Female' ? 'أنثى' : 'ذكر'),
+        color: row.horseColor || 'غير محدد',
+        healthStatus: row.horseHealthStatus === 'Healthy' ? 'سليم' : 'سليم'
+      }],
+      diagnosis: row.diagnosis || '',
+      interventionCategory: row.interventionCategory || 'Routine',
+      serviceType: row.serviceType || 'Vaccination',
+      treatment: row.treatment || '',
+      medicationsUsed: row.medicationsUsed ? row.medicationsUsed.split(',').map(med => ({ 
+        name: med.trim(),
+        dosage: '1 dose',
+        quantity: 1,
+        route: 'Injection',
+        frequency: 'Once daily',
+        duration: '1 day'
+      })) : [],
+      vaccinesGiven: row.vaccinesGiven ? row.vaccinesGiven.split(',').map(vac => ({ 
+        name: vac.trim(),
+        dosage: '1 dose',
+        quantity: 1,
+        route: 'Injection',
+        frequency: 'Single dose',
+        duration: 'N/A'
+      })) : [],
+      request: {
+        date: parseSimpleDate(row.requestDate) || mainDate,
+        situation: row.requestSituation || 'Closed'
+      },
+      followUpRequired: row.followUpRequired === 'yes' || row.followUpRequired === true,
+      remarks: row.remarks || '',
+      createdBy: userId
+    });
+
+    await equineHealth.save();
+    console.log(`✅ Created equine health record: ${equineHealth.serialNo}`);
+    return equineHealth;
+  } catch (error) {
+    console.error('❌ Error in processEquineHealthRow:', error);
+    throw new Error(`Error processing equine health row: ${error.message}`);
   }
 };
 
@@ -780,127 +546,95 @@ const handleDromoImport = (Model, processRowFunction) => {
         console.error('❌ No admin user found');
         return res.status(500).json({
           success: false,
-          message: 'لا يوجد مستخدم إداري في النظام'
+          message: 'No admin user found for import',
+          insertedCount: 0,
+          totalRows: 0,
+          successRows: 0,
+          errorRows: 0,
+          errors: []
         });
       }
       
-      console.log('✅ Using admin user:', adminUser.name, 'ID:', userId);
+      const { data = [] } = req.body;
       
-      // Get data from Dromo webhook (try multiple formats)
-      let rows = null;
-      if (req.body.data && Array.isArray(req.body.data)) {
-        rows = req.body.data;
-      } else if (req.body.rows && Array.isArray(req.body.rows)) {
-        rows = req.body.rows;
-      } else if (Array.isArray(req.body)) {
-        rows = req.body;
-      } else if (req.body.validData && Array.isArray(req.body.validData)) {
-        rows = req.body.validData;
-      }
-      
-      if (!rows || !Array.isArray(rows) || rows.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'لا توجد بيانات صالحة للاستيراد'
+      if (!data || data.length === 0) {
+        console.log('⚠️ No data provided in request');
+        return res.json({
+          success: true,
+          message: 'تم استيراد 0 سجل بنجاح',
+          insertedCount: 0,
+          totalRows: 0,
+          successRows: 0,
+          errorRows: 0,
+          errors: [],
+          batchId: `dromo_${Date.now()}_${Model.modelName.toLowerCase()}`,
+          tableType: Model.modelName.toLowerCase(),
+          source: 'dromo-webhook'
         });
       }
       
-      console.log(`📊 Processing ${rows.length} rows for ${Model.modelName}`);
+      console.log(`📊 Processing ${data.length} rows for ${Model.modelName}`);
       
-      // Process and save rows
-      const savedRecords = [];
+      let successCount = 0;
+      let errorCount = 0;
       const errors = [];
       
-      for (let i = 0; i < rows.length; i++) {
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
         try {
-          const record = await processRowFunction(rows[i], userId);
-          if (record) {
-            savedRecords.push(record);
-          }
+          console.log(`🔄 Processing row ${i + 1}/${data.length}`);
+          await processRowFunction(row, userId);
+          successCount++;
+          console.log(`✅ Row ${i + 1} processed successfully`);
         } catch (error) {
+          errorCount++;
           console.error(`❌ Error processing row ${i + 1}:`, error.message);
           errors.push({
             rowIndex: i + 1,
             error: error.message,
-            data: rows[i]
+            data: row
           });
         }
       }
       
-      console.log(`✅ Successfully saved ${savedRecords.length} records, ${errors.length} errors`);
-      
-      // Verify records are actually in database
-      const dbCount = await Model.countDocuments();
-      console.log(`📊 Total records in ${Model.modelName} collection: ${dbCount}`);
-      
-      res.json({
-        success: true,
-        message: `تم استيراد ${savedRecords.length} سجل بنجاح`,
-        insertedCount: savedRecords.length,
-        totalRows: rows.length,
-        successRows: savedRecords.length,
-        errorRows: errors.length,
-        errors: errors.length > 0 ? errors : undefined,
+      const response = {
+        success: errorCount === 0,
+        message: `تم استيراد ${successCount} سجل بنجاح`,
+        insertedCount: successCount,
+        totalRows: data.length,
+        successRows: successCount,
+        errorRows: errorCount,
+        errors: errors,
         batchId: `dromo_${Date.now()}_${Model.modelName.toLowerCase()}`,
         tableType: Model.modelName.toLowerCase(),
         source: 'dromo-webhook'
-      });
+      };
+      
+      console.log(`🎯 Import completed: ${successCount}/${data.length} successful`);
+      res.json(response);
       
     } catch (error) {
-      console.error(`❌ Dromo import error for ${Model.modelName}:`, error);
+      console.error('❌ Dromo import error:', error);
       res.status(500).json({
         success: false,
-        message: 'حدث خطأ أثناء الاستيراد',
-        error: error.message
+        message: 'خطأ في معالجة الاستيراد',
+        error: error.message,
+        insertedCount: 0,
+        totalRows: 0,
+        successRows: 0,
+        errorRows: 0,
+        errors: []
       });
     }
   };
 };
 
-// Test route
-router.get('/test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Dromo import routes are working!',
-    availableRoutes: [
-      'POST /import-export/vaccination/import-dromo',
-      'POST /import-export/laboratories/import-dromo'
-    ],
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Define routes for each table type
-router.post('/vaccination/import-dromo', (req, res, next) => {
-  console.log('🎯 Vaccination Dromo route called');
-  next();
-}, handleDromoImport(Vaccination, processVaccinationRow));
-
-router.post('/laboratories/import-dromo', (req, res, next) => {
-  console.log('🎯 Laboratory Dromo route called');
-  next();
-}, handleDromoImport(Laboratory, processLaboratoryRow));
-
-router.post('/parasite-control/import-dromo', (req, res, next) => {
-  console.log('🎯 Parasite Control Dromo route called');
-  next();
-}, handleDromoImport(ParasiteControl, processParasiteControlRow));
-
-router.post('/mobile-clinics/import-dromo', (req, res, next) => {
-  console.log('🎯 Mobile Clinics Dromo route called');
-  next();
-}, handleDromoImport(MobileClinic, processMobileClinicRow));
-
-router.post('/equine-health/import-dromo', (req, res, next) => {
-  console.log('🎯 Equine Health Dromo route called');
-  next();
-}, handleDromoImport(EquineHealth, processEquineHealthRow));
-
-console.log('✅ Dromo import routes registered:');
-console.log('  - POST /vaccination/import-dromo');
-console.log('  - POST /laboratories/import-dromo');
-console.log('  - POST /parasite-control/import-dromo');
-console.log('  - POST /mobile-clinics/import-dromo');
-console.log('  - POST /equine-health/import-dromo');
+// Dromo webhook routes
+router.post('/vaccination/import-dromo', handleDromoImport(Vaccination, processVaccinationRow));
+router.post('/parasite-control/import-dromo', handleDromoImport(ParasiteControl, processParasiteControlRow));
+router.post('/mobile-clinics/import-dromo', handleDromoImport(MobileClinic, processMobileClinicRow));
+router.post('/laboratory/import-dromo', handleDromoImport(Laboratory, processLaboratoryRow));
+router.post('/equine-health/import-dromo', handleDromoImport(EquineHealth, processEquineHealthRow));
 
 module.exports = router;

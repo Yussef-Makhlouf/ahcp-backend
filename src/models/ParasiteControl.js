@@ -224,9 +224,31 @@ const parasiteControlSchema = new mongoose.Schema({
     required: [true, 'Date is required']
   },
   client: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: [true, 'Client reference is required']
+    _id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Client'
+    },
+    name: { 
+      type: String, 
+      required: [true, 'Client name is required'], 
+      trim: true, 
+      maxlength: [100, 'Client name cannot exceed 100 characters'] 
+    },
+    nationalId: { 
+      type: String, 
+      required: [true, 'Client national ID is required'], 
+      trim: true, 
+      match: [/^\d{9,10}$/, 'National ID must be 9 or 10 digits'] 
+    },
+    birthDate: { 
+      type: Date 
+    },
+    phone: { 
+      type: String, 
+      required: [true, 'Client phone is required'], 
+      trim: true, 
+      match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
+    }
   },
   herdLocation: {
     type: String,
