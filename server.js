@@ -23,6 +23,7 @@ let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
 let parasiteControlRoutes, vaccinationRoutes, mobileClinicsRoutes;
 let equineHealthRoutes, laboratoriesRoutes, clientsRoutes;
 let reportsRoutes, uploadRoutes, villagesRoutes, importExportRoutes;
+let dromoImportRoutes;
 
 let errorHandler, notFound, authMiddleware;
 
@@ -43,6 +44,8 @@ try {
   uploadRoutes = require('./src/routes/upload');
   villagesRoutes = require('./src/routes/villages');
   importExportRoutes = require('./src/routes/import-export');
+  dromoImportRoutes = require('./src/routes/dromo-import');
+  console.log('✅ Dromo import routes loaded');
 
   // Import middleware
   errorHandler = require('./src/middleware/errorHandler').errorHandler;
@@ -273,40 +276,12 @@ if (villagesRoutes && selectedAuth) {
 if (importExportRoutes) {
   console.log('✅ Loading import-export routes with authentication');
   app.use('/api/import-export', selectedAuth, importExportRoutes);
-  
-  // Special routes for Dromo webhooks (no auth required)
-  console.log('✅ Loading Dromo webhook routes (no auth)');
-  
-  // Create specific webhook routes without any middleware
-  app.post('/import-export/vaccination/import-dromo', (req, res, next) => {
-    console.log('🎯 Direct webhook call for vaccination');
-    req.skipAuth = true;
-    next();
-  }, importExportRoutes);
-  
-  app.post('/import-export/laboratories/import-dromo', (req, res, next) => {
-    console.log('🎯 Direct webhook call for laboratories');
-    req.skipAuth = true;
-    next();
-  }, importExportRoutes);
-  
-  app.post('/import-export/parasite-control/import-dromo', (req, res, next) => {
-    console.log('🎯 Direct webhook call for parasite-control');
-    req.skipAuth = true;
-    next();
-  }, importExportRoutes);
-  
-  app.post('/import-export/mobile-clinics/import-dromo', (req, res, next) => {
-    console.log('🎯 Direct webhook call for mobile-clinics');
-    req.skipAuth = true;
-    next();
-  }, importExportRoutes);
-  
-  app.post('/import-export/equine-health/import-dromo', (req, res, next) => {
-    console.log('🎯 Direct webhook call for equine-health');
-    req.skipAuth = true;
-    next();
-  }, importExportRoutes);
+}
+
+// Dedicated Dromo Import routes (no auth required)
+if (dromoImportRoutes) {
+  console.log('✅ Loading dedicated Dromo import routes (no auth)');
+  app.use('/import-export', dromoImportRoutes);
 }
 
 
