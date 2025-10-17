@@ -766,8 +766,8 @@ async function seedDatabase() {
     console.log(`🔬 Laboratory Records: ${sampleLaboratory.length}`);
     console.log('');
     console.log('🚀 You can now start the server and login with these credentials');
-    console.log('📚 API Documentation: http://localhost:3001/api-docs');
-    console.log('🏥 Health Check: http://localhost:3001/health');
+    console.log('📚 API Documentation: https://ahcp-backend-production.up.railway.app/api-docs');
+    console.log('🏥 Health Check: https://ahcp-backend-production.up.railway.app/health');
     
   } catch (error) {
     console.error('❌ Error seeding database:', error);
