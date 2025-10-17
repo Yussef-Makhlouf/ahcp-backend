@@ -136,8 +136,41 @@ const processUnifiedClient = async (row, userId) => {
 
   console.log(`🔍 Processing client: Name=${clientName}, ID=${clientId}, Phone=${clientPhone}`);
 
+  // If client data is missing, create a default client based on available data
   if (!clientName || !clientId || !clientPhone) {
-    throw new Error(`Missing required client data: Name=${clientName}, ID=${clientId}, Phone=${clientPhone}`);
+    console.log('⚠️ Client data missing, creating default client...');
+    
+    // Use farm location or serial number to create unique client
+    const farmLocation = getFieldValue(row, [
+      'farmLocation', 'Farm Location', 'location', 'Location',
+      'موقع المزرعة', 'الموقع'
+    ]);
+    
+    const serialNo = getFieldValue(row, [
+      'serialNo', 'Serial No', 'serial', 'Serial',
+      'الرقم التسلسلي', 'رقم'
+    ]);
+    
+    const defaultName = clientName || `مربي ${farmLocation || serialNo || 'غير محدد'}`;
+    const defaultId = clientId || `${Date.now()}`.substring(0, 10).padStart(10, '1');
+    const defaultPhone = clientPhone || `050${Math.floor(Math.random() * 10000000)}`;
+    
+    console.log(`📝 Creating default client: ${defaultName}, ${defaultId}, ${defaultPhone}`);
+    
+    // Create and save the default client
+    const defaultClient = new Client({
+      name: defaultName,
+      nationalId: defaultId,
+      phone: defaultPhone,
+      village: clientVillage || farmLocation || 'غير محدد',
+      detailedAddress: farmLocation || 'غير محدد',
+      status: 'نشط',
+      createdBy: userId
+    });
+    
+    await defaultClient.save();
+    console.log(`✅ Created default client: ${defaultClient.name} (${defaultClient._id})`);
+    return defaultClient;
   }
 
   // Try to find existing client
