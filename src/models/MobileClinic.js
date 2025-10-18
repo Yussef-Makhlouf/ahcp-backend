@@ -9,6 +9,10 @@ const mongoose = require('mongoose');
  *       required:
  *         - serialNo
  *         - date
+ *         - client
+ *         - supervisor
+ *         - vehicleNo
+ *         - diagnosis
  *       properties:
  *         _id:
  *           type: string
@@ -159,41 +163,24 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: [true, 'Date is required']
+    required: [true, 'Date is required'],
+    validate: {
+      validator: function(date) {
+        return date <= new Date();
+      },
+      message: 'Date cannot be in the future'
+    }
   },
   client: {
-    _id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Client'
-    },
-    name: { 
-      type: String, 
-      required: [true, 'Client name is required'], 
-      trim: true, 
-      maxlength: [100, 'Client name cannot exceed 100 characters'] 
-    },
-    nationalId: { 
-      type: String, 
-      required: [true, 'Client national ID is required'], 
-      trim: true, 
-      match: [/^\d{9,10}$/, 'National ID must be 9 or 10 digits'] 
-    },
-    birthDate: { 
-      type: Date 
-    },
-    phone: { 
-      type: String, 
-      required: [true, 'Client phone is required'], 
-      trim: true, 
-      match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
-    }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client',
+    required: [true, 'Client reference is required']
   },
   farmLocation: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Farm location is required'],
     trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters'],
-    default: ''
+    maxlength: [200, 'Location cannot exceed 200 characters']
   },
   coordinates: {
     latitude: {
@@ -209,17 +196,15 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   supervisor: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Supervisor is required'],
     trim: true,
-    maxlength: [100, 'Supervisor name cannot exceed 100 characters'],
-    default: 'N/A'
+    maxlength: [100, 'Supervisor name cannot exceed 100 characters']
   },
   vehicleNo: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Vehicle number is required'],
     trim: true,
-    maxlength: [20, 'Vehicle number cannot exceed 20 characters'],
-    default: 'N/A'
+    maxlength: [20, 'Vehicle number cannot exceed 20 characters']
   },
   animalCounts: {
     sheep: {
@@ -250,31 +235,28 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   diagnosis: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Diagnosis is required'],
     trim: true,
-    maxlength: [500, 'Diagnosis cannot exceed 500 characters'],
-    default: ''
+    maxlength: [500, 'Diagnosis cannot exceed 500 characters']
   },
   interventionCategory: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Intervention category is required'],
     enum: {
       values: ['Emergency', 'Routine', 'Preventive', 'Follow-up'],
       message: 'Intervention category must be one of: Emergency, Routine, Preventive, Follow-up'
-    },
-    default: 'Routine'
+    }
   },
   treatment: {
     type: String,
-    required: false, // Made optional for flexible import
+    required: [true, 'Treatment is required'],
     trim: true,
-    maxlength: [1000, 'Treatment description cannot exceed 1000 characters'],
-    default: ''
+    maxlength: [1000, 'Treatment description cannot exceed 1000 characters']
   },
   medicationsUsed: [medicationSchema],
   request: {
     type: requestSchema,
-    required: false // Made optional for flexible import
+    required: [true, 'Request information is required']
   },
   followUpRequired: {
     type: Boolean,
@@ -302,11 +284,6 @@ const mobileClinicSchema = new mongoose.Schema({
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  },
-  // Store custom fields from flexible import
-  customImportData: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
   }
 }, {
   timestamps: true,

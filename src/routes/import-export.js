@@ -8,10 +8,8 @@ const mongoose = require('mongoose');
 
 // Import middleware
 const { auth } = require('../middleware/auth');
-const jwt = require('jsonwebtoken');
 
 // Import models
-const User = require('../models/User');
 const Client = require('../models/Client');
 const Vaccination = require('../models/Vaccination');
 const ParasiteControl = require('../models/ParasiteControl');
@@ -928,108 +926,6 @@ const handleTemplate = (templateData, filename = 'template') => {
   };
 };
 
-// Dromo Webhook Handler (no auth required)
-const handleDromoWebhook = (Model, processRowFunction) => {
-  return async (req, res) => {
-    try {
-      console.log('🎯 Dromo webhook called for:', Model.modelName);
-      console.log('🎯 Request skipAuth:', req.skipAuth);
-      console.log('🎯 Headers:', Object.keys(req.headers));
-      
-      // Always use admin user for webhook imports
-      const adminUser = await User.findOne({ role: 'super_admin' });
-      const userId = adminUser ? adminUser._id : null;
-      
-      if (!userId) {
-        console.error('❌ No admin user found');
-        return res.status(500).json({
-          success: false,
-          message: 'لا يوجد مستخدم إداري في النظام'
-        });
-      }
-      
-      console.log('✅ Using admin user:', adminUser.name, 'ID:', userId);
-      
-      // Get data from Dromo webhook (try multiple formats)
-      let rows = null;
-      if (req.body.data && Array.isArray(req.body.data)) {
-        rows = req.body.data;
-      } else if (req.body.rows && Array.isArray(req.body.rows)) {
-        rows = req.body.rows;
-      } else if (Array.isArray(req.body)) {
-        rows = req.body;
-      } else if (req.body.validData && Array.isArray(req.body.validData)) {
-        rows = req.body.validData;
-      }
-      
-      if (!rows || !Array.isArray(rows) || rows.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'لا توجد بيانات صالحة للاستيراد'
-        });
-      }
-      
-      console.log(`📊 Processing ${rows.length} rows for ${Model.modelName}`);
-      
-      // Process and save rows
-      const savedRecords = [];
-      const errors = [];
-      
-      for (let i = 0; i < rows.length; i++) {
-        try {
-          const record = await processRowFunction(rows[i], userId, []);
-          if (record) {
-            savedRecords.push(record);
-          }
-        } catch (error) {
-          console.error(`❌ Error processing row ${i + 1}:`, error.message);
-          errors.push({
-            rowIndex: i + 1,
-            error: error.message,
-            data: rows[i]
-          });
-        }
-      }
-      
-      console.log(`✅ Successfully saved ${savedRecords.length} records, ${errors.length} errors`);
-      
-      // Log saved records for debugging
-      if (savedRecords.length > 0) {
-        console.log('💾 Sample saved record:', JSON.stringify(savedRecords[0], null, 2));
-        console.log('💾 Record IDs:', savedRecords.map(r => r._id));
-      }
-      
-      // Verify records are actually in database
-      const dbCount = await Model.countDocuments();
-      console.log(`📊 Total records in ${Model.modelName} collection: ${dbCount}`);
-      
-      res.json({
-        success: true,
-        message: `تم استيراد ${savedRecords.length} سجل بنجاح`,
-        insertedCount: savedRecords.length,
-        totalRows: rows.length,
-        successRows: savedRecords.length,
-        errorRows: errors.length,
-        errors: errors,
-        
-        batchId: `dromo_${Date.now()}_${Model.modelName.toLowerCase()}`,
-        debug: {
-          totalInDatabase: dbCount,
-          sampleRecord: savedRecords[0] ? savedRecords[0]._id : null
-        }
-      });
-      
-    } catch (error) {
-      console.error('❌ Dromo webhook error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء الاستيراد',
-        error: error.message
-      });
-    }
-  };
-};
-
 // Generic import handler with memory processing
 const handleImport = (Model, processRowFunction) => {
   const uploadMiddleware = upload.single('file');
@@ -1728,21 +1624,21 @@ const processVaccinationRow = async (row, userId, errors) => {
       date: dates.mainDate,
       client: client._id,
       farmLocation: getFieldValue(row, [
-        'farmLocation', 'Location', 'location', 'Farm Location',
-        'الموقع', 'موقع المزرعة', 'ابو خريط'
+        'Location', 'location', 'Farm Location', 'farmLocation',
+        'الموقع', 'موقع المزرعة'
       ]) || 'N/A',
       supervisor: getFieldValue(row, [
-        'supervisor', 'Supervisor', 'المشرف'
+        'Supervisor', 'supervisor', 'المشرف'
       ]) || 'Default Supervisor',
       team: getFieldValue(row, [
-        'team', 'Team', 'الفريق'
+        'Team', 'team', 'الفريق'
       ]) || 'Default Team',
       vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No.', 'Vehicle No', 'vehicle_no',
+        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
         'رقم المركبة'
       ]) || 'N/A',
       vaccineType: getFieldValue(row, [
-        'vaccineType', 'Vaccine', 'vaccine_type', 'Vaccine Type',
+        'Vaccine', 'vaccineType', 'vaccine_type', 'Vaccine Type',
         'نوع اللقاح', 'اللقاح'
       ]) || 'Default Vaccine',
       vaccineCategory: processEnumValue(
@@ -2931,19 +2827,11 @@ router.post('/clients/import', auth, handleImport(Client, async (row, userId, er
   }
 }));
 
-// Original import routes (with auth)
 router.post('/vaccination/import', auth, handleImport(Vaccination, processVaccinationRow));
 router.post('/parasite-control/import', auth, handleImport(ParasiteControl, processParasiteControlRow));
 router.post('/mobile-clinics/import', auth, handleImport(MobileClinic, processMobileClinicRow));
 router.post('/laboratories/import', auth, handleImport(Laboratory, processLaboratoryRow));
 router.post('/equine-health/import', auth, handleImport(EquineHealth, processEquineHealthRow));
-
-// Dromo webhook routes (no auth - handled internally)
-router.post('/vaccination/import-dromo', handleDromoWebhook(Vaccination, processVaccinationRow));
-router.post('/parasite-control/import-dromo', handleDromoWebhook(ParasiteControl, processParasiteControlRow));
-router.post('/mobile-clinics/import-dromo', handleDromoWebhook(MobileClinic, processMobileClinicRow));
-router.post('/laboratories/import-dromo', handleDromoWebhook(Laboratory, processLaboratoryRow));
-router.post('/equine-health/import-dromo', handleDromoWebhook(EquineHealth, processEquineHealthRow));
 
 // Enhanced import routes with better error handling
 router.post('/laboratories/import-enhanced', auth, handleImport(Laboratory, processLaboratoryRow));
@@ -2980,246 +2868,6 @@ router.post('/laboratories/import-enhanced', auth, (req, res, next) => {
 router.post('/equine-health/import-enhanced', auth, (req, res, next) => {
   console.log('🎯 Enhanced equine health import route called');
   handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
-});
-
-// Test endpoint for Dromo webhook
-router.get('/dromo-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Dromo webhook endpoint is accessible',
-    timestamp: new Date().toISOString(),
-    headers: req.headers
-  });
-});
-
-router.post('/dromo-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Dromo webhook POST test successful',
-    body: req.body,
-    headers: req.headers,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Dromo Import Endpoint for Public Mode (NO AUTH - uses webhook authentication)
-router.post('/dromo-import-public', async (req, res) => {
-  try {
-    console.log('🎯 Dromo PUBLIC import endpoint called');
-    
-    // Get table type from headers
-    const tableType = req.headers['x-table-type'] || req.body.tableType;
-    const authHeader = req.headers.authorization;
-    
-    // Basic authentication check (if token provided)
-    let userId = null;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.id);
-        if (user) userId = user._id;
-      } catch (err) {
-        console.log('⚠️ Invalid token, using default user');
-      }
-    }
-    
-    // Use default user if no valid token
-    if (!userId) {
-      const defaultUser = await User.findOne({ role: 'admin' });
-      userId = defaultUser ? defaultUser._id : null;
-    }
-    
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: 'لا يوجد مستخدم صالح للاستيراد'
-      });
-    }
-    
-    // Log the full request for debugging
-    console.log('📝 Full request body:', JSON.stringify(req.body, null, 2));
-    console.log('📝 Request headers:', JSON.stringify(req.headers, null, 2));
-    
-    // Get rows from Dromo webhook - try multiple possible structures
-    let rows = null;
-    
-    // Dromo might send data in different formats
-    if (req.body.data && Array.isArray(req.body.data)) {
-      rows = req.body.data;
-    } else if (req.body.rows && Array.isArray(req.body.rows)) {
-      rows = req.body.rows;
-    } else if (Array.isArray(req.body)) {
-      rows = req.body;
-    } else if (req.body.validData && Array.isArray(req.body.validData)) {
-      rows = req.body.validData;
-    } else if (req.body.results && Array.isArray(req.body.results)) {
-      rows = req.body.results;
-    }
-    
-    console.log(`📊 Found ${rows ? rows.length : 0} rows in request`);
-    
-    if (!tableType) {
-      return res.status(400).json({
-        success: false,
-        message: 'نوع الجدول غير محدد - يجب إرسال X-Table-Type header'
-      });
-    }
-    
-    if (!rows || !Array.isArray(rows) || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'لا توجد بيانات صالحة للاستيراد',
-        debug: {
-          bodyKeys: Object.keys(req.body),
-          bodyType: typeof req.body,
-          isArray: Array.isArray(req.body)
-        }
-      });
-    }
-    
-    console.log(`📊 Processing ${rows.length} rows for table: ${tableType}`);
-    
-    // Map table types to models and processors
-    const tableConfig = {
-      'laboratory': { model: Laboratory, processor: processLaboratoryRow },
-      'vaccination': { model: Vaccination, processor: processVaccinationRow },
-      'parasite_control': { model: ParasiteControl, processor: processParasiteControlRow },
-      'mobile': { model: MobileClinic, processor: processMobileClinicRow },
-      'equine_health': { model: EquineHealth, processor: processEquineHealthRow }
-    };
-    
-    const config = tableConfig[tableType];
-    if (!config) {
-      return res.status(400).json({
-        success: false,
-        message: `نوع جدول غير مدعوم: ${tableType}`
-      });
-    }
-    
-    // Process and SAVE rows
-    const savedRecords = [];
-    const errors = [];
-    
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        // Process row - this creates AND saves the record
-        const record = await config.processor(rows[i], userId, []);
-        if (record) {
-          savedRecords.push(record);
-        }
-      } catch (error) {
-        console.error(`❌ Error processing row ${i + 1}:`, error.message);
-        errors.push({
-          rowIndex: i + 1,
-          error: error.message,
-          data: rows[i]
-        });
-      }
-    }
-    
-    console.log(`✅ Successfully saved ${savedRecords.length} records, ${errors.length} errors`);
-    
-    res.json({
-      success: true,
-      message: `تم استيراد ${savedRecords.length} سجل بنجاح`,
-      insertedCount: savedRecords.length,
-      errors: errors,
-      batchId: `dromo_public_${Date.now()}_${tableType}`,
-      savedRecords: savedRecords.map(r => ({ _id: r._id, serialNo: r.serialNo }))
-    });
-    
-  } catch (error) {
-    console.error('❌ Dromo PUBLIC import error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'حدث خطأ أثناء الاستيراد',
-      error: error.message
-    });
-  }
-});
-
-// Dromo Import Endpoint (Original - requires auth)
-router.post('/dromo-import', auth, async (req, res) => {
-  try {
-    console.log('🎯 Dromo import endpoint called');
-    
-    const { tableType, rows, dromoBackendKey } = req.body;
-    
-    // Security check for Dromo backend key
-    const expectedBackendKey = process.env.DROMO_BACKEND_KEY;
-    if (expectedBackendKey && dromoBackendKey !== expectedBackendKey) {
-      console.log('❌ Dromo security check failed');
-      return res.status(401).json({
-        success: false,
-        message: 'غير مصرح بالوصول - مفتاح Dromo غير صحيح'
-      });
-    }
-    
-    if (!tableType || !rows || !Array.isArray(rows)) {
-      return res.status(400).json({
-        success: false,
-        message: 'بيانات غير صحيحة - يجب تحديد نوع الجدول والصفوف'
-      });
-    }
-    
-    console.log(`📊 Processing ${rows.length} rows for table: ${tableType}`);
-    
-    // Map table types to models and processors
-    const tableConfig = {
-      'laboratory': { model: Laboratory, processor: processLaboratoryRow },
-      'vaccination': { model: Vaccination, processor: processVaccinationRow },
-      'parasite_control': { model: ParasiteControl, processor: processParasiteControlRow },
-      'mobile': { model: MobileClinic, processor: processMobileClinicRow },
-      'equine_health': { model: EquineHealth, processor: processEquineHealthRow }
-    };
-    
-    const config = tableConfig[tableType];
-    if (!config) {
-      return res.status(400).json({
-        success: false,
-        message: `نوع جدول غير مدعوم: ${tableType}`
-      });
-    }
-    
-    // Process rows using the appropriate processor
-    const results = [];
-    const errors = [];
-    
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        const processedRow = await config.processor(rows[i], req.user._id, []);
-        if (processedRow) {
-          results.push(processedRow);
-        }
-      } catch (error) {
-        console.error(`❌ Error processing row ${i + 1}:`, error.message);
-        errors.push({
-          rowIndex: i + 1,
-          error: error.message,
-          data: rows[i]
-        });
-      }
-    }
-    
-    console.log(`✅ Successfully processed ${results.length} rows, ${errors.length} errors`);
-    
-    res.json({
-      success: true,
-      message: `تم استيراد ${results.length} سجل بنجاح`,
-      insertedCount: results.length,
-      errors: errors,
-      batchId: `dromo_${Date.now()}_${tableType}`
-    });
-    
-  } catch (error) {
-    console.error('❌ Dromo import error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'حدث خطأ أثناء الاستيراد',
-      error: error.message
-    });
-  }
 });
 
 module.exports = router;
