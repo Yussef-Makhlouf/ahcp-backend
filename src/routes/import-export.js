@@ -1551,6 +1551,42 @@ const parseDateField = (dateString) => {
     return dateValue;
   }
   
+  // Handle YYYY-DD-MM format (alternative format)
+  if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, dayOrMonth, monthOrDay] = dateStr.split('-');
+    
+    // Try both interpretations and pick the valid one
+    const option1 = new Date(`${year}-${dayOrMonth.padStart(2, '0')}-${monthOrDay.padStart(2, '0')}`); // YYYY-MM-DD
+    const option2 = new Date(`${year}-${monthOrDay.padStart(2, '0')}-${dayOrMonth.padStart(2, '0')}`); // YYYY-DD-MM
+    
+    // Check which one is valid based on day/month ranges
+    const day1 = parseInt(monthOrDay);
+    const month1 = parseInt(dayOrMonth);
+    const day2 = parseInt(dayOrMonth);
+    const month2 = parseInt(monthOrDay);
+    
+    // If first interpretation has invalid day (>31) or month (>12), try second
+    if ((day1 > 31 || month1 > 12) && day2 <= 31 && month2 <= 12) {
+      console.log(`🔍 Parsed YYYY-DD-MM format: ${dateStr} -> ${option2}`);
+      return option2;
+    }
+    // If second interpretation has invalid day (>31) or month (>12), use first
+    else if ((day2 > 31 || month2 > 12) && day1 <= 31 && month1 <= 12) {
+      console.log(`🔍 Parsed YYYY-MM-DD format: ${dateStr} -> ${option1}`);
+      return option1;
+    }
+    // If both are valid, prefer YYYY-MM-DD (standard ISO format)
+    else if (!isNaN(option1.getTime())) {
+      console.log(`🔍 Parsed YYYY-MM-DD format (ambiguous, using standard): ${dateStr} -> ${option1}`);
+      return option1;
+    }
+    // Fallback to YYYY-DD-MM if YYYY-MM-DD is invalid
+    else if (!isNaN(option2.getTime())) {
+      console.log(`🔍 Parsed YYYY-DD-MM format (fallback): ${dateStr} -> ${option2}`);
+      return option2;
+    }
+  }
+  
   // Handle DD-MM-YYYY format
   if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
     const [day, month, year] = dateStr.split('-');
