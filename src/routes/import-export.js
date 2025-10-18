@@ -1982,22 +1982,37 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
     
     // Create new client if not found and allowed
     if (!client && createIfNotFound) {
-      const newClient = new Client({
-        name: clientName || 'غير محدد',
-        nationalId: clientId || generateValidNationalId(),
-        phone: clientPhone || generateDefaultPhone(),
-        village: clientVillage || '',
-        detailedAddress: clientAddress || clientVillage || '',
-        birthDate: parseBirthDate(row),
-        status: 'نشط',
-        animals: [],
-        availableServices: [],
-        createdBy: userId
-      });
-      
-      await newClient.save();
-      client = newClient;
-      console.log(`✅ Created new client: ${client.name}`);
+      try {
+        const newClient = new Client({
+          name: clientName || 'غير محدد',
+          nationalId: clientId || generateValidNationalId(),
+          phone: clientPhone || generateDefaultPhone(),
+          village: clientVillage || '',
+          detailedAddress: clientAddress || clientVillage || '',
+          birthDate: parseBirthDate(row),
+          status: 'نشط',
+          animals: [],
+          availableServices: [],
+          createdBy: userId
+        });
+        
+        await newClient.save();
+        client = newClient;
+        console.log(`✅ Created new client: ${client.name}`);
+      } catch (saveError) {
+        // If duplicate key error, try to find existing client again
+        if (saveError.code === 11000 && saveError.keyPattern && saveError.keyPattern.nationalId) {
+          console.log(`🔄 Duplicate nationalId detected, finding existing client: ${clientId}`);
+          client = await Client.findOne({ nationalId: clientId });
+          if (client) {
+            console.log(`✅ Found existing client: ${client.name}`);
+          } else {
+            throw new Error(`Client with nationalId ${clientId} exists but could not be retrieved`);
+          }
+        } else {
+          throw saveError;
+        }
+      }
     }
     
     return client;
@@ -2078,7 +2093,21 @@ const processUnifiedDatesEnhanced = (row) => {
       ]);
       if (field) {
         const parsed = parseDateField(field);
-        return parsed && !isNaN(parsed.getTime()) ? parsed : undefined;
+        if (parsed && !isNaN(parsed.getTime())) {
+          // Get request date for comparison
+          const requestField = getFieldValue(row, [
+            'Request Date', 'requestDate', 'request_date',
+            'تاريخ الطلب'
+          ]);
+          const requestDate = requestField ? parseDateField(requestField) : mainDate;
+          
+          // Ensure fulfilling date is not before request date
+          if (parsed < (requestDate || mainDate)) {
+            console.log(`⚠️ Fulfilling date ${parsed.toISOString()} is before request date ${(requestDate || mainDate).toISOString()}, using request date instead`);
+            return requestDate || mainDate;
+          }
+          return parsed;
+        }
       }
       return undefined;
     })(),

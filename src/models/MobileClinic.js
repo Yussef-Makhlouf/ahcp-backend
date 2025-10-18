@@ -146,7 +146,18 @@ const requestSchema = new mongoose.Schema({
     type: Date,
     validate: {
       validator: function(date) {
-        return !date || date >= this.date;
+        // Allow empty fulfilling date or ensure it's not before request date
+        if (!date) return true;
+        if (!this.date) return true;
+        
+        // Compare dates only (ignore time)
+        const requestDate = new Date(this.date);
+        const fulfillingDate = new Date(date);
+        
+        requestDate.setHours(0, 0, 0, 0);
+        fulfillingDate.setHours(0, 0, 0, 0);
+        
+        return fulfillingDate >= requestDate;
       },
       message: 'Fulfilling date cannot be before request date'
     }
