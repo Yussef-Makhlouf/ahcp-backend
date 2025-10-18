@@ -1544,6 +1544,14 @@ const parseDateField = (dateString) => {
     return dateValue;
   }
   
+  // Handle YYYY/MM/DD format (like 1985/03/15)
+  if (dateStr.match(/^\d{4}\/\d{1,2}\/\d{1,2}$/)) {
+    const [year, month, day] = dateStr.split('/');
+    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Parsed YYYY/MM/DD format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+  
   // Handle YYYY-MM-DD format (ISO format)
   if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     const dateValue = new Date(dateStr);
