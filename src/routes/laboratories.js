@@ -120,6 +120,7 @@ router.get('/',
     let records;
     try {
       records = await Laboratory.find(filter)
+        .populate('client', 'name nationalId phone birthDate village detailedAddress')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1, priority: -1 })
@@ -420,6 +421,7 @@ router.get('/:id',
   auth,
   asyncHandler(async (req, res) => {
     const record = await Laboratory.findById(req.params.id)
+      .populate('client', 'name nationalId phone birthDate village detailedAddress')
       .populate('createdBy', 'name email role')
       .populate('updatedBy', 'name email role');
 

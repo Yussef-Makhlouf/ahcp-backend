@@ -98,7 +98,7 @@ const mapDromoToLaboratory = (row) => {
   return {
     // Basic fields
     serialNo: row.serialNo || `LAB-${Date.now()}`,
-    date: parseSimpleDate(row.date) || new Date(),
+    date: parseSimpleDate(row.date) || new Date(Date.now() - 24 * 60 * 60 * 1000), // Use yesterday's date as default
     sampleCode: row.sampleCode || `SC-${Date.now()}`,
     
     // Client data - create from flat fields
@@ -117,7 +117,7 @@ const mapDromoToLaboratory = (row) => {
     },
     
     // Sample data
-    sampleType: row.sampleType || 'غير محدد',
+    sampleType: row.sampleType || 'Other', // Use 'Other' as default instead of Arabic text
     sampleNumber: row.sampleNumber || '',
     collector: row.collector || 'غير محدد',
     
@@ -425,13 +425,13 @@ const processLaboratoryRow = async (row, userId) => {
       serialNo: parseInt(mappedData.serialNo) || Date.now() % 1000000,
       sampleCode: mappedData.sampleCode,
       date: mappedData.date,
-      client: {
-        _id: client._id,
-        name: client.name,
-        nationalId: client.nationalId,
-        phone: client.phone,
-        birthDate: client.birthDate
-      },
+      // Use flat client fields as per Laboratory model schema
+      clientName: client.name,
+      clientId: client.nationalId,
+      clientPhone: client.phone,
+      clientBirthDate: client.birthDate,
+      // Also add client reference for consistency with other models
+      client: client._id,
       farmLocation: mappedData.farmLocation,
       coordinates: mappedData.coordinates,
       speciesCounts: mappedData.speciesCounts,
@@ -634,7 +634,7 @@ const handleDromoImport = (Model, processRowFunction) => {
 router.post('/vaccination/import-dromo', handleDromoImport(Vaccination, processVaccinationRow));
 router.post('/parasite-control/import-dromo', handleDromoImport(ParasiteControl, processParasiteControlRow));
 router.post('/mobile-clinics/import-dromo', handleDromoImport(MobileClinic, processMobileClinicRow));
-router.post('/laboratory/import-dromo', handleDromoImport(Laboratory, processLaboratoryRow));
+router.post('/laboratories/import-dromo', handleDromoImport(Laboratory, processLaboratoryRow));
 router.post('/equine-health/import-dromo', handleDromoImport(EquineHealth, processEquineHealthRow));
 
 module.exports = router;

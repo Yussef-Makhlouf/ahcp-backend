@@ -2870,4 +2870,30 @@ router.post('/equine-health/import-enhanced', auth, (req, res, next) => {
   handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
 });
 
+// Dromo import routes
+router.post('/laboratories/import-dromo', auth, (req, res, next) => {
+  console.log('🎯 Dromo laboratories import route called');
+  handleImport(Laboratory, processLaboratoryRow)(req, res, next);
+});
+
+router.post('/vaccination/import-dromo', auth, (req, res, next) => {
+  console.log('🎯 Dromo vaccination import route called');
+  handleImport(Vaccination, processVaccinationRow)(req, res, next);
+});
+
+router.post('/parasite-control/import-dromo', auth, (req, res, next) => {
+  console.log('🎯 Dromo parasite control import route called');
+  handleImport(ParasiteControl, processParasiteControlRow)(req, res, next);
+});
+
+router.post('/mobile-clinics/import-dromo', auth, (req, res, next) => {
+  console.log('🎯 Dromo mobile clinics import route called');
+  handleImport(MobileClinic, processMobileClinicRow)(req, res, next);
+});
+
+router.post('/equine-health/import-dromo', auth, (req, res, next) => {
+  console.log('🎯 Dromo equine health import route called');
+  handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
+});
+
 module.exports = router;

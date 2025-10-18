@@ -132,13 +132,8 @@ const laboratorySchema = new mongoose.Schema({
   },
   date: { 
     type: Date, 
-    required: [true, 'Date is required'], 
-    validate: { 
-      validator: function(date) { 
-        return date <= new Date(); 
-      }, 
-      message: 'Date cannot be in the future' 
-    } 
+    required: [true, 'Date is required']
+    // Removed future date validation to allow flexible date entry
   },
   sampleCode: { 
     type: String, 
@@ -167,6 +162,11 @@ const laboratorySchema = new mongoose.Schema({
     required: [true, 'Client phone is required'], 
     trim: true, 
     match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
+  },
+  client: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Client',
+    required: false // Optional since we have flat client fields
   },
   farmLocation: { 
     type: String, 
@@ -229,7 +229,7 @@ const laboratorySchema = new mongoose.Schema({
     type: String, 
     required: [true, 'Sample type is required'], 
     enum: { 
-      values: ['Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin'], 
+      values: ['Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin', 'Saliva', 'Nasal', 'Throat', 'Rectal', 'Vaginal', 'Other'], 
       message: 'Invalid sample type' 
     } 
   },
