@@ -108,6 +108,245 @@ router.get('/',
 
 /**
  * @swagger
+ * /api/mobile-clinics:
+ *   post:
+ *     summary: Create a new mobile clinic record
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - serialNo
+ *               - date
+ *               - clientName
+ *               - clientId
+ *               - clientPhone
+ *               - farmLocation
+ *               - supervisor
+ *               - interventionCategory
+ *             properties:
+ *               serialNo:
+ *                 type: string
+ *                 description: Serial number
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 description: Record date
+ *               clientName:
+ *                 type: string
+ *                 description: Client name
+ *               clientId:
+ *                 type: string
+ *                 description: Client national ID
+ *               clientPhone:
+ *                 type: string
+ *                 description: Client phone number
+ *               clientBirthDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Client birth date
+ *               farmLocation:
+ *                 type: string
+ *                 description: Farm location
+ *               supervisor:
+ *                 type: string
+ *                 description: Supervisor name
+ *               vehicleNo:
+ *                 type: string
+ *                 description: Vehicle number
+ *               animalCounts:
+ *                 type: object
+ *                 properties:
+ *                   sheep:
+ *                     type: number
+ *                   goats:
+ *                     type: number
+ *                   camel:
+ *                     type: number
+ *                   cattle:
+ *                     type: number
+ *                   horse:
+ *                     type: number
+ *               diagnosis:
+ *                 type: string
+ *                 description: Medical diagnosis
+ *               interventionCategory:
+ *                 type: string
+ *                 enum: [Emergency, Routine, Preventive, Follow-up]
+ *                 description: Type of intervention
+ *               treatment:
+ *                 type: string
+ *                 description: Treatment provided
+ *               followUpRequired:
+ *                 type: boolean
+ *                 description: Whether follow-up is required
+ *               followUpDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Follow-up date
+ *               remarks:
+ *                 type: string
+ *                 description: Additional remarks
+ *     responses:
+ *       201:
+ *         description: Mobile clinic record created successfully
+ *       400:
+ *         description: Invalid request data
+ *       500:
+ *         description: Server error
+ */
+router.post('/',
+  auth,
+  checkSectionAccessWithMessage('mobile_clinics'),
+  validate(schemas.mobileClinicCreate),
+  asyncHandler(async (req, res) => {
+    try {
+      console.log('📝 Creating mobile clinic record with data:', req.body);
+
+      // Handle client data - support both flat structure and client reference
+      let clientData = null;
+      if (req.body.client && typeof req.body.client === 'object') {
+        // Client reference provided
+        clientData = req.body.client;
+      } else if (req.body.clientName && req.body.clientId) {
+        // Flat client data provided - try to find or create client
+        try {
+          clientData = await findOrCreateClient({
+            name: req.body.clientName,
+            nationalId: req.body.clientId,
+            phone: req.body.clientPhone,
+            birthDate: req.body.clientBirthDate,
+            village: req.body.clientVillage || '',
+            detailedAddress: req.body.clientDetailedAddress || ''
+          });
+        } catch (clientError) {
+          console.log('⚠️ Client creation failed, using flat structure:', clientError.message);
+          // Continue with flat structure if client creation fails
+        }
+      }
+
+      // Prepare mobile clinic data
+      const mobileClinicData = {
+        serialNo: req.body.serialNo,
+        date: req.body.date || new Date(),
+        farmLocation: req.body.farmLocation,
+        supervisor: req.body.supervisor,
+        vehicleNo: req.body.vehicleNo,
+        
+        // Animal counts
+        animalCounts: {
+          sheep: req.body.animalCounts?.sheep || req.body.sheep || 0,
+          goats: req.body.animalCounts?.goats || req.body.goats || 0,
+          camel: req.body.animalCounts?.camel || req.body.camel || 0,
+          cattle: req.body.animalCounts?.cattle || req.body.cattle || 0,
+          horse: req.body.animalCounts?.horse || req.body.horse || 0
+        },
+
+        // Medical information
+        diagnosis: req.body.diagnosis,
+        interventionCategory: req.body.interventionCategory,
+        treatment: req.body.treatment,
+
+        // Medication information
+        medication: {
+          name: req.body.medication?.name || req.body.medicationName,
+          dosage: req.body.medication?.dosage || req.body.dosage,
+          quantity: req.body.medication?.quantity || req.body.quantity,
+          administrationRoute: req.body.medication?.administrationRoute || req.body.administrationRoute
+        },
+
+        // Request information
+        request: {
+          date: req.body.request?.date || req.body.requestDate,
+          situation: req.body.request?.situation || req.body.requestSituation,
+          fulfillingDate: req.body.request?.fulfillingDate || req.body.requestFulfillingDate
+        },
+
+        // Follow-up information
+        followUpRequired: req.body.followUpRequired || false,
+        followUpDate: req.body.followUpDate,
+
+        // Location coordinates
+        coordinates: {
+          latitude: req.body.coordinates?.latitude || req.body.latitude,
+          longitude: req.body.coordinates?.longitude || req.body.longitude
+        },
+
+        // Additional information
+        remarks: req.body.remarks,
+        createdBy: req.user._id
+      };
+
+      // Add client reference or flat client data
+      if (clientData && clientData._id) {
+        mobileClinicData.client = clientData._id;
+      } else {
+        // Use flat structure for client data
+        mobileClinicData.clientName = req.body.clientName;
+        mobileClinicData.clientId = req.body.clientId;
+        mobileClinicData.clientPhone = req.body.clientPhone;
+        mobileClinicData.clientBirthDate = req.body.clientBirthDate;
+        mobileClinicData.clientVillage = req.body.clientVillage;
+        mobileClinicData.clientDetailedAddress = req.body.clientDetailedAddress;
+      }
+
+      console.log('💾 Saving mobile clinic data:', mobileClinicData);
+
+      // Create the mobile clinic record
+      const mobileClinic = new MobileClinic(mobileClinicData);
+      const savedRecord = await mobileClinic.save();
+
+      console.log('✅ Mobile clinic record created successfully:', savedRecord._id);
+
+      res.status(201).json({
+        success: true,
+        message: 'Mobile clinic record created successfully',
+        data: savedRecord
+      });
+
+    } catch (error) {
+      console.error('❌ Error creating mobile clinic record:', error);
+      
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: validationErrors
+        });
+      }
+
+      // Handle duplicate key errors
+      if (error.code === 11000) {
+        const field = Object.keys(error.keyPattern)[0];
+        return res.status(400).json({
+          success: false,
+          message: `${field} already exists`,
+          field: field
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error creating mobile clinic record',
+        error: error.message
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
  * /api/mobile-clinics/statistics:
  *   get:
  *     summary: Get mobile clinic statistics

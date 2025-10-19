@@ -287,6 +287,49 @@ const schemas = {
     remarks: Joi.string().max(1000).optional()
   }),
 
+  // Mobile Clinic schemas
+  mobileClinicCreate: Joi.object({
+    serialNo: Joi.string().max(20).required(),
+    date: Joi.date().max('now').optional(),
+    clientName: Joi.string().min(2).max(100).required(),
+    clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
+    clientPhone: Joi.string().pattern(/^05\d{8}$/).required(),
+    clientBirthDate: Joi.date().optional(),
+    clientVillage: Joi.string().max(100).optional(),
+    clientDetailedAddress: Joi.string().max(500).optional(),
+    farmLocation: Joi.string().max(200).required(),
+    coordinates: Joi.object({
+      latitude: Joi.number().min(-90).max(90).optional(),
+      longitude: Joi.number().min(-180).max(180).optional()
+    }).optional(),
+    supervisor: Joi.string().max(100).required(),
+    vehicleNo: Joi.string().max(20).optional(),
+    animalCounts: Joi.object({
+      sheep: Joi.number().min(0).default(0),
+      goats: Joi.number().min(0).default(0),
+      camel: Joi.number().min(0).default(0),
+      cattle: Joi.number().min(0).default(0),
+      horse: Joi.number().min(0).default(0)
+    }).optional(),
+    diagnosis: Joi.string().min(2).max(500).required(),
+    interventionCategory: Joi.string().valid('Emergency', 'Routine', 'Preventive', 'Follow-up').required(),
+    treatment: Joi.string().min(2).max(1000).required(),
+    medication: Joi.object({
+      name: Joi.string().max(100).optional(),
+      dosage: Joi.string().max(50).optional(),
+      quantity: Joi.number().min(0).optional(),
+      administrationRoute: Joi.string().max(50).optional()
+    }).optional(),
+    request: Joi.object({
+      date: Joi.date().optional(),
+      situation: Joi.string().valid('Open', 'Closed', 'Pending').optional(),
+      fulfillingDate: Joi.date().optional()
+    }).optional(),
+    followUpRequired: Joi.boolean().default(false),
+    followUpDate: Joi.date().optional(),
+    remarks: Joi.string().max(1000).optional()
+  }),
+
   // Common query schemas
   paginationQuery: Joi.object({
     page: Joi.number().integer().min(1).default(1),
