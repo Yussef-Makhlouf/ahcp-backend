@@ -83,7 +83,7 @@ const mongoose = require('mongoose');
  *               format: date
  *             situation:
  *               type: string
- *               enum: [Open, Closed, Pending]
+ *               enum: [Ongoing, Closed]
  *             fulfillingDate:
  *               type: string
  *               format: date
@@ -134,8 +134,8 @@ const requestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Request situation is required'],
     enum: {
-      values: ['Ongoing', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Ongoing, Closed, Pending'
+      values: ['Ongoing', 'Closed'],
+      message: 'Situation must be one of: Ongoing, Closed'
     }
   },
   fulfillingDate: {
@@ -166,6 +166,10 @@ const vaccinationSchema = new mongoose.Schema({
       },
       message: 'Date cannot be in the future'
     }
+  },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode'
   },
   client: {
     type: mongoose.Schema.Types.ObjectId,

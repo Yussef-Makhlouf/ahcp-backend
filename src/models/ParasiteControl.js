@@ -91,18 +91,12 @@ const mongoose = require('mongoose');
  *         breedingSites:
  *           type: string
  *           description: Description of breeding sites
- *         parasiteControlVolume:
- *           type: number
- *           description: Volume used for parasite control
- *         parasiteControlStatus:
- *           type: string
- *           description: Status of parasite control
  *         herdHealthStatus:
  *           type: string
- *           enum: [Healthy, Sick, Under Treatment]
+ *           enum: [Healthy, Sick, Sporadic cases]
  *         complyingToInstructions:
- *           type: boolean
- *           description: Whether client is complying to instructions
+ *           type: string
+ *           enum: [Comply, Not Comply, Partially Comply]
  *         request:
  *           type: object
  *           properties:
@@ -196,8 +190,8 @@ const requestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Request situation is required'],
     enum: {
-      values: ['Open', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Open, Closed, Pending'
+      values: ['Ongoing', 'Closed'],
+      message: 'Situation must be one of: Ongoing, Closed'
     }
   },
   fulfillingDate: {
@@ -223,12 +217,16 @@ const parasiteControlSchema = new mongoose.Schema({
     type: Date,
     required: [true, 'Date is required']
   },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode'
+  },
   client: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Client',
     populate: {
       path: 'client',
-      select: 'name nationalId phone village detailedAddress birthDate'
+      select: 'name nationalId phone village birthDate'
     },
     required: [true, 'Client reference is required']
   },
@@ -282,17 +280,6 @@ const parasiteControlSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [500, 'Breeding sites description cannot exceed 500 characters']
-  },
-  parasiteControlVolume: {
-    type: Number,
-    required: [true, 'Parasite control volume is required'],
-    min: [0, 'Volume cannot be negative']
-  },
-  parasiteControlStatus: {
-    type: String,
-    required: [true, 'Parasite control status is required'],
-    trim: true,
-    maxlength: [100, 'Status cannot exceed 100 characters']
   },
   herdHealthStatus: {
     type: String,

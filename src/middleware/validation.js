@@ -183,7 +183,7 @@ const schemas = {
     complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').default('Comply'),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     remarks: Joi.string().max(1000).optional()
@@ -260,7 +260,7 @@ const schemas = {
     reachableLocation: Joi.string().valid('Easy', 'Hard to reach' , 'Moderate').required(),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     remarks: Joi.string().max(1000).optional()
@@ -344,7 +344,7 @@ const schemas = {
     }).optional(),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Open', 'Closed', 'Pending').optional(),
+      situation: Joi.string().valid('Open', 'Closed').optional(),
       fulfillingDate: Joi.date().optional()
     }).optional(),
     followUpRequired: Joi.boolean().default(false),
@@ -421,7 +421,7 @@ const schemas = {
     complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').optional(),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Open', 'Closed', 'Pending').optional(),
+      situation: Joi.string().valid('Open', 'Closed').optional(),
       fulfillingDate: Joi.date().optional()
     }).optional(),
     remarks: Joi.string().max(1000).optional()
@@ -501,7 +501,7 @@ const schemas = {
     ).optional(),
     request: Joi.object({
       date: Joi.date().required(),
-      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     followUpRequired: Joi.boolean().default(false),

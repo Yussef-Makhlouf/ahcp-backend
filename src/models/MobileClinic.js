@@ -86,7 +86,7 @@ const mongoose = require('mongoose');
  *               format: date
  *             situation:
  *               type: string
- *               enum: [Open, Closed, Pending]
+ *               enum: [Ongoing, Closed]
  *             fulfillingDate:
  *               type: string
  *               format: date
@@ -132,8 +132,8 @@ const requestSchema = new mongoose.Schema({
   situation: {
     type: String,
     enum: {
-      values: ['Open', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Open, Closed, Pending'
+      values: ['Open', 'Closed'],
+      message: 'Situation must be one of: Open, Closed'
     }
   },
   fulfillingDate: {
@@ -175,6 +175,10 @@ const mobileClinicSchema = new mongoose.Schema({
       },
       message: 'Date cannot be in the future'
     }
+  },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode'
   },
   // Client reference (ObjectId) - optional if flat client fields are provided
   client: {

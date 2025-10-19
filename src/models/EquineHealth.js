@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { populate } = require('./Client');
 
 /**
  * @swagger
@@ -93,7 +94,7 @@ const mongoose = require('mongoose');
  *               format: date
  *             situation:
  *               type: string
- *               enum: [Ongoing, Closed, Pending]
+ *               enum: [Ongoing, Closed]
  *             fulfillingDate:
  *               type: string
  *               format: date
@@ -218,8 +219,8 @@ const requestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Request situation is required'],
     enum: {
-      values: ['Ongoing', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Ongoing, Closed, Pending'
+      values: ['Ongoing', 'Closed'],
+      message: 'Situation must be one of: Ongoing, Closed'
     }
   },
   fulfillingDate: {
@@ -246,6 +247,10 @@ const equineHealthSchema = new mongoose.Schema({
   date: {
     type: Date,
     required: [true, 'Date is required']
+  },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode'
   },
   client: {
     name: {

@@ -25,6 +25,7 @@ const clientsRoutes = require('./routes/clients');
 const reportsRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const villagesRoutes = require('./routes/villages');
+const holdingCodesRoutes = require('./routes/holdingCodes');
 const importExportRoutes = require('./routes/import-export');
 
 // Import middleware
@@ -202,6 +203,7 @@ app.use('/api/clients', selectedAuth, clientsRoutes);
 app.use('/api/reports', selectedAuth, reportsRoutes);
 app.use('/api/upload', selectedAuth, uploadRoutes);
 app.use('/api/villages', selectedAuth, villagesRoutes);
+app.use('/api/holding-codes', selectedAuth, holdingCodesRoutes);
 app.use('/api/import-export', selectedAuth, importExportRoutes);
 
 // Welcome message

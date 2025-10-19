@@ -64,6 +64,9 @@ const mongoose = require('mongoose');
  *         detailedAddress:
  *           type: string
  *           description: Detailed address
+ *         holdingCode:
+ *           type: string
+ *           description: Reference to holding code ID
  *         coordinates:
  *           type: object
  *           properties:
@@ -192,6 +195,11 @@ const clientSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Address cannot exceed 500 characters']
   },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode',
+    sparse: true // Allow multiple documents with null holdingCode
+  },
   coordinates: {
     latitude: {
       type: Number,
@@ -245,6 +253,7 @@ clientSchema.index({ name: 1 });
 clientSchema.index({ village: 1 });
 clientSchema.index({ status: 1 });
 clientSchema.index({ phone: 1 });
+clientSchema.index({ holdingCode: 1 });
 clientSchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
 
 // Virtual for total animals count

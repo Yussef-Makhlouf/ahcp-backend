@@ -135,6 +135,10 @@ const laboratorySchema = new mongoose.Schema({
     required: [true, 'Date is required']
     // Removed future date validation to allow flexible date entry
   },
+  holdingCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HoldingCode'
+  },
   sampleCode: { 
     type: String, 
     required: [true, 'Sample code is required'], 
