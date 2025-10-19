@@ -206,7 +206,13 @@ router.post('/',
   validate(schemas.mobileClinicCreate),
   asyncHandler(async (req, res) => {
     try {
-      console.log('📝 Creating mobile clinic record with data:', req.body);
+      console.log('📝 Creating mobile clinic record with data:', JSON.stringify(req.body, null, 2));
+      console.log('🔍 Validation passed, proceeding with creation...');
+      console.log('👤 Client data check:');
+      console.log('  - req.body.client:', req.body.client);
+      console.log('  - req.body.clientName:', req.body.clientName);
+      console.log('  - req.body.clientId:', req.body.clientId);
+      console.log('  - req.body.interventionCategory:', req.body.interventionCategory);
 
       // Handle client data - support both flat structure and client reference
       let clientData = null;

@@ -104,24 +104,20 @@ const mongoose = require('mongoose');
 const medicationSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Medication name is required'],
     trim: true,
     maxlength: [100, 'Medication name cannot exceed 100 characters']
   },
   dosage: {
     type: String,
-    required: [true, 'Dosage is required'],
     trim: true,
     maxlength: [50, 'Dosage cannot exceed 50 characters']
   },
   quantity: {
     type: Number,
-    required: [true, 'Quantity is required'],
     min: [0, 'Quantity cannot be negative']
   },
-  route: {
+  administrationRoute: {
     type: String,
-    required: [true, 'Administration route is required'],
     enum: {
       values: ['Oral', 'Injection', 'Topical', 'Intravenous', 'Intramuscular', 'Subcutaneous'],
       message: 'Invalid administration route'
@@ -131,12 +127,10 @@ const medicationSchema = new mongoose.Schema({
 
 const requestSchema = new mongoose.Schema({
   date: {
-    type: Date,
-    required: [true, 'Request date is required']
+    type: Date
   },
   situation: {
     type: String,
-    required: [true, 'Request situation is required'],
     enum: {
       values: ['Open', 'Closed', 'Pending'],
       message: 'Situation must be one of: Open, Closed, Pending'
@@ -182,10 +176,40 @@ const mobileClinicSchema = new mongoose.Schema({
       message: 'Date cannot be in the future'
     }
   },
+  // Client reference (ObjectId) - optional if flat client fields are provided
   client: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: [true, 'Client reference is required']
+    ref: 'Client'
+  },
+  
+  // Flat client fields (alternative to client reference)
+  clientName: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Client name cannot exceed 100 characters']
+  },
+  clientId: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Client ID cannot exceed 20 characters']
+  },
+  clientPhone: {
+    type: String,
+    trim: true,
+    maxlength: [15, 'Client phone cannot exceed 15 characters']
+  },
+  clientBirthDate: {
+    type: Date
+  },
+  clientVillage: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Client village cannot exceed 100 characters']
+  },
+  clientDetailedAddress: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Client address cannot exceed 500 characters']
   },
   farmLocation: {
     type: String,
@@ -213,7 +237,6 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   vehicleNo: {
     type: String,
-    required: [true, 'Vehicle number is required'],
     trim: true,
     maxlength: [20, 'Vehicle number cannot exceed 20 characters']
   },
@@ -246,7 +269,6 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   diagnosis: {
     type: String,
-    required: [true, 'Diagnosis is required'],
     trim: true,
     maxlength: [500, 'Diagnosis cannot exceed 500 characters']
   },
@@ -254,20 +276,18 @@ const mobileClinicSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Intervention category is required'],
     enum: {
-      values: ['Emergency', 'Routine', 'Preventive', 'Follow-up'],
-      message: 'Intervention category must be one of: Emergency, Routine, Preventive, Follow-up'
+      values: ['Emergency', 'Routine', 'Preventive', 'Follow-up', 'Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery'],
+      message: 'Intervention category must be one of: Emergency, Routine, Preventive, Follow-up, Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery'
     }
   },
   treatment: {
     type: String,
-    required: [true, 'Treatment is required'],
     trim: true,
     maxlength: [1000, 'Treatment description cannot exceed 1000 characters']
   },
   medicationsUsed: [medicationSchema],
   request: {
-    type: requestSchema,
-    required: [true, 'Request information is required']
+    type: requestSchema
   },
   followUpRequired: {
     type: Boolean,
@@ -395,8 +415,18 @@ mobileClinicSchema.statics.getStatistics = async function(filters = {}) {
   };
 };
 
-// Pre-save middleware to update updatedBy
+// Pre-save middleware to validate client data and update updatedBy
 mobileClinicSchema.pre('save', function(next) {
+  // Validate that either client reference or flat client fields are provided
+  const hasClientReference = this.client;
+  const hasFlatClientFields = this.clientName && this.clientId;
+  
+  if (!hasClientReference && !hasFlatClientFields) {
+    const error = new Error('Either client reference or flat client fields (clientName, clientId) must be provided');
+    error.name = 'ValidationError';
+    return next(error);
+  }
+  
   if (this.isModified() && !this.isNew) {
     this.updatedBy = this.constructor.currentUser;
   }

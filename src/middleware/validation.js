@@ -195,6 +195,15 @@ const schemas = {
     date: Joi.date().max('now').optional(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
+      Joi.object({
+        _id: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
+        name: Joi.string().required(),
+        nationalId: Joi.string().required(),
+        phone: Joi.string().allow('').optional(),
+        village: Joi.string().allow('').optional(),
+        detailedAddress: Joi.string().allow('').optional(),
+        birthDate: Joi.date().optional()
+      }), // Full client object
       Joi.string().valid('temp-client-id') // Temporary ID for client creation
     ).required(),
     clientData: Joi.object({
@@ -297,19 +306,19 @@ const schemas = {
       Joi.object({
         name: Joi.string().required(),
         nationalId: Joi.string().required(),
-        phone: Joi.string().optional(),
-        village: Joi.string().optional(),
-        detailedAddress: Joi.string().optional(),
+        phone: Joi.string().allow('').optional(),
+        village: Joi.string().allow('').optional(),
+        detailedAddress: Joi.string().allow('').optional(),
         birthDate: Joi.date().optional()
       }) // Client object for create/update
     ).optional(),
     // Flat client fields (alternative to client object)
     clientName: Joi.string().min(2).max(100).optional(),
     clientId: Joi.string().pattern(/^\d{9,10}$/).optional(),
-    clientPhone: Joi.string().pattern(/^05\d{8}$/).optional(),
+    clientPhone: Joi.string().pattern(/^05\d{8}$/).allow('').optional(),
     clientBirthDate: Joi.date().optional(),
-    clientVillage: Joi.string().max(100).optional(),
-    clientDetailedAddress: Joi.string().max(500).optional(),
+    clientVillage: Joi.string().max(100).allow('').optional(),
+    clientDetailedAddress: Joi.string().max(500).allow('').optional(),
     farmLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),

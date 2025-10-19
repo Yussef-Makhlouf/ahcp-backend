@@ -429,8 +429,50 @@ router.post('/',
 
     let clientId = req.body.client;
 
+    // Handle client object if provided
+    if (req.body.client && typeof req.body.client === 'object' && req.body.client._id) {
+      // Client object with _id provided - use the _id
+      clientId = req.body.client._id;
+    } else if (req.body.client && typeof req.body.client === 'object') {
+      // Client object without _id - treat as clientData
+      const clientData = req.body.client;
+      
+      // Try to find existing client by nationalId
+      let client = await Client.findOne({ nationalId: clientData.nationalId });
+      
+      if (!client) {
+        // Create new client
+        client = new Client({
+          name: clientData.name,
+          nationalId: clientData.nationalId,
+          phone: clientData.phone,
+          village: clientData.village || '',
+          detailedAddress: clientData.detailedAddress || '',
+          birthDate: clientData.birthDate || undefined,
+          status: 'نشط',
+          availableServices: ['vaccination'],
+          createdBy: req.user._id
+        });
+        await client.save();
+      } else {
+        // Update existing client with new data if provided
+        if (clientData.name) client.name = clientData.name;
+        if (clientData.phone) client.phone = clientData.phone;
+        if (clientData.village) client.village = clientData.village;
+        if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
+        if (clientData.birthDate) client.birthDate = clientData.birthDate;
+        
+        // Add vaccination to available services if not already present
+        if (!client.availableServices.includes('vaccination')) {
+          client.availableServices.push('vaccination');
+        }
+        await client.save();
+      }
+      
+      clientId = client._id;
+    }
     // If clientData is provided, create or find the client
-    if (req.body.clientData) {
+    else if (req.body.clientData) {
       const clientData = req.body.clientData;
       
       // Try to find existing client by nationalId
@@ -554,8 +596,50 @@ router.put('/:id',
 
     let clientId = req.body.client;
 
+    // Handle client object if provided
+    if (req.body.client && typeof req.body.client === 'object' && req.body.client._id) {
+      // Client object with _id provided - use the _id
+      clientId = req.body.client._id;
+    } else if (req.body.client && typeof req.body.client === 'object') {
+      // Client object without _id - treat as clientData
+      const clientData = req.body.client;
+      
+      // Try to find existing client by nationalId
+      let client = await Client.findOne({ nationalId: clientData.nationalId });
+      
+      if (!client) {
+        // Create new client
+        client = new Client({
+          name: clientData.name,
+          nationalId: clientData.nationalId,
+          phone: clientData.phone,
+          village: clientData.village || '',
+          detailedAddress: clientData.detailedAddress || '',
+          birthDate: clientData.birthDate || undefined,
+          status: 'نشط',
+          availableServices: ['vaccination'],
+          createdBy: req.user._id
+        });
+        await client.save();
+      } else {
+        // Update existing client with new data if provided
+        if (clientData.name) client.name = clientData.name;
+        if (clientData.phone) client.phone = clientData.phone;
+        if (clientData.village) client.village = clientData.village;
+        if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
+        if (clientData.birthDate) client.birthDate = clientData.birthDate;
+        
+        // Add vaccination to available services if not already present
+        if (!client.availableServices.includes('vaccination')) {
+          client.availableServices.push('vaccination');
+        }
+        await client.save();
+      }
+      
+      clientId = client._id;
+    }
     // If clientData is provided, create or find the client
-    if (req.body.clientData) {
+    else if (req.body.clientData) {
       const clientData = req.body.clientData;
       
       // Try to find existing client by nationalId
