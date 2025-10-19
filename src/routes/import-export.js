@@ -1210,19 +1210,33 @@ const findOrCreateClient = async (row, userId) => {
     const nationalId = clientId || `TEMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     try {
-      client = new Client({
+      // Check if client exists by name and phone (in case ID is different)
+      const existingClientByNamePhone = await Client.findOne({
         name: clientName,
-        nationalId: nationalId,
-        phone: clientPhone || '',
-        village: clientVillage || '',
-        detailedAddress: clientAddress || '',
-        status: 'نشط',
-        animals: [],
-        availableServices: [],
-        createdBy: userId
+        phone: clientPhone
       });
-      await client.save();
-      console.log(`✅ Successfully created client: ${client.name} (${client.nationalId})`);
+      
+      if (existingClientByNamePhone) {
+        console.log(`✅ Found existing client by name and phone: ${existingClientByNamePhone.name}`);
+        client = existingClientByNamePhone;
+      } else {
+        client = new Client({
+          name: clientName,
+          nationalId: nationalId,
+          phone: clientPhone || '',
+          village: clientVillage || '',
+          detailedAddress: clientAddress || '',
+          status: 'نشط',
+          animals: [],
+          availableServices: [],
+          createdBy: userId,
+          // Add metadata to track import source
+          importSource: 'auto_import',
+          importDate: new Date()
+        });
+        await client.save();
+        console.log(`✅ Successfully created new client: ${client.name} (${client.nationalId})`);
+      }
     } catch (error) {
       console.error(`❌ Error creating client:`, error);
       throw new Error(`Failed to create client: ${error.message}`);

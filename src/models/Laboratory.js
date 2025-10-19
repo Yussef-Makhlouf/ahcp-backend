@@ -161,7 +161,7 @@ const laboratorySchema = new mongoose.Schema({
     type: String, 
     required: [true, 'Client phone is required'], 
     trim: true, 
-    match: [/^\d{9}$/, 'Phone must be exactly 9 digits'] 
+    match: [/^\d{10}$/, 'Phone must be exactly 10 digits'] 
   },
   client: { 
     type: mongoose.Schema.Types.ObjectId, 

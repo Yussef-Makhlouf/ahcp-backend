@@ -774,12 +774,33 @@ router.delete('/delete-all',
   auth,
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    const result = await ParasiteControl.deleteMany({});
+    // Get all unique client IDs from parasite control records before deletion
+    const uniqueClientIds = await ParasiteControl.distinct('client');
+    console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in parasite control records`);
+    
+    // Delete all parasite control records
+    const parasiteResult = await ParasiteControl.deleteMany({});
+    console.log(`🗑️ Deleted ${parasiteResult.deletedCount} parasite control records`);
+    
+    // Delete associated clients (only those that were created from parasite control imports)
+    let clientsDeleted = 0;
+    if (uniqueClientIds.length > 0) {
+      const clientResult = await Client.deleteMany({ 
+        _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
+      });
+      clientsDeleted = clientResult.deletedCount;
+      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+    }
     
     res.json({
       success: true,
-      message: `All parasite control records deleted successfully`,
-      deletedCount: result.deletedCount
+      message: `All parasite control records and associated clients deleted successfully`,
+      deletedCount: parasiteResult.deletedCount,
+      clientsDeleted: clientsDeleted,
+      details: {
+        parasiteControlRecords: parasiteResult.deletedCount,
+        clientRecords: clientsDeleted
+      }
     });
   })
 );

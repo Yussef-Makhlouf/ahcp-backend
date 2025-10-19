@@ -310,6 +310,15 @@ router.delete('/delete-all',
   authorize(['super_admin']),
   asyncHandler(async (req, res) => {
     try {
+      // Get all unique client IDs from equine health records before deletion
+      // Note: EquineHealth stores client data as embedded object, not reference
+      // So we need to extract client data differently
+      const records = await EquineHealth.find({}, 'client').lean();
+      const uniqueClientIds = records
+        .map(record => record.client?._id || record.client)
+        .filter(id => id);
+      console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in equine health records`);
+      
       // Get count before deletion for response
       const totalCount = await EquineHealth.countDocuments();
       
@@ -317,17 +326,34 @@ router.delete('/delete-all',
         return res.json({
           success: true,
           message: 'No equine health records found to delete',
-          deletedCount: 0
+          deletedCount: 0,
+          clientsDeleted: 0
         });
       }
 
-      // Delete all records
-      const result = await EquineHealth.deleteMany({});
+      // Delete all equine health records
+      const equineResult = await EquineHealth.deleteMany({});
+      console.log(`🗑️ Deleted ${equineResult.deletedCount} equine health records`);
+      
+      // Delete associated clients (only those that were created from equine health imports)
+      let clientsDeleted = 0;
+      if (uniqueClientIds.length > 0) {
+        const clientResult = await Client.deleteMany({ 
+          _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
+        });
+        clientsDeleted = clientResult.deletedCount;
+        console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+      }
 
       res.json({
         success: true,
-        message: `All ${result.deletedCount} equine health records deleted successfully`,
-        deletedCount: result.deletedCount
+        message: `All equine health records and associated clients deleted successfully`,
+        deletedCount: equineResult.deletedCount,
+        clientsDeleted: clientsDeleted,
+        details: {
+          equineHealthRecords: equineResult.deletedCount,
+          clientRecords: clientsDeleted
+        }
       });
     } catch (error) {
       console.error('Error in delete all equine health:', error);

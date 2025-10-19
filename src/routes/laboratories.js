@@ -751,12 +751,33 @@ router.delete('/delete-all',
   auth,
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    const result = await Laboratory.deleteMany({});
+    // Get all unique client IDs from laboratory records before deletion
+    const uniqueClientIds = await Laboratory.distinct('clientId');
+    console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in laboratory records`);
+    
+    // Delete all laboratory records
+    const labResult = await Laboratory.deleteMany({});
+    console.log(`🗑️ Deleted ${labResult.deletedCount} laboratory records`);
+    
+    // Delete associated clients (only those that were created from laboratory imports)
+    let clientsDeleted = 0;
+    if (uniqueClientIds.length > 0) {
+      const clientResult = await Client.deleteMany({ 
+        nationalId: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
+      });
+      clientsDeleted = clientResult.deletedCount;
+      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+    }
     
     res.json({
       success: true,
-      message: `All laboratory records deleted successfully`,
-      deletedCount: result.deletedCount
+      message: `All laboratory records and associated clients deleted successfully`,
+      deletedCount: labResult.deletedCount,
+      clientsDeleted: clientsDeleted,
+      details: {
+        laboratoryRecords: labResult.deletedCount,
+        clientRecords: clientsDeleted
+      }
     });
   })
 );

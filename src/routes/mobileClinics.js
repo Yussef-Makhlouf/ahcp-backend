@@ -629,6 +629,10 @@ router.delete('/delete-all',
   authorize(['super_admin']),
   asyncHandler(async (req, res) => {
     try {
+      // Get all unique client IDs from mobile clinic records before deletion
+      const uniqueClientIds = await MobileClinic.distinct('client');
+      console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in mobile clinic records`);
+      
       // Get count before deletion for response
       const totalCount = await MobileClinic.countDocuments();
       
@@ -636,17 +640,34 @@ router.delete('/delete-all',
         return res.json({
           success: true,
           message: 'No mobile clinic records found to delete',
-          deletedCount: 0
+          deletedCount: 0,
+          clientsDeleted: 0
         });
       }
 
-      // Delete all records
-      const result = await MobileClinic.deleteMany({});
+      // Delete all mobile clinic records
+      const mobileResult = await MobileClinic.deleteMany({});
+      console.log(`🗑️ Deleted ${mobileResult.deletedCount} mobile clinic records`);
+      
+      // Delete associated clients (only those that were created from mobile clinic imports)
+      let clientsDeleted = 0;
+      if (uniqueClientIds.length > 0) {
+        const clientResult = await Client.deleteMany({ 
+          _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
+        });
+        clientsDeleted = clientResult.deletedCount;
+        console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+      }
 
       res.json({
         success: true,
-        message: `All ${result.deletedCount} mobile clinic records deleted successfully`,
-        deletedCount: result.deletedCount
+        message: `All mobile clinic records and associated clients deleted successfully`,
+        deletedCount: mobileResult.deletedCount,
+        clientsDeleted: clientsDeleted,
+        details: {
+          mobileClinicRecords: mobileResult.deletedCount,
+          clientRecords: clientsDeleted
+        }
       });
     } catch (error) {
       console.error('Error in delete all mobile clinics:', error);

@@ -735,13 +735,32 @@ router.delete('/delete-all',
   auth,
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    const result = await Vaccination.deleteMany({});
+    // Get all unique client IDs from vaccination records before deletion
+    const uniqueClientIds = await Vaccination.distinct('client');
+    console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in vaccination records`);
+    
+    // Delete all vaccination records
+    const vaccinationResult = await Vaccination.deleteMany({});
+    console.log(`🗑️ Deleted ${vaccinationResult.deletedCount} vaccination records`);
+    
+    // Delete associated clients (only those that were created from vaccination imports)
+    let clientsDeleted = 0;
+    if (uniqueClientIds.length > 0) {
+      const clientResult = await Client.deleteMany({ 
+        _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
+      });
+      clientsDeleted = clientResult.deletedCount;
+      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+    }
     
     res.json({
       success: true,
-      message: `All vaccination records deleted successfully`,
-      data: {
-        deletedCount: result.deletedCount
+      message: `All vaccination records and associated clients deleted successfully`,
+      deletedCount: vaccinationResult.deletedCount,
+      clientsDeleted: clientsDeleted,
+      details: {
+        vaccinationRecords: vaccinationResult.deletedCount,
+        clientRecords: clientsDeleted
       }
     });
   })

@@ -264,10 +264,10 @@ const schemas = {
     serialNo: Joi.number().integer().min(0).required(),
     date: Joi.date().max('now').optional(),
     sampleCode: Joi.string().max(20).required(),
-    clientName: Joi.string().max(100).required(),
+    clientName: Joi.string().min(2).max(100).required(),
     clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
     clientBirthDate: Joi.date().optional(),
-    clientPhone: Joi.string().pattern(/^\d{9}$/).required(),
+    clientPhone: Joi.string().pattern(/^05\d{8}$/).required(),
     farmLocation: Joi.string().max(200).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
