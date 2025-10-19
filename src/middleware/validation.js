@@ -377,6 +377,65 @@ const schemas = {
     isActive: Joi.boolean().optional()
   }),
 
+  // Equine Health schemas
+  equineHealthCreate: Joi.object({
+    serialNo: Joi.string().max(20).required(),
+    date: Joi.date().max('now').optional(),
+    client: Joi.object({
+      name: Joi.string().min(2).max(100).required(),
+      nationalId: Joi.string().pattern(/^\d{10,14}$/).required(),
+      birthDate: Joi.date().optional(),
+      phone: Joi.string().pattern(/^(\+966|0)?[5][0-9]{8}$/).required(),
+      village: Joi.string().min(2).max(100).required(),
+      detailedAddress: Joi.string().min(2).max(200).required()
+    }).required(),
+    farmLocation: Joi.string().min(2).max(200).required(),
+    coordinates: Joi.object({
+      latitude: Joi.number().min(-90).max(90).optional(),
+      longitude: Joi.number().min(-180).max(180).optional()
+    }).optional(),
+    supervisor: Joi.string().min(2).max(100).required(),
+    vehicleNo: Joi.string().min(1).max(20).required(),
+    horseCount: Joi.number().integer().min(1).required(),
+    horseDetails: Joi.array().items(
+      Joi.object({
+        id: Joi.string().max(20).required(),
+        breed: Joi.string().max(50).required(),
+        age: Joi.number().integer().min(0).max(50).required(),
+        gender: Joi.string().valid('ذكر', 'أنثى', 'مخصي').required(),
+        color: Joi.string().max(30).required(),
+        healthStatus: Joi.string().valid('سليم', 'مريض', 'تحت العلاج', 'متعافي').required(),
+        weight: Joi.number().min(0).max(2000).optional(),
+        temperature: Joi.number().min(35).max(45).optional(),
+        heartRate: Joi.number().min(20).max(100).optional(),
+        respiratoryRate: Joi.number().min(5).max(50).optional()
+      })
+    ).optional(),
+    diagnosis: Joi.string().min(2).max(500).required(),
+    interventionCategory: Joi.string().valid('Emergency', 'Routine', 'Preventive', 'Follow-up', 'Breeding', 'Performance').required(),
+    treatment: Joi.string().min(2).max(1000).required(),
+    medicationsUsed: Joi.array().items(
+      Joi.object({
+        name: Joi.string().max(100).required(),
+        dosage: Joi.string().max(50).optional(),
+        quantity: Joi.number().min(0).optional(),
+        route: Joi.string().max(50).optional(),
+        frequency: Joi.string().max(50).optional(),
+        duration: Joi.string().max(50).optional()
+      })
+    ).optional(),
+    request: Joi.object({
+      date: Joi.date().required(),
+      situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
+      fulfillingDate: Joi.date().optional()
+    }).required(),
+    followUpRequired: Joi.boolean().default(false),
+    followUpDate: Joi.date().optional(),
+    vaccinationStatus: Joi.string().valid('Up to date', 'Overdue', 'Not applicable', 'Partial').optional(),
+    dewormingStatus: Joi.string().valid('Recent', 'Overdue', 'Not applicable').optional(),
+    remarks: Joi.string().max(1000).optional()
+  }),
+
   // Bulk delete schema - accepts serial numbers instead of ObjectIds
   bulkDeleteSchema: Joi.object({
     ids: Joi.array().items(Joi.string().min(1).max(50)).min(1).required()
