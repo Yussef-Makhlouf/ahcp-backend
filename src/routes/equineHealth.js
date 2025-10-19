@@ -87,7 +87,7 @@ const upload = multer({
  *         name: interventionCategory
  *         schema:
  *           type: string
- *           enum: [Emergency, Routine, Preventive, Follow-up, Breeding, Performance]
+ *           enum: [Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery]
  *         description: Filter by intervention category
  *     responses:
  *       200:
@@ -246,7 +246,7 @@ router.get('/statistics',
  *                 type: string
  *               interventionCategory:
  *                 type: string
- *                 enum: [Emergency, Routine, Preventive, Follow-up, Breeding, Performance]
+ *                 enum: [Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery]
  *               treatment:
  *                 type: string
  *               request:

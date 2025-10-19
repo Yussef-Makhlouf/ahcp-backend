@@ -412,7 +412,7 @@ const schemas = {
       })
     ).optional(),
     diagnosis: Joi.string().min(2).max(500).required(),
-    interventionCategory: Joi.string().valid('Emergency', 'Routine', 'Preventive', 'Follow-up', 'Breeding', 'Performance').required(),
+    interventionCategory: Joi.string().valid('Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery').required(),
     treatment: Joi.string().min(2).max(1000).required(),
     medicationsUsed: Joi.array().items(
       Joi.object({

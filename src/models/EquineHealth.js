@@ -320,8 +320,8 @@ const equineHealthSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Intervention category is required'],
     enum: {
-      values: ['Emergency', 'Routine', 'Preventive', 'Follow-up', 'Breeding', 'Performance'],
-      message: 'Intervention category must be one of: Emergency, Routine, Preventive, Follow-up, Breeding, Performance'
+      values: ['Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery'],
+      message: 'Intervention category must be one of: Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery'
     }
   },
   treatment: {
