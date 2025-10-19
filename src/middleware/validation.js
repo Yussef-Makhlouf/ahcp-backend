@@ -211,10 +211,8 @@ const schemas = {
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
     supervisor: Joi.string().max(100).required(),
-    team: Joi.string().max(100).required(),
     vehicleNo: Joi.string().max(20).required(),
     vaccineType: Joi.string().max(100).required(),
-    vaccineCategory: Joi.string().valid('Preventive', 'Emergency').required(),
     herdCounts: Joi.object({
       sheep: Joi.object({
         total: Joi.number().min(0).default(0),

@@ -40,19 +40,12 @@ const mongoose = require('mongoose');
  *         supervisor:
  *           type: string
  *           description: Supervisor name
- *         team:
- *           type: string
- *           description: Team assigned for vaccination
  *         vehicleNo:
  *           type: string
  *           description: Vehicle number used
  *         vaccineType:
  *           type: string
  *           description: Type of vaccine used
- *         vaccineCategory:
- *           type: string
- *           enum: [Preventive, Emergency]
- *           description: Category of vaccination
  *         herdCounts:
  *           type: object
  *           properties:
@@ -203,12 +196,6 @@ const vaccinationSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Supervisor name cannot exceed 100 characters']
   },
-  team: {
-    type: String,
-    required: [true, 'Team is required'],
-    trim: true,
-    maxlength: [100, 'Team name cannot exceed 100 characters']
-  },
   vehicleNo: {
     type: String,
     required: [true, 'Vehicle number is required'],
@@ -220,14 +207,6 @@ const vaccinationSchema = new mongoose.Schema({
     required: [true, 'Vaccine type is required'],
     trim: true,
     maxlength: [100, 'Vaccine type cannot exceed 100 characters']
-  },
-  vaccineCategory: {
-    type: String,
-    required: [true, 'Vaccine category is required'],
-    enum: {
-      values: ['Preventive', 'Emergency'],
-      message: 'Vaccine category must be either Preventive or Emergency'
-    }
   },
   herdCounts: {
     sheep: herdCountSchema,
@@ -298,7 +277,6 @@ vaccinationSchema.index({ date: -1 });
 vaccinationSchema.index({ client: 1 });
 vaccinationSchema.index({ supervisor: 1 });
 vaccinationSchema.index({ vaccineType: 1 });
-vaccinationSchema.index({ vaccineCategory: 1 });
 vaccinationSchema.index({ 'request.situation': 1 });
 vaccinationSchema.index({ herdHealth: 1 });
 vaccinationSchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
@@ -380,12 +358,6 @@ vaccinationSchema.statics.getStatistics = async function(filters = {}) {
             ]
           }
         },
-        preventiveVaccinations: {
-          $sum: { $cond: [{ $eq: ['$vaccineCategory', 'Preventive'] }, 1, 0] }
-        },
-        emergencyVaccinations: {
-          $sum: { $cond: [{ $eq: ['$vaccineCategory', 'Emergency'] }, 1, 0] }
-        },
         healthyHerds: {
           $sum: { $cond: [{ $eq: ['$herdHealth', 'Healthy'] }, 1, 0] }
         },
@@ -401,8 +373,6 @@ vaccinationSchema.statics.getStatistics = async function(filters = {}) {
     totalRecords: 0,
     totalAnimals: 0,
     totalVaccinated: 0,
-    preventiveVaccinations: 0,
-    emergencyVaccinations: 0,
     healthyHerds: 0,
     sickHerds: 0
   };

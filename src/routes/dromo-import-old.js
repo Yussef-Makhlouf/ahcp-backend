@@ -382,6 +382,30 @@ const processVaccinationRow = async (row, userId) => {
     return vaccination;
   } catch (error) {
     console.error('❌ Error in processVaccinationRow:', error);
+    throw new Error(`Error processing vaccination row: ${error.message}`);
+  }
+};
+
+/**
+ * Process ParasiteControl row from Dromo
+ */
+const processParasiteControlRow = async (row, userId) => {
+  try {
+    console.log('🔄 Processing parasite control row:', JSON.stringify(row, null, 2));
+    
+    const client = await createSimpleClient(row, userId);
+    const dates = processUnifiedDates(row);
+    
+    const parasiteControl = new ParasiteControl({
+      serialNo: row.serialNo || `PC-${Date.now()}`,
+      date: dates.mainDate,
+      client: client._id,
+      farmLocation: row.farmLocation || 'غير محدد',
+      supervisor: row.supervisor || 'غير محدد',
+      coordinates: {
+        latitude: parseFloat(row.latitude) || 0,
+        longitude: parseFloat(row.longitude) || 0
+      },
       insecticide: {
         type: row.insecticideType || 'غير محدد',
         method: row.insecticideMethod || 'Spray',
@@ -396,8 +420,8 @@ const processVaccinationRow = async (row, userId) => {
       herdHealthStatus: row.herdHealthStatus || 'Healthy',
       ownerCompliance: row.ownerCompliance || 'Comply',
       request: {
-        date: parseSimpleDate(row.requestDate) || mainDate,
-        fulfillingDate: parseSimpleDate(row.requestFulfillingDate) || mainDate,
+        date: parseSimpleDate(row.requestDate) || dates.mainDate,
+        fulfillingDate: parseSimpleDate(row.requestFulfillingDate) || dates.mainDate,
         situation: row.requestSituation || 'Closed'
       },
       remarks: row.remarks || '',
@@ -622,6 +646,7 @@ const processEquineHealthRow = async (row, userId) => {
     throw new Error(`Error processing equine health row: ${error.message}`);
   }
 };
+
 /**
  * Process Laboratory row from Dromo
  */
