@@ -258,7 +258,7 @@ router.get('/statistics',
  *                     format: date
  *                   situation:
  *                     type: string
- *                     enum: [Open, Closed, Pending]
+ *                     enum: [Ongoing, Closed, Pending]
  *     responses:
  *       201:
  *         description: Record created successfully

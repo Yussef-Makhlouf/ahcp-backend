@@ -93,7 +93,7 @@ const mongoose = require('mongoose');
  *               format: date
  *             situation:
  *               type: string
- *               enum: [Open, Closed, Pending]
+ *               enum: [Ongoing, Closed, Pending]
  *             fulfillingDate:
  *               type: string
  *               format: date
@@ -218,8 +218,8 @@ const requestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Request situation is required'],
     enum: {
-      values: ['Open', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Open, Closed, Pending'
+      values: ['Ongoing', 'Closed', 'Pending'],
+      message: 'Situation must be one of: Ongoing, Closed, Pending'
     }
   },
   fulfillingDate: {

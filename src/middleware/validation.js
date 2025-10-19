@@ -426,7 +426,7 @@ const schemas = {
     ).optional(),
     request: Joi.object({
       date: Joi.date().required(),
-      situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     followUpRequired: Joi.boolean().default(false),
