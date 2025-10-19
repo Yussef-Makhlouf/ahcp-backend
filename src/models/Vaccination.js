@@ -141,8 +141,8 @@ const requestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Request situation is required'],
     enum: {
-      values: ['Open', 'Closed', 'Pending'],
-      message: 'Situation must be one of: Open, Closed, Pending'
+      values: ['Ongoing', 'Closed', 'Pending'],
+      message: 'Situation must be one of: Ongoing, Closed, Pending'
     }
   },
   fulfillingDate: {
@@ -240,8 +240,8 @@ const vaccinationSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Herd health status is required'],
     enum: {
-      values: ['Healthy', 'Sick', 'Under Treatment'],
-      message: 'Health status must be one of: Healthy, Sick, Under Treatment'
+      values: ['Healthy', 'Sick', 'Sporadic Cases'],
+      message: 'Health status must be one of: Healthy, Sick, Sporadic Cases'
     }
   },
   animalsHandling: {
@@ -256,7 +256,7 @@ const vaccinationSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Labour availability is required'],
     enum: {
-      values: ['Available', 'Not Available'],
+      values: ['Available', 'Not Available' , 'Not Helpful'],
       message: 'Labour status must be either Available or Not Available'
     }
   },
@@ -264,7 +264,7 @@ const vaccinationSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Location reachability is required'],
     enum: {
-      values: ['Easy', 'Hard to reach'],
+      values: ['Easy', 'Hard to reach', 'Moderate'],
       message: 'Location reachability must be either Easy or Hard to reach'
     }
   },

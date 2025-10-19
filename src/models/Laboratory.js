@@ -229,8 +229,8 @@ const laboratorySchema = new mongoose.Schema({
     type: String, 
     required: [true, 'Sample type is required'], 
     enum: { 
-      values: ['Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin', 'Saliva', 'Nasal', 'Throat', 'Rectal', 'Vaginal', 'Other'], 
-      message: 'Invalid sample type' 
+      values: ['Serum', 'Whole Blood', 'Fecal Sample', 'Skin Scrape'], 
+      message: 'Invalid sample type. Must be one of: Serum, Whole Blood, Fecal Sample, Skin Scrape' 
     } 
   },
   sampleNumber: { 

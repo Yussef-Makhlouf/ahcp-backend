@@ -226,6 +226,10 @@ const parasiteControlSchema = new mongoose.Schema({
   client: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Client',
+    populate: {
+      path: 'client',
+      select: 'name nationalId phone village detailedAddress birthDate'
+    },
     required: [true, 'Client reference is required']
   },
   herdLocation: {

@@ -183,7 +183,7 @@ const schemas = {
     complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').default('Comply'),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     remarks: Joi.string().max(1000).optional()
@@ -247,13 +247,13 @@ const schemas = {
         vaccinated: Joi.number().min(0).default(0)
       }).optional()
     }).required(),
-    herdHealth: Joi.string().valid('Healthy', 'Sick', 'Under Treatment').required(),
+    herdHealth: Joi.string().valid('Healthy', 'Sick', 'Sporadic Cases').required(),
     animalsHandling: Joi.string().valid('Easy', 'Difficult').required(),
-    labours: Joi.string().valid('Available', 'Not Available').required(),
-    reachableLocation: Joi.string().valid('Easy', 'Hard to reach').required(),
+    labours: Joi.string().valid('Available', 'Not Available', 'Not Helpful').required(),
+    reachableLocation: Joi.string().valid('Easy', 'Hard to reach' , 'Moderate').required(),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Open', 'Closed', 'Pending').required(),
+      situation: Joi.string().valid('Ongoing', 'Closed', 'Pending').required(),
       fulfillingDate: Joi.date().optional()
     }).required(),
     remarks: Joi.string().max(1000).optional()
@@ -282,7 +282,7 @@ const schemas = {
       other: Joi.string().max(100).allow('').optional()
     }).required(),
     collector: Joi.string().max(100).required(),
-    sampleType: Joi.string().valid('Blood', 'Serum', 'Urine', 'Feces', 'Milk', 'Tissue', 'Swab', 'Hair', 'Skin').required(),
+    sampleType: Joi.string().valid('Serum', 'Whole Blood', 'Fecal Sample', 'Skin Scrape').required(),
     sampleNumber: Joi.string().max(20).required(),
     positiveCases: Joi.number().min(0).default(0),
     negativeCases: Joi.number().min(0).default(0),
