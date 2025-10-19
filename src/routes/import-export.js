@@ -2640,7 +2640,7 @@ router.get('/clients/export', auth, handleExport(Client, {}, [
 
 router.get('/vaccination/export', auth, handleExport(Vaccination, {}, [
   'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'supervisor', 'team', 'vehicleNo', 
-  'vaccineType', 'vaccineCategory', 'sheep', 'sheepFemale', 'sheepVaccinated', 
+  'vaccineType', 'vaccineCategory', 'holdingCode', 'sheep', 'sheepFemale', 'sheepVaccinated', 
   'goats', 'goatsFemale', 'goatsVaccinated', 'camel', 'camelFemale', 'camelVaccinated', 
   'cattle', 'cattleFemale', 'cattleVaccinated', 'herdNumber', 'herdFemales', 
   'totalVaccinated', 'herdHealth', 'animalsHandling', 'labours', 'reachableLocation', 'remarks'
