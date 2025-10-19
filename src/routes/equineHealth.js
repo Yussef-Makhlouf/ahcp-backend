@@ -545,8 +545,8 @@ router.delete('/bulk-delete',
     }
 
     try {
-      // Check if all serial numbers exist
-      const existingRecords = await EquineHealth.find({ serialNo: { $in: ids } });
+      // Check if all IDs exist
+      const existingRecords = await EquineHealth.find({ _id: { $in: ids } });
       
       if (existingRecords.length !== ids.length) {
         return res.status(400).json({
@@ -557,8 +557,8 @@ router.delete('/bulk-delete',
         });
       }
 
-      // Delete the records by serial numbers
-      const result = await EquineHealth.deleteMany({ serialNo: { $in: ids } });
+      // Delete the records by IDs
+      const result = await EquineHealth.deleteMany({ _id: { $in: ids } });
 
       res.json({
         success: true,
