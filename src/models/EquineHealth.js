@@ -227,13 +227,21 @@ const requestSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+// Function to generate random serial number
+const generateSerialNo = () => {
+  const timestamp = Date.now().toString();
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `EH${timestamp.slice(-6)}${random}`;
+};
+
 const equineHealthSchema = new mongoose.Schema({
   serialNo: {
     type: String,
     required: [true, 'Serial number is required'],
     unique: true,
     trim: true,
-    maxlength: [20, 'Serial number cannot exceed 20 characters']
+    maxlength: [20, 'Serial number cannot exceed 20 characters'],
+    default: generateSerialNo
   },
   date: {
     type: Date,

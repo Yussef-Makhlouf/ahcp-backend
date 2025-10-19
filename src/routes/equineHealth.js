@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -317,7 +318,18 @@ router.post('/',
 router.get('/:id',
   auth,
   asyncHandler(async (req, res) => {
-    const record = await EquineHealth.findById(req.params.id);
+    const { id } = req.params;
+    
+    // تحقق من صحة المعرف
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid record ID format',
+        error: 'INVALID_ID_FORMAT'
+      });
+    }
+    
+    const record = await EquineHealth.findById(id);
     
     if (!record) {
       return res.status(404).json({
@@ -366,11 +378,22 @@ router.put('/:id',
   auth,
   validate(schemas.equineHealthCreate),
   asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    
+    // تحقق من صحة المعرف
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid record ID format',
+        error: 'INVALID_ID_FORMAT'
+      });
+    }
+    
     // Check if serial number already exists (excluding current record)
     if (req.body.serialNo) {
       const existingRecord = await EquineHealth.findOne({ 
         serialNo: req.body.serialNo,
-        _id: { $ne: req.params.id }
+        _id: { $ne: id }
       });
       if (existingRecord) {
         return res.status(400).json({
@@ -382,7 +405,7 @@ router.put('/:id',
     }
 
     const record = await EquineHealth.findByIdAndUpdate(
-      req.params.id,
+      id,
       { ...req.body, updatedBy: req.user._id },
       { new: true, runValidators: true }
     );
@@ -427,7 +450,18 @@ router.delete('/:id',
   auth,
   authorize(['super_admin', 'admin']),
   asyncHandler(async (req, res) => {
-    const record = await EquineHealth.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+    
+    // تحقق من صحة المعرف
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid record ID format',
+        error: 'INVALID_ID_FORMAT'
+      });
+    }
+    
+    const record = await EquineHealth.findByIdAndDelete(id);
 
     if (!record) {
       return res.status(404).json({

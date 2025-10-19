@@ -294,8 +294,8 @@ const parasiteControlSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Herd health status is required'],
     enum: {
-      values: ['Healthy', 'Sick', 'Under Treatment'],
-      message: 'Health status must be one of: Healthy, Sick, Under Treatment'
+      values: ['Healthy', 'Sick', 'Sporadic cases'],
+      message: 'Health status must be one of: Healthy, Sick, Sporadic cases'
     }
   },
   complyingToInstructions: {

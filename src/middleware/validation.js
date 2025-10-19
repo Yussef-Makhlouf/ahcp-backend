@@ -379,7 +379,7 @@ const schemas = {
 
   // Equine Health schemas
   equineHealthCreate: Joi.object({
-    serialNo: Joi.string().max(20).required(),
+    serialNo: Joi.string().max(20).optional(),
     date: Joi.date().max('now').optional(),
     client: Joi.object({
       name: Joi.string().min(2).max(100).required(),
