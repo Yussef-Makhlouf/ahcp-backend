@@ -2648,7 +2648,7 @@ router.get('/vaccination/export', auth, handleExport(Vaccination, {}, [
 
 router.get('/parasite-control/export', auth, handleExport(ParasiteControl, {}, [
   'serialNo', 'date', 'client', 'clientBirthDate', 'herdLocation', 'supervisor', 'vehicleNo', 
-  'sheepTotal', 'sheepYoung', 'sheepFemale', 'sheepTreated', 'goatsTotal', 
+  'holdingCode', 'sheepTotal', 'sheepYoung', 'sheepFemale', 'sheepTreated', 'goatsTotal', 
   'goatsYoung', 'goatsFemale', 'goatsTreated', 'camelTotal', 'camelYoung', 
   'camelFemale', 'camelTreated', 'cattleTotal', 'cattleYoung', 'cattleFemale', 
   'cattleTreated', 'horseTotal', 'horseYoung', 'horseFemale', 'horseTreated', 
@@ -2659,7 +2659,7 @@ router.get('/parasite-control/export', auth, handleExport(ParasiteControl, {}, [
 
 router.get('/mobile-clinics/export', auth, handleExport(MobileClinic, {}, [
   'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'supervisor', 'vehicleNo', 
-  'sheep', 'goats', 'camel', 'cattle', 'horse', 'diagnosis', 'interventionCategory', 
+  'holdingCode', 'sheep', 'goats', 'camel', 'cattle', 'horse', 'diagnosis', 'interventionCategory', 
   'treatment', 'medicationsUsed', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'mobile-clinics'));
 
@@ -2671,7 +2671,7 @@ router.get('/laboratories/export', auth, handleExport(Laboratory, {}, [
 
 router.get('/equine-health/export', auth, handleExport(EquineHealth, {}, [
   'serialNo', 'date', 'client', 'clientBirthDate', 'farmLocation', 'coordinates', 'supervisor', 
-  'vehicleNo', 'horseCount', 'diagnosis', 'interventionCategory', 
+  'vehicleNo', 'holdingCode', 'horseCount', 'diagnosis', 'interventionCategory', 
   'treatment', 'followUpRequired', 'followUpDate', 'remarks'
 ], 'equine-health'));
 
