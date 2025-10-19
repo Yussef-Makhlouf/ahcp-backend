@@ -291,9 +291,22 @@ const schemas = {
   mobileClinicCreate: Joi.object({
     serialNo: Joi.string().max(20).required(),
     date: Joi.date().max('now').optional(),
-    clientName: Joi.string().min(2).max(100).required(),
-    clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
-    clientPhone: Joi.string().pattern(/^05\d{8}$/).required(),
+    // Client data can be provided as flat fields or as client object
+    client: Joi.alternatives().try(
+      Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
+      Joi.object({
+        name: Joi.string().required(),
+        nationalId: Joi.string().required(),
+        phone: Joi.string().optional(),
+        village: Joi.string().optional(),
+        detailedAddress: Joi.string().optional(),
+        birthDate: Joi.date().optional()
+      }) // Client object for create/update
+    ).optional(),
+    // Flat client fields (alternative to client object)
+    clientName: Joi.string().min(2).max(100).optional(),
+    clientId: Joi.string().pattern(/^\d{9,10}$/).optional(),
+    clientPhone: Joi.string().pattern(/^05\d{8}$/).optional(),
     clientBirthDate: Joi.date().optional(),
     clientVillage: Joi.string().max(100).optional(),
     clientDetailedAddress: Joi.string().max(500).optional(),
@@ -311,9 +324,9 @@ const schemas = {
       cattle: Joi.number().min(0).default(0),
       horse: Joi.number().min(0).default(0)
     }).optional(),
-    diagnosis: Joi.string().min(2).max(500).required(),
-    interventionCategory: Joi.string().valid('Emergency', 'Routine', 'Preventive', 'Follow-up').required(),
-    treatment: Joi.string().min(2).max(1000).required(),
+    diagnosis: Joi.string().min(2).max(500).optional(),
+    interventionCategory: Joi.string().valid('Emergency', 'Routine', 'Preventive', 'Follow-up', 'Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery').required(),
+    treatment: Joi.string().min(2).max(1000).optional(),
     medication: Joi.object({
       name: Joi.string().max(100).optional(),
       dosage: Joi.string().max(50).optional(),
@@ -326,8 +339,20 @@ const schemas = {
       fulfillingDate: Joi.date().optional()
     }).optional(),
     followUpRequired: Joi.boolean().default(false),
-    followUpDate: Joi.date().optional(),
+    followUpDate: Joi.date().allow(null).optional(),
     remarks: Joi.string().max(1000).optional()
+  }).custom((value, helpers) => {
+    // Ensure either client object or flat client fields are provided
+    const hasClientObject = value.client;
+    const hasFlatClientFields = value.clientName && value.clientId;
+    
+    if (!hasClientObject && !hasFlatClientFields) {
+      return helpers.error('any.custom', {
+        message: 'Either client object or flat client fields (clientName, clientId) must be provided'
+      });
+    }
+    
+    return value;
   }),
 
   // Common query schemas
