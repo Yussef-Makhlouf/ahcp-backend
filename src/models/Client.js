@@ -61,9 +61,6 @@ const mongoose = require('mongoose');
  *         village:
  *           type: string
  *           description: Village name
- *         detailedAddress:
- *           type: string
- *           description: Detailed address
  *         holdingCode:
  *           type: string
  *           description: Reference to holding code ID
@@ -189,11 +186,6 @@ const clientSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [100, 'Village name cannot exceed 100 characters']
-  },
-  detailedAddress: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Address cannot exceed 500 characters']
   },
   holdingCode: {
     type: mongoose.Schema.Types.ObjectId,

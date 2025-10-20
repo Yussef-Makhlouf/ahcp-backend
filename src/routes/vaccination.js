@@ -97,6 +97,7 @@ router.get('/',
     try {
       records = await Vaccination.find(filter)
         .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
@@ -265,6 +266,7 @@ router.get('/export',
 
     const records = await Vaccination.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
     // Transform data for export
@@ -280,7 +282,7 @@ router.get('/export',
         'ID': record.client?.nationalId || '',
         'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
         'Phone': record.client?.phone || '',
-        'Location': record.farmLocation || '',
+        'Holding Code': record.holdingCode?.code || '',
         'N Coordinate': record.coordinates?.latitude || '',
         'E Coordinate': record.coordinates?.longitude || '',
         'Supervisor': record.supervisor || '',
@@ -375,6 +377,7 @@ router.get('/:id',
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id)
       .populate('client', 'name nationalId phone village detailedAddress')
+      .populate('holdingCode', 'code village description isActive')
       // .populate('createdBy', 'name email role')
       // .populate('updatedBy', 'name email role');
 
@@ -519,6 +522,7 @@ router.post('/',
 
     await record.save();
     await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate('holdingCode', 'code village description isActive');
 
     res.status(201).json({
       success: true,
@@ -685,6 +689,7 @@ router.put('/:id',
     record.updatedBy = req.user._id;
     await record.save();
     await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate('holdingCode', 'code village description isActive');
 
     res.json({
       success: true,

@@ -111,7 +111,6 @@ router.get('/',
       filter.$or = [
         { sampleCode: { $regex: search, $options: 'i' } },
         { collector: { $regex: search, $options: 'i' } },
-        { farmLocation: { $regex: search, $options: 'i' } },
         { laboratoryTechnician: { $regex: search, $options: 'i' } }
       ];
     }
@@ -121,6 +120,7 @@ router.get('/',
     try {
       records = await Laboratory.find(filter)
         .populate('client', 'name nationalId phone birthDate village detailedAddress')
+        .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1, priority: -1 })
@@ -370,7 +370,6 @@ router.get('/export',
         'date',
         'client.name',
         'client.nationalId',
-        'farmLocation',
         'testType',
         'totalSamples',
         'positiveCases',
@@ -422,6 +421,7 @@ router.get('/:id',
   asyncHandler(async (req, res) => {
     const record = await Laboratory.findById(req.params.id)
       .populate('client', 'name nationalId phone birthDate village detailedAddress')
+      .populate('holdingCode', 'code village description isActive')
       .populate('createdBy', 'name email role')
       .populate('updatedBy', 'name email role');
 
@@ -992,7 +992,6 @@ router.get('/template',
       clientName: 'محمد أحمد الشمري',
       clientNationalId: '1234567890',
       clientPhone: '+966501234567',
-      farmLocation: 'مزرعة الشمري',
       testType: 'Parasitology',
       positiveCases: 2,
       negativeCases: 8,

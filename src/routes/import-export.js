@@ -16,6 +16,7 @@ const ParasiteControl = require('../models/ParasiteControl');
 const MobileClinic = require('../models/MobileClinic');
 const Laboratory = require('../models/Laboratory');
 const EquineHealth = require('../models/EquineHealth');
+const HoldingCode = require('../models/HoldingCode');
 
 const router = express.Router();
 
@@ -516,6 +517,7 @@ const generateCSV = (data, headers) => {
         } else if (header === 'horse' && row.animalCounts && row.animalCounts.horse) {
           value = row.animalCounts.horse || 0;
         }
+       
         // Handle speciesCounts for Laboratory
         else if (header === 'sheep' && row.speciesCounts && row.speciesCounts.sheep) {
           value = row.speciesCounts.sheep || 0;
@@ -876,7 +878,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
           res.send(csvContent);
         } else {
           const excelBuffer = generateExcel([], fields);
-          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          res.setHeader('Content-Type', 'application/vnd.Ongoingxmlformats-officedocument.spreadsheetml.sheet');
           res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
           res.send(excelBuffer);
         }
@@ -892,7 +894,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
       } else {
         // Default to Excel format
         const excelBuffer = generateExcel(records, fields);
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Type', 'application/vnd.Ongoingxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
         res.send(excelBuffer);
       }
@@ -1438,27 +1440,23 @@ const processUnifiedEnums = (row) => {
     interventionCategory: (() => {
       const category = (row['Intervention Category'] || row.interventionCategory || 'Routine').toString().trim();
       const categoryMap = {
-        'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
-        'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
-        'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
-        'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up'
+        'Clinical Examination': 'Clinical Examination', 'Surgical Operation': 'Surgical Operation', 'Ultrasonography': 'Ultrasonography', 'Preventive': 'Preventive', 'Lab Analysis': 'Lab Analysis', 'Farriery': 'Farriery'
       };
-      
       const lowerCategory = category.toLowerCase();
       if (categoryMap[lowerCategory]) {
         return categoryMap[lowerCategory];
       }
       
-      if (['Emergency', 'Routine', 'Preventive', 'Follow-up'].includes(category)) {
+      if (['Clinical Examination', 'Surgical Operation', 'Ultrasonography', 'Preventive', 'Lab Analysis', 'Farriery'].includes(category)) {
         return category;
       }
       
       return 'Routine';
     })(),
     requestSituation: (() => {
-      const status = (row['Request Status'] || row.requestStatus || 'Open').toString().trim();
+      const status = (row['Request Status'] || row.requestStatus || 'Ongoing').toString().trim();
       const statusMap = {
-        'open': 'Open', 'مفتوح': 'Open', 'نشط': 'Open', 'active': 'Open',
+        'Ongoing': 'Ongoing', 'مفتوح': 'Ongoing', 'نشط': 'Ongoing', 'active': 'Ongoing',
         'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
         'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
       };
@@ -1468,11 +1466,11 @@ const processUnifiedEnums = (row) => {
         return statusMap[lowerStatus];
       }
       
-      if (['Open', 'Closed', 'Pending'].includes(status)) {
+      if (['Ongoing', 'Closed', 'Pending'].includes(status)) {
         return status;
       }
       
-      return 'Open';
+      return 'Ongoing';
     })()
   };
 };
@@ -1490,7 +1488,7 @@ const processUnifiedCustomData = (row) => {
       if (!['Serial No', 'Date', 'Name', 'ID', 'Phone', 'Location', 'N Coordinate', 'E Coordinate', 
             'Supervisor', 'Vehicle No.', 'Sheep', 'Goats', 'Camel', 'Horse', 'Cattle', 
             'Diagnosis', 'Intervention Category', 'Treatment', 'Request Date', 'Request Status', 
-            'Request Fulfilling Date', 'category', 'Remarks'].includes(key)) {
+            'Request Fulfilling Date', 'category', 'Remarks' ,'Holding Code'].includes(key)) {
         acc[key] = row[key];
       }
       return acc;
@@ -1749,6 +1747,7 @@ const processVaccinationRow = async (row, userId, errors) => {
         },
         'Easy'
       ),
+      holdingCode: await processHoldingCodeReference(row),
       request: processRequest(row, dates),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row)
@@ -1839,7 +1838,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
         {
           'healthy': 'Healthy', 'صحي': 'Healthy', 'سليم': 'Healthy',
           'sick': 'Sick', 'مريض': 'Sick', 'sporadic': 'Sick', 'sporadic cases': 'Sick',
-          'under treatment': 'Under Treatment', 'تحت العلاج': 'Under Treatment'
+          'under treatment': 'Under Treatment', 'تحت العلاج': 'Under Treatment' , 'Sporadic Cases': 'Sporadic Cases', 'sporadic Cases': 'sporadic Cases'
         },
         'Healthy'
       ),
@@ -1853,6 +1852,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
         },
         'Comply'
       ),
+      holdingCode: await processHoldingCodeReference(row),
       request: processRequest(row, dates),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row),
@@ -1971,6 +1971,38 @@ const getFieldValue = (row, fieldNames) => {
   }
   
   return undefined;
+};
+
+/**
+ * Process holding code reference - find HoldingCode by code and return ObjectId
+ */
+const processHoldingCodeReference = async (row) => {
+  try {
+    const holdingCodeValue = getFieldValue(row, [
+      'Holding Code', 'holdingCode', 'holding_code', 'Code','Holding Code',
+      'رمز الحيازة', 'الرمز'
+    ]);
+    
+    if (!holdingCodeValue || holdingCodeValue.trim() === '') {
+      return null;
+    }
+    
+    // Find holding code by code field
+    const holdingCode = await HoldingCode.findOne({ 
+      code: holdingCodeValue.trim() 
+    });
+    
+    if (holdingCode) {
+      console.log(`✅ Found holding code: ${holdingCodeValue} -> ${holdingCode._id}`);
+      return holdingCode._id;
+    } else {
+      console.log(`⚠️ Holding code not found: ${holdingCodeValue}`);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error processing holding code reference:', error);
+    return null;
+  }
 };
 
 /**
@@ -2420,11 +2452,11 @@ const processRequest = (row, dates) => {
       row,
       ['Request Status', 'Request Situation', 'requestSituation', 'requestStatus', 'حالة الطلب'],
       {
-        'open': 'Open', 'مفتوح': 'Open', 'نشط': 'Open', 'active': 'Open',
+        'Ongoing': 'Ongoing', 'مفتوح': 'Ongoing', 'نشط': 'Ongoing', 'active': 'Ongoing',
         'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
         'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
       },
-      'Open'
+      'Ongoing'
     ),
     fulfillingDate: dates.fulfillingDate
   };
@@ -2524,6 +2556,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'testResults', 'Test Results', 'test_results', 'results',
         'النتائج', 'نتائج الفحص'
       ]), []),
+      holdingCode: await processHoldingCodeReference(row),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row),
       createdBy: userId
@@ -2665,7 +2698,7 @@ router.get('/mobile-clinics/export', auth, handleExport(MobileClinic, {}, [
 
 router.get('/laboratories/export', auth, handleExport(Laboratory, {}, [
   'serialNo', 'date', 'sampleCode', 'clientName', 'clientId', 'clientBirthDate', 'clientPhone', 
-  'sheep', 'goats', 'camel', 'cattle', 'horse', 'otherSpecies', 'collector', 
+  'holdingCode', 'sheep', 'goats', 'camel', 'cattle', 'horse', 'otherSpecies', 'collector', 
   'sampleType', 'sampleNumber', 'positiveCases', 'negativeCases', 'testResults', 'remarks'
 ], 'laboratories'));
 

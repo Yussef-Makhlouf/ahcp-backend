@@ -92,6 +92,18 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Section name cannot exceed 100 characters']
   },
+  supervisorCode: {
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true, // Allow null values but ensure uniqueness when present
+    maxlength: [10, 'Supervisor code cannot exceed 10 characters']
+  },
+  vehicleNo: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Vehicle number cannot exceed 20 characters']
+  },
   avatar: {
     type: String,
     trim: true
@@ -175,6 +187,54 @@ userSchema.statics.findActive = function() {
 // Static method to find by role
 userSchema.statics.findByRole = function(role) {
   return this.find({ role, isActive: true });
+};
+
+// Static method to generate supervisor code
+userSchema.statics.generateSupervisorCode = async function(section) {
+  if (!section) return null;
+  
+  // Get section prefix
+  const sectionLower = section.toLowerCase();
+  let prefix = '';
+  
+  if (sectionLower.includes('طفيليات') || sectionLower.includes('parasite')) {
+    prefix = 'P';
+  } else if (sectionLower.includes('تحصين') || sectionLower.includes('vaccin')) {
+    prefix = 'V';
+  } else if (sectionLower.includes('عيادة') || sectionLower.includes('clinic')) {
+    prefix = 'C';
+  } else if (sectionLower.includes('مختبر') || sectionLower.includes('lab')) {
+    prefix = 'L';
+  } else if (sectionLower.includes('خيول') || sectionLower.includes('equine')) {
+    prefix = 'E';
+  } else if (sectionLower.includes('تقارير') || sectionLower.includes('report')) {
+    prefix = 'R';
+  } else {
+    // Default: use first letter of section name
+    prefix = section.charAt(0).toUpperCase();
+  }
+  
+  // Find existing codes with same prefix
+  const existingCodes = await this.find({
+    supervisorCode: { $regex: `^${prefix}\\d+$` }
+  }).select('supervisorCode');
+  
+  // Extract numbers and find next available number
+  const numbers = existingCodes
+    .map(user => parseInt(user.supervisorCode.replace(prefix, '')))
+    .filter(num => !isNaN(num))
+    .sort((a, b) => a - b);
+  
+  let nextNumber = 1;
+  for (const num of numbers) {
+    if (num === nextNumber) {
+      nextNumber++;
+    } else {
+      break;
+    }
+  }
+  
+  return `${prefix}${nextNumber}`;
 };
 
 module.exports = mongoose.model('User', userSchema);

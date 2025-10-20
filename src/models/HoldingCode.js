@@ -48,7 +48,6 @@ const holdingCodeSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Village is required'],
     trim: true,
-    unique: true, // كل قرية لها holding code واحد فقط
     maxlength: [100, 'Village name cannot exceed 100 characters']
   },
   description: {
@@ -75,26 +74,15 @@ const holdingCodeSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Index to ensure one holding code per village
-holdingCodeSchema.index({ village: 1 }, { unique: true });
-
-// Index for better performance
-holdingCodeSchema.index({ code: 1 });
-holdingCodeSchema.index({ village: 1 });
-holdingCodeSchema.index({ isActive: 1 });
-
-// Static method to find holding code by village
-holdingCodeSchema.statics.findByVillage = function(village) {
-  return this.findOne({ 
-    village: village, 
-    isActive: true 
-  });
-};
+// Indexes for better performance
+holdingCodeSchema.index({ code: 1 }, { unique: true }); // Ensure code uniqueness
+holdingCodeSchema.index({ village: 1 }, { unique: true }); // Ensure village uniqueness - only one holding code per village
+holdingCodeSchema.index({ isActive: 1 }); // For active status queries
 
 // Static method to find all holding codes by village
 holdingCodeSchema.statics.findByVillage = function(village) {
   return this.find({ village: village, isActive: true })
-    .populate('client', 'name nationalId phone village')
+    .populate('createdBy', 'name email')
     .sort({ code: 1 });
 };
 
@@ -106,22 +94,36 @@ holdingCodeSchema.virtual('villageInfo').get(function() {
   };
 });
 
-// Pre-save middleware to ensure village uniqueness
+// Pre-save middleware for validation
 holdingCodeSchema.pre('save', async function(next) {
-  if (this.isNew || this.isModified('village')) {
-    // Check if another holding code exists for the same village
+  // Ensure code uniqueness across all holding codes
+  if (this.isNew || this.isModified('code')) {
     const existingCode = await this.constructor.findOne({
-      village: this.village,
-      _id: { $ne: this._id },
-      isActive: true
+      code: this.code,
+      _id: { $ne: this._id }
     });
     
     if (existingCode) {
-      const error = new Error(`Village '${this.village}' already has a holding code: '${existingCode.code}'`);
+      const error = new Error(`Holding code '${this.code}' already exists`);
+      error.code = 'DUPLICATE_HOLDING_CODE';
+      return next(error);
+    }
+  }
+  
+  // Ensure village uniqueness - only one holding code per village
+  if (this.isNew || this.isModified('village')) {
+    const existingVillage = await this.constructor.findOne({
+      village: this.village,
+      _id: { $ne: this._id }
+    });
+    
+    if (existingVillage) {
+      const error = new Error(`Village '${this.village}' already has a holding code: ${existingVillage.code}`);
       error.code = 'DUPLICATE_VILLAGE_HOLDING_CODE';
       return next(error);
     }
   }
+  
   next();
 });
 

@@ -45,20 +45,56 @@ const { auth, authorize } = require('../middleware/auth');
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const { village, active } = req.query;
+    const { village, active, page = 1, limit = 10, search } = req.query;
+    
+    console.log('🔍 GET /holding-codes - Query params:', { village, active, page, limit, search });
     
     // Build filter object
     const filter = {};
     if (village) filter.village = village;
     if (active !== undefined) filter.isActive = active === 'true';
     
+    console.log('📋 Filter object:', filter);
+    
+    // Add search functionality
+    if (search) {
+      filter.$or = [
+        { code: { $regex: search, $options: 'i' } },
+        { village: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Get total count for pagination
+    const totalCount = await HoldingCode.countDocuments(filter);
+    
+    // Get paginated results
     const holdingCodes = await HoldingCode.find(filter)
       .populate('createdBy', 'name email')
-      .sort({ village: 1, code: 1 });
+      .sort({ village: 1, code: 1 })
+      .skip(skip)
+      .limit(limitNum);
+    
+    console.log('✅ Found holding codes:', holdingCodes.length);
+    console.log('📋 Holding codes data:', holdingCodes.map(hc => ({ code: hc.code, village: hc.village })));
+    
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / limitNum);
     
     res.json({
       success: true,
-      data: holdingCodes
+      data: holdingCodes,
+      pagination: {
+        page: pageNum,
+        pages: totalPages,
+        total: totalCount,
+        limit: limitNum
+      }
     });
   } catch (error) {
     console.error('Get holding codes error:', error);
@@ -90,6 +126,97 @@ router.get('/', auth, async (req, res) => {
  *       200:
  *         description: Village's holding codes
  */
+/**
+ * @swagger
+ * /api/holding-codes/stats:
+ *   get:
+ *     summary: Get holding codes statistics
+ *     tags: [HoldingCodes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Holding codes statistics
+ */
+router.get('/stats', auth, async (req, res) => {
+  try {
+    const totalCodes = await HoldingCode.countDocuments();
+    const activeCodes = await HoldingCode.countDocuments({ isActive: true });
+    const inactiveCodes = await HoldingCode.countDocuments({ isActive: false });
+    
+    // Get unique villages count
+    const uniqueVillages = await HoldingCode.distinct('village');
+    const villagesCount = uniqueVillages.length;
+    
+    res.json({
+      success: true,
+      data: {
+        total: totalCodes,
+        active: activeCodes,
+        inactive: inactiveCodes,
+        villages: villagesCount
+      }
+    });
+  } catch (error) {
+    console.error('Get holding codes stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching holding codes statistics',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/holding-codes/{id}:
+ *   get:
+ *     summary: Get holding code by ID
+ *     tags: [HoldingCodes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Holding code ID
+ *     responses:
+ *       200:
+ *         description: Holding code details
+ *       404:
+ *         description: Holding code not found
+ */
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const holdingCode = await HoldingCode.findById(id)
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email');
+    
+    if (!holdingCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Holding code not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: holdingCode
+    });
+  } catch (error) {
+    console.error('Get holding code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching holding code',
+      error: error.message
+    });
+  }
+});
+
 router.get('/by-village/:village', auth, async (req, res) => {
   try {
     const { village } = req.params;
@@ -158,7 +285,7 @@ router.post('/', auth, authorize(['admin', 'supervisor']), async (req, res) => {
       code: code.trim(),
       village: village.trim(),
       description: description?.trim(),
-      createdBy: req.user.id
+      createdBy: req.user._id
     });
     
     await holdingCode.save();
@@ -247,12 +374,12 @@ router.put('/:id', auth, authorize(['admin', 'supervisor']), async (req, res) =>
     if (village !== undefined) holdingCode.village = village.trim();
     if (description !== undefined) holdingCode.description = description?.trim();
     if (isActive !== undefined) holdingCode.isActive = isActive;
-    holdingCode.updatedBy = req.user.id;
+    holdingCode.updatedBy = req.user._id;
     
     await holdingCode.save();
     
     // Populate the response
-    await holdingCode.populate('client', 'name nationalId phone village');
+    await holdingCode.populate('createdBy', 'name email');
     await holdingCode.populate('updatedBy', 'name email');
     
     res.json({
@@ -264,6 +391,13 @@ router.put('/:id', auth, authorize(['admin', 'supervisor']), async (req, res) =>
     console.error('Update holding code error:', error);
     
     if (error.code === 'DUPLICATE_HOLDING_CODE') {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    if (error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
       return res.status(400).json({
         success: false,
         message: error.message

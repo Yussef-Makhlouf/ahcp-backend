@@ -23,6 +23,7 @@ const clientsRoutes = require('./routes/clients');
 const reportsRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const villagesRoutes = require('./routes/villages');
+const dropdownListsRoutes = require('../src/routes/dropdownLists');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -201,6 +202,7 @@ app.use('/api/clients', selectedAuth, clientsRoutes);
 app.use('/api/reports', selectedAuth, reportsRoutes);
 app.use('/api/upload', selectedAuth, uploadRoutes);
 app.use('/api/villages', selectedAuth, villagesRoutes);
+app.use('/api/dropdown-lists', selectedAuth, dropdownListsRoutes);
 
 // Welcome message
 app.get('/', (req, res) => {
@@ -221,7 +223,8 @@ app.get('/', (req, res) => {
       clients: '/api/clients',
       reports: '/api/reports',
       upload: '/api/upload',
-      villages: '/api/villages'
+      villages: '/api/villages',
+      dropdownLists: '/api/dropdown-lists'
     }
   });
 });

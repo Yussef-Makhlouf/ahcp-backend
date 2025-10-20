@@ -27,9 +27,6 @@ const mongoose = require('mongoose');
  *         client:
  *           type: string
  *           description: Client ID reference
- *         farmLocation:
- *           type: string
- *           description: Location of the farm
  *         coordinates:
  *           type: object
  *           properties:
@@ -175,12 +172,6 @@ const vaccinationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Client',
     required: [true, 'Client reference is required']
-  },
-  farmLocation: {
-    type: String,
-    required: [true, 'Farm location is required'],
-    trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters']
   },
   coordinates: {
     latitude: {

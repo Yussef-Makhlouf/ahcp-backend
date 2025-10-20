@@ -69,7 +69,6 @@ router.get('/',
         { serialNo: { $regex: search, $options: 'i' } },
         { supervisor: { $regex: search, $options: 'i' } },
         { vehicleNo: { $regex: search, $options: 'i' } },
-        { farmLocation: { $regex: search, $options: 'i' } },
         { diagnosis: { $regex: search, $options: 'i' } }
       ];
     }
@@ -79,6 +78,7 @@ router.get('/',
     try {
       records = await MobileClinic.find(filter)
         .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
@@ -126,7 +126,6 @@ router.get('/',
  *               - clientName
  *               - clientId
  *               - clientPhone
- *               - farmLocation
  *               - supervisor
  *               - interventionCategory
  *             properties:
@@ -240,7 +239,6 @@ router.post('/',
       const mobileClinicData = {
         serialNo: req.body.serialNo,
         date: req.body.date || new Date(),
-        farmLocation: req.body.farmLocation,
         supervisor: req.body.supervisor,
         vehicleNo: req.body.vehicleNo,
         
@@ -285,6 +283,7 @@ router.post('/',
 
         // Additional information
         remarks: req.body.remarks,
+        holdingCode: req.body.holdingCode,
         createdBy: req.user._id
       };
 
@@ -493,7 +492,8 @@ router.get('/follow-up',
     const followUpRecords = await MobileClinic.find({
       followUpRequired: true,
       followUpCompleted: { $ne: true }
-    }).populate('client', 'name nationalId phone village birthDate');
+    }).populate('client', 'name nationalId phone village birthDate')
+      .populate('holdingCode', 'code village description isActive');
 
     res.json({
       success: true,
@@ -556,6 +556,7 @@ router.get('/export',
 
     const records = await MobileClinic.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
     // Transform data for export
@@ -579,7 +580,7 @@ router.get('/export',
         'ID': client.nationalId || '',
         'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
         'Phone': client.phone || '',
-        'Location': record.farmLocation || '',
+        'Holding Code': record.holdingCode?.code || '',
         'N Coordinate': coordinates.latitude || '',
         'E Coordinate': coordinates.longitude || '',
         'Supervisor': record.supervisor || '',
@@ -654,6 +655,7 @@ router.get('/export',
 
     const records = await MobileClinic.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
     // Transform data for export
@@ -677,7 +679,7 @@ router.get('/export',
         'ID': client.nationalId || '',
         'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
         'Phone': client.phone || '',
-        'Location': record.farmLocation || '',
+        'Holding Code': record.holdingCode?.code || '',
         'N Coordinate': coordinates.latitude || '',
         'E Coordinate': coordinates.longitude || '',
         'Supervisor': record.supervisor || '',
@@ -749,7 +751,6 @@ router.get('/template',
         clientNationalId: '1234567890',
         clientPhone: '+966501234567',
         clientVillage: 'قرية النور',
-        farmLocation: 'مزرعة الشمري',
         supervisor: 'د. محمد علي',
         vehicleNo: 'MC1',
         sheep: 50,
@@ -919,6 +920,367 @@ router.delete('/delete-all',
       res.status(500).json({
         success: false,
         message: 'Error deleting all mobile clinic records',
+        error: error.message
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/mobile-clinics/{id}:
+ *   get:
+ *     summary: Get a mobile clinic record by ID
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Mobile clinic record ID
+ *     responses:
+ *       200:
+ *         description: Record retrieved successfully
+ *       404:
+ *         description: Record not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/:id',
+  auth,
+  asyncHandler(async (req, res) => {
+    try {
+      const record = await MobileClinic.findById(req.params.id)
+        .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate('holdingCode', 'code village description isActive');
+
+      if (!record) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mobile clinic record not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: record
+      });
+    } catch (error) {
+      console.error('Error getting mobile clinic record:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error retrieving mobile clinic record',
+        error: error.message
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/mobile-clinics/{id}:
+ *   put:
+ *     summary: Update a mobile clinic record
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Mobile clinic record ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               serialNo:
+ *                 type: string
+ *                 description: Serial number
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 description: Record date
+ *               clientName:
+ *                 type: string
+ *                 description: Client name
+ *               clientId:
+ *                 type: string
+ *                 description: Client national ID
+ *               clientPhone:
+ *                 type: string
+ *                 description: Client phone number
+ *               clientBirthDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Client birth date
+ *               farmLocation:
+ *                 type: string
+ *                 description: Farm location
+ *               supervisor:
+ *                 type: string
+ *                 description: Supervisor name
+ *               vehicleNo:
+ *                 type: string
+ *                 description: Vehicle number
+ *               animalCounts:
+ *                 type: object
+ *                 properties:
+ *                   sheep:
+ *                     type: number
+ *                   goats:
+ *                     type: number
+ *                   camel:
+ *                     type: number
+ *                   cattle:
+ *                     type: number
+ *                   horse:
+ *                     type: number
+ *               diagnosis:
+ *                 type: string
+ *                 description: Medical diagnosis
+ *               interventionCategory:
+ *                 type: string
+ *                 enum: [Emergency, Routine, Preventive, Follow-up]
+ *                 description: Type of intervention
+ *               treatment:
+ *                 type: string
+ *                 description: Treatment provided
+ *               followUpRequired:
+ *                 type: boolean
+ *                 description: Whether follow-up is required
+ *               followUpDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Follow-up date
+ *               remarks:
+ *                 type: string
+ *                 description: Additional remarks
+ *     responses:
+ *       200:
+ *         description: Record updated successfully
+ *       400:
+ *         description: Invalid request data
+ *       404:
+ *         description: Record not found
+ *       500:
+ *         description: Server error
+ */
+router.put('/:id',
+  auth,
+  checkSectionAccessWithMessage('mobile_clinics'),
+  validate(schemas.mobileClinicUpdate),
+  asyncHandler(async (req, res) => {
+    try {
+      console.log('📝 Updating mobile clinic record:', req.params.id);
+      console.log('📝 Update data:', JSON.stringify(req.body, null, 2));
+
+      // Check if record exists
+      const existingRecord = await MobileClinic.findById(req.params.id);
+      if (!existingRecord) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mobile clinic record not found'
+        });
+      }
+
+      // Handle client data - support both flat structure and client reference
+      let clientData = null;
+      if (req.body.client && typeof req.body.client === 'object') {
+        // Client reference provided
+        clientData = req.body.client;
+      } else if (req.body.clientName && req.body.clientId) {
+        // Flat client data provided - try to find or create client
+        try {
+          clientData = await findOrCreateClient({
+            name: req.body.clientName,
+            nationalId: req.body.clientId,
+            phone: req.body.clientPhone,
+            birthDate: req.body.clientBirthDate,
+            village: req.body.clientVillage || '',
+            detailedAddress: req.body.clientDetailedAddress || ''
+          });
+        } catch (clientError) {
+          console.log('⚠️ Client creation failed, using flat structure:', clientError.message);
+          // Continue with flat structure if client creation fails
+        }
+      }
+
+      // Prepare update data
+      const updateData = {
+        serialNo: req.body.serialNo,
+        date: req.body.date,
+        supervisor: req.body.supervisor,
+        vehicleNo: req.body.vehicleNo,
+        
+        // Animal counts
+        animalCounts: {
+          sheep: req.body.animalCounts?.sheep || req.body.sheep || 0,
+          goats: req.body.animalCounts?.goats || req.body.goats || 0,
+          camel: req.body.animalCounts?.camel || req.body.camel || 0,
+          cattle: req.body.animalCounts?.cattle || req.body.cattle || 0,
+          horse: req.body.animalCounts?.horse || req.body.horse || 0
+        },
+
+        // Medical information
+        diagnosis: req.body.diagnosis,
+        interventionCategory: req.body.interventionCategory,
+        treatment: req.body.treatment,
+
+        // Medication information
+        medication: {
+          name: req.body.medication?.name || req.body.medicationName,
+          dosage: req.body.medication?.dosage || req.body.dosage,
+          quantity: req.body.medication?.quantity || req.body.quantity,
+          administrationRoute: req.body.medication?.administrationRoute || req.body.administrationRoute
+        },
+
+        // Request information
+        request: {
+          date: req.body.request?.date || req.body.requestDate,
+          situation: req.body.request?.situation || req.body.requestSituation,
+          fulfillingDate: req.body.request?.fulfillingDate || req.body.requestFulfillingDate
+        },
+
+        // Follow-up information
+        followUpRequired: req.body.followUpRequired || false,
+        followUpDate: req.body.followUpDate,
+
+        // Location coordinates
+        coordinates: {
+          latitude: req.body.coordinates?.latitude || req.body.latitude,
+          longitude: req.body.coordinates?.longitude || req.body.longitude
+        },
+
+        // Additional information
+        remarks: req.body.remarks,
+        holdingCode: req.body.holdingCode,
+        updatedBy: req.user._id,
+        updatedAt: new Date()
+      };
+
+      // Add client reference or flat client data
+      if (clientData && clientData._id) {
+        updateData.client = clientData._id;
+      } else {
+        // Use flat structure for client data
+        updateData.clientName = req.body.clientName;
+        updateData.clientId = req.body.clientId;
+        updateData.clientPhone = req.body.clientPhone;
+        updateData.clientBirthDate = req.body.clientBirthDate;
+        updateData.clientVillage = req.body.clientVillage;
+        updateData.clientDetailedAddress = req.body.clientDetailedAddress;
+      }
+
+      console.log('💾 Updating mobile clinic with data:', updateData);
+
+      // Update the record
+      const updatedRecord = await MobileClinic.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
+      ).populate('client', 'name nationalId phone village detailedAddress birthDate')
+       .populate('holdingCode', 'code village description isActive');
+
+      console.log('✅ Mobile clinic record updated successfully:', updatedRecord._id);
+
+      res.json({
+        success: true,
+        message: 'Mobile clinic record updated successfully',
+        data: updatedRecord
+      });
+
+    } catch (error) {
+      console.error('❌ Error updating mobile clinic record:', error);
+      
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: validationErrors
+        });
+      }
+
+      // Handle duplicate key errors
+      if (error.code === 11000) {
+        const field = Object.keys(error.keyPattern)[0];
+        return res.status(400).json({
+          success: false,
+          message: `${field} already exists`,
+          field: field
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error updating mobile clinic record',
+        error: error.message
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/mobile-clinics/{id}:
+ *   delete:
+ *     summary: Delete a mobile clinic record
+ *     tags: [Mobile Clinics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Mobile clinic record ID
+ *     responses:
+ *       200:
+ *         description: Record deleted successfully
+ *       404:
+ *         description: Record not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/:id',
+  auth,
+  authorize(['super_admin', 'admin']),
+  asyncHandler(async (req, res) => {
+    try {
+      const record = await MobileClinic.findById(req.params.id);
+      
+      if (!record) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mobile clinic record not found'
+        });
+      }
+
+      await MobileClinic.findByIdAndDelete(req.params.id);
+
+      res.json({
+        success: true,
+        message: 'Mobile clinic record deleted successfully'
+      });
+    } catch (error) {
+      console.error('Error deleting mobile clinic record:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting mobile clinic record',
         error: error.message
       });
     }

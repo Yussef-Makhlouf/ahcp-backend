@@ -24,6 +24,9 @@ const notFound = (req, res, next) => {
       clients: '/api/clients',
       reports: '/api/reports',
       upload: '/api/upload',
+      villages: '/api/villages',
+      holdingCodes: '/api/holding-codes',
+      importExport: '/api/import-export',
       health: '/health',
       docs: '/api-docs'
     }

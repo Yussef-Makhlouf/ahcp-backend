@@ -51,6 +51,11 @@ const router = express.Router();
  *         schema:
  *           type: boolean
  *         description: Filter by active status
+ *       - in: query
+ *         name: hasVehicleNo
+ *         schema:
+ *           type: boolean
+ *         description: Filter users who have vehicle numbers (supervisors only)
  *     responses:
  *       200:
  *         description: Users retrieved successfully
@@ -61,7 +66,7 @@ router.get('/',
   auth,
   authorize('super_admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, role, section, search, active } = req.query;
+    const { page = 1, limit = 30, role, section, search, active, hasVehicleNo } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
@@ -75,6 +80,12 @@ router.get('/',
         { email: { $regex: search, $options: 'i' } },
         { section: { $regex: search, $options: 'i' } }
       ];
+    }
+    
+    // Filter users with vehicle numbers (supervisors only)
+    if (hasVehicleNo === 'true') {
+      filter.vehicleNo = { $exists: true, $ne: null, $ne: '' };
+      filter.role = { $in: ['super_admin', 'section_supervisor'] };
     }
 
     // If user is section_supervisor, only show users from their section
@@ -157,6 +168,246 @@ router.get('/stats',
         section: req.user.role === 'section_supervisor' ? req.user.section : 'all'
       }
     });
+  })
+);
+
+/**
+ * @swagger
+ * /api/users/supervisors-only:
+ *   get:
+ *     summary: Get supervisors filtered by section for dropdown selection
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: section
+ *         schema:
+ *           type: string
+ *         description: Filter by section name (Arabic or English)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Maximum number of supervisors to return
+ *     responses:
+ *       200:
+ *         description: Supervisors retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get('/supervisors-only',
+  auth,
+  asyncHandler(async (req, res) => {
+    try {
+      const { section, limit = 100 } = req.query;
+      
+      console.log(`🔍 Fetching supervisors-only for section: "${section}"`);
+      
+      // Build filter for supervisors and admins only
+      const filter = {
+        role: { $in: ['super_admin', 'section_supervisor'] },
+        isActive: true,
+        // Only include users with vehicle numbers (supervisors who can do field work)
+        vehicleNo: { $exists: true, $ne: null, $ne: '' }
+      };
+
+      // If section is specified, filter by section with flexible matching
+      if (section && section !== 'all') {
+        const sectionStr = String(section);
+        filter.$or = [
+          { section: { $regex: sectionStr, $options: 'i' } },
+          { section: { $regex: sectionStr.replace(/[-_\s]/g, ''), $options: 'i' } },
+          // Handle Arabic section names
+          { section: { $regex: sectionStr.replace(/ة/g, 'ه'), $options: 'i' } },
+          { section: { $regex: sectionStr.replace(/ه/g, 'ة'), $options: 'i' } }
+        ];
+      }
+
+      console.log(`📋 Filter applied:`, JSON.stringify(filter, null, 2));
+
+      // Get supervisors with all necessary fields
+      const supervisors = await User.find(filter)
+        .select('name email role section supervisorCode vehicleNo isActive')
+        .sort({ supervisorCode: 1, name: 1 })
+        .limit(parseInt(limit))
+        .lean();
+
+      console.log(`✅ Found ${supervisors.length} supervisors for section "${section}"`);
+
+      res.json({
+        success: true,
+        data: supervisors,
+        count: supervisors.length,
+        section: section || 'all',
+        search: "",
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('❌ Error fetching supervisors-only:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ في جلب بيانات المشرفين',
+        error: error.message,
+        data: [],
+        count: 0
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/users/supervisors/list:
+ *   get:
+ *     summary: Get all supervisors with their codes and vehicle numbers
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: section
+ *         schema:
+ *           type: string
+ *         description: Filter by section name
+ *     responses:
+ *       200:
+ *         description: Supervisors retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get('/supervisors/list',
+  auth,
+  asyncHandler(async (req, res) => {
+    try {
+      const { section } = req.query;
+      
+      // Build filter for supervisors
+      const filter = {
+        role: { $in: ['super_admin', 'section_supervisor'] },
+        isActive: true
+      };
+
+      // If section is specified, filter by section
+      if (section && section !== 'all') {
+        // Flexible section matching
+        filter.$or = [
+          { section: { $regex: section, $options: 'i' } },
+          { section: { $regex: section.replace(/[-_]/g, ''), $options: 'i' } }
+        ];
+      }
+
+      console.log(`🔍 Fetching supervisors with filter:`, filter);
+
+      // Get supervisors with all necessary fields
+      const supervisors = await User.find(filter)
+        .select('name email role section supervisorCode vehicleNo isActive')
+        .sort({ supervisorCode: 1, name: 1 })
+        .lean();
+
+      console.log(`✅ Found ${supervisors.length} supervisors`);
+
+      res.json({
+        success: true,
+        data: supervisors,
+        count: supervisors.length,
+        section: section || 'all',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('❌ Error fetching supervisors:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ في جلب بيانات المشرفين',
+        error: error.message
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/users/supervisors/update-codes:
+ *   post:
+ *     summary: Update existing supervisors with codes and vehicle numbers
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Supervisors updated successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/supervisors/update-codes',
+  auth,
+  authorize('super_admin'),
+  asyncHandler(async (req, res) => {
+    try {
+      console.log('🔄 Starting to update existing supervisors...');
+
+      // Get all section supervisors
+      const supervisors = await User.find({
+        role: 'section_supervisor',
+        isActive: true
+      });
+
+      console.log(`📋 Found ${supervisors.length} supervisors to check`);
+
+      const updates = [];
+
+      for (const supervisor of supervisors) {
+        let needsUpdate = false;
+        const updateData = {};
+
+        // Generate supervisor code if missing
+        if (!supervisor.supervisorCode) {
+          const supervisorCode = await User.generateSupervisorCode(supervisor.section);
+          updateData.supervisorCode = supervisorCode;
+          needsUpdate = true;
+        }
+
+        // Generate vehicle number if missing
+        if (!supervisor.vehicleNo) {
+          const firstName = supervisor.name.split(' ')[0];
+          const code = updateData.supervisorCode || supervisor.supervisorCode;
+          updateData.vehicleNo = `${firstName}-${code}`;
+          needsUpdate = true;
+        }
+
+        // Update if needed
+        if (needsUpdate) {
+          await User.findByIdAndUpdate(supervisor._id, updateData);
+          updates.push({
+            name: supervisor.name,
+            section: supervisor.section,
+            supervisorCode: updateData.supervisorCode || supervisor.supervisorCode,
+            vehicleNo: updateData.vehicleNo || supervisor.vehicleNo
+          });
+          console.log(`✅ Updated supervisor: ${supervisor.name}`);
+        }
+      }
+
+      console.log(`🎉 Updated ${updates.length} supervisors`);
+
+      res.json({
+        success: true,
+        message: `تم تحديث ${updates.length} مشرف بنجاح`,
+        data: {
+          updatedCount: updates.length,
+          totalSupervisors: supervisors.length,
+          updates
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error updating supervisors:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ في تحديث المشرفين',
+        error: error.message
+      });
+    }
   })
 );
 
@@ -254,7 +505,7 @@ router.post('/supervisors',
   auth,
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    const { name, email, password, section, avatar } = req.body;
+    const { name, email, password, section, vehicleNo, avatar } = req.body;
 
     // Validation
     if (!name || !email || !password || !section) {
@@ -285,6 +536,9 @@ router.post('/supervisors',
       });
     }
 
+    // Generate supervisor code
+    const supervisorCode = await User.generateSupervisorCode(section);
+
     // Create supervisor
     const supervisor = new User({
       name,
@@ -292,6 +546,8 @@ router.post('/supervisors',
       password,
       role: 'section_supervisor',
       section: section.toUpperCase(),
+      supervisorCode,
+      vehicleNo, // Add vehicleNo if provided
       avatar
     });
 
@@ -299,7 +555,7 @@ router.post('/supervisors',
 
     res.status(201).json({
       success: true,
-      message: 'تم إنشاء المشرف بنجاح',
+      message: `تم إنشاء المشرف بنجاح برمز ${supervisorCode}`,
       data: {
         id: supervisor._id,
         name: supervisor.name,
@@ -307,6 +563,8 @@ router.post('/supervisors',
         role: supervisor.role,
         roleNameAr: supervisor.roleNameAr,
         section: supervisor.section,
+        supervisorCode: supervisor.supervisorCode,
+        vehicleNo: supervisor.vehicleNo,
         isActive: supervisor.isActive
       }
     });

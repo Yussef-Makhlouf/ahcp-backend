@@ -28,9 +28,6 @@ const { populate } = require('./Client');
  *         client:
  *           type: string
  *           description: Client ID reference
- *         farmLocation:
- *           type: string
- *           description: Location of the farm
  *         coordinates:
  *           type: object
  *           properties:
@@ -280,18 +277,6 @@ const equineHealthSchema = new mongoose.Schema({
       trim: true,
       maxlength: [100, 'Village name cannot exceed 100 characters']
     },
-    detailedAddress: {
-      type: String,
-      required: [true, 'Client detailed address is required'],
-      trim: true,
-      maxlength: [200, 'Address cannot exceed 200 characters']
-    }
-  },
-  farmLocation: {
-    type: String,
-    required: [true, 'Farm location is required'],
-    trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters']
   },
   coordinates: {
     latitude: {

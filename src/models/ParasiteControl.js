@@ -42,9 +42,6 @@ const mongoose = require('mongoose');
  *         client:
  *           type: string
  *           description: Client ID reference
- *         herdLocation:
- *           type: string
- *           description: Location of the herd
  *         coordinates:
  *           type: object
  *           properties:
@@ -229,12 +226,6 @@ const parasiteControlSchema = new mongoose.Schema({
       select: 'name nationalId phone village birthDate'
     },
     required: [true, 'Client reference is required']
-  },
-  herdLocation: {
-    type: String,
-    required: [true, 'Herd location is required'],
-    trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters']
   },
   coordinates: {
     latitude: {

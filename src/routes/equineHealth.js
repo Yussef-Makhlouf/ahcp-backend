@@ -115,13 +115,13 @@ router.get('/',
         { serialNo: { $regex: search, $options: 'i' } },
         { supervisor: { $regex: search, $options: 'i' } },
         { vehicleNo: { $regex: search, $options: 'i' } },
-        { farmLocation: { $regex: search, $options: 'i' } },
         { diagnosis: { $regex: search, $options: 'i' } }
       ];
     }
 
     // Get records
     const records = await EquineHealth.find(filter)
+      .populate('holdingCode', 'code village description isActive')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ date: -1 });
@@ -237,8 +237,6 @@ router.get('/statistics',
  *                     type: string
  *                   detailedAddress:
  *                     type: string
- *               farmLocation:
- *                 type: string
  *               supervisor:
  *                 type: string
  *               vehicleNo:
@@ -329,7 +327,8 @@ router.get('/:id',
       });
     }
     
-    const record = await EquineHealth.findById(id);
+    const record = await EquineHealth.findById(id)
+      .populate('holdingCode', 'code village description isActive');
     
     if (!record) {
       return res.status(404).json({

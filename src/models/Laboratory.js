@@ -31,9 +31,6 @@ const mongoose = require('mongoose');
  *         client:
  *           type: string
  *           description: Client ID reference
- *         farmLocation:
- *           type: string
- *           description: Location where sample was collected
  *         coordinates:
  *           type: object
  *           properties:
@@ -171,12 +168,6 @@ const laboratorySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Client',
     required: false // Optional since we have flat client fields
-  },
-  farmLocation: { 
-    type: String, 
-    required: [true, 'Farm location is required'], 
-    trim: true, 
-    maxlength: [200, 'Location cannot exceed 200 characters'] 
   },
   coordinates: { 
     latitude: { 

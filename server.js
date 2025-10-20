@@ -22,8 +22,8 @@ console.log('🌐 CORS_ORIGIN:', process.env.CORS_ORIGIN);
 let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
 let parasiteControlRoutes, vaccinationRoutes, mobileClinicsRoutes;
 let equineHealthRoutes, laboratoriesRoutes, clientsRoutes;
-let reportsRoutes, uploadRoutes, villagesRoutes, importExportRoutes;
-let dromoImportRoutes;
+let reportsRoutes, uploadRoutes, villagesRoutes, holdingCodesRoutes, importExportRoutes;
+let dromoImportRoutes, dropdownListsRoutes;
 
 let errorHandler, notFound, authMiddleware;
 
@@ -43,8 +43,10 @@ try {
   reportsRoutes = require('./src/routes/reports');
   uploadRoutes = require('./src/routes/upload');
   villagesRoutes = require('./src/routes/villages');
+  holdingCodesRoutes = require('./src/routes/holdingCodes');
   importExportRoutes = require('./src/routes/import-export');
   dromoImportRoutes = require('./src/routes/dromo-import');
+  dropdownListsRoutes = require('./src/routes/dropdownLists');
   console.log('✅ Dromo import routes loaded');
 
   // Import middleware
@@ -272,6 +274,14 @@ if (villagesRoutes && selectedAuth) {
   console.log('✅ Loading villages routes with authentication');
   app.use('/api/villages', selectedAuth, villagesRoutes);
 }
+if (holdingCodesRoutes) {
+  console.log('✅ Loading holding-codes routes with authentication');
+  app.use('/api/holding-codes', selectedAuth, holdingCodesRoutes);
+}
+if (dropdownListsRoutes) {
+  console.log('✅ Loading dropdown-lists routes with authentication');
+  app.use('/api/dropdown-lists', selectedAuth, dropdownListsRoutes);
+}
 
 // Import/Export routes
 if (importExportRoutes) {
@@ -331,7 +341,9 @@ app.get('/', (req, res) => {
         clients: '/api/clients',
         reports: '/api/reports',
         upload: '/api/upload',
-        villages: '/api/villages'
+        villages: '/api/villages',
+        holdingCodes: '/api/holding-codes',
+        dropdownLists: '/api/dropdown-lists'
       }
     });
   } catch (error) {

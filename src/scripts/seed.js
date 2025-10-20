@@ -5,6 +5,7 @@ require('dotenv').config();
 // Import models
 const User = require('../models/User');
 const Client = require('../models/Client');
+const HoldingCode = require('../models/HoldingCode');
 const ParasiteControl = require('../models/ParasiteControl');
 const Vaccination = require('../models/Vaccination');
 const MobileClinic = require('../models/MobileClinic');
@@ -361,6 +362,64 @@ const sampleClients = [
   }
 ];
 
+// Sample Holding Codes
+const sampleHoldingCodes = [
+  {
+    code: 'HC001',
+    village: 'الرياض',
+    description: 'رمز حيازة مزرعة الأحمد',
+    isActive: true
+  },
+  {
+    code: 'HC002',
+    village: 'جدة',
+    description: 'رمز حيازة مزرعة الشمري',
+    isActive: true
+  },
+  {
+    code: 'HC003',
+    village: 'حائل',
+    description: 'رمز حيازة مزرعة المطيري',
+    isActive: true
+  },
+  {
+    code: 'HC004',
+    village: 'الطائف',
+    description: 'رمز حيازة مزرعة الزهراني',
+    isActive: true
+  },
+  {
+    code: 'HC005',
+    village: 'الجوف',
+    description: 'رمز حيازة مزرعة الحربي',
+    isActive: true
+  },
+  {
+    code: 'HC006',
+    village: 'عسير',
+    description: 'رمز حيازة مزرعة القحطاني',
+    isActive: true
+  },
+  {
+    code: 'HC007',
+    village: 'الحدود الشمالية',
+    description: 'رمز حيازة مزرعة الشمري',
+    isActive: true
+  },
+  {
+    code: 'HC008',
+    village: 'تبوك',
+    description: 'رمز حيازة مزرعة النعيمي',
+    isActive: true
+  },
+  {
+    code: 'HC009',
+    village: 'البريكه',
+    description: 'رمز حيازة مزرعة البريكه',
+    isActive: true
+  }
+];
+
 // Sample Parasite Control Records
 const sampleParasiteControl = [
   {
@@ -386,8 +445,6 @@ const sampleParasiteControl = [
     },
     animalBarnSizeSqM: 200,
     breedingSites: 'Not Available',
-    parasiteControlVolume: 2300,
-    parasiteControlStatus: 'Completed',
     herdHealthStatus: 'Healthy',
     complyingToInstructions: 'Comply',
     request: {
@@ -652,6 +709,7 @@ async function seedDatabase() {
     console.log('🧹 Clearing existing data...');
     await User.deleteMany({});
     await Client.deleteMany({});
+    await HoldingCode.deleteMany({});
     await ParasiteControl.deleteMany({});
     await Vaccination.deleteMany({});
     await MobileClinic.deleteMany({});
@@ -684,15 +742,32 @@ async function seedDatabase() {
       console.log(`   ✓ Created client: ${client.name}`);
     }
 
+    // Create holding codes
+    console.log('🏷️ Creating sample holding codes...');
+    const createdHoldingCodes = [];
+    
+    for (const holdingCodeData of sampleHoldingCodes) {
+      const holdingCode = new HoldingCode({
+        ...holdingCodeData,
+        createdBy: adminUser._id
+      });
+      await holdingCode.save();
+      createdHoldingCodes.push(holdingCode);
+      console.log(`   ✓ Created holding code: ${holdingCode.code} (${holdingCode.village})`);
+    }
+
     // Create parasite control records
     console.log('🦠 Creating parasite control records...');
     for (let i = 0; i < sampleParasiteControl.length; i++) {
       const recordData = sampleParasiteControl[i];
       const client = createdClients[i]; // Link to corresponding client
       
+      const holdingCode = createdHoldingCodes[i % createdHoldingCodes.length]; // Cycle through holding codes
+      
       const record = new ParasiteControl({
         ...recordData,
         client: client._id,
+        holdingCode: holdingCode._id,
         createdBy: adminUser._id
       });
       await record.save();
@@ -704,10 +779,12 @@ async function seedDatabase() {
     for (let i = 0; i < sampleVaccination.length; i++) {
       const recordData = sampleVaccination[i];
       const client = createdClients[i + 6]; // Link to different clients
+      const holdingCode = createdHoldingCodes[(i + 2) % createdHoldingCodes.length]; // Different holding codes
       
       const record = new Vaccination({
         ...recordData,
         client: client._id,
+        holdingCode: holdingCode._id,
         createdBy: adminUser._id
       });
       await record.save();
@@ -719,10 +796,12 @@ async function seedDatabase() {
     for (let i = 0; i < sampleMobileClinics.length; i++) {
       const recordData = sampleMobileClinics[i];
       const client = createdClients[i + 5]; // Link to different clients
+      const holdingCode = createdHoldingCodes[(i + 4) % createdHoldingCodes.length]; // Different holding codes
       
       const record = new MobileClinic({
         ...recordData,
         client: client._id,
+        holdingCode: holdingCode._id,
         createdBy: adminUser._id
       });
       await record.save();
@@ -734,10 +813,12 @@ async function seedDatabase() {
     for (let i = 0; i < sampleLaboratory.length; i++) {
       const recordData = sampleLaboratory[i];
       const client = createdClients[i + 5]; // Link to same clients as mobile clinics
+      const holdingCode = createdHoldingCodes[(i + 6) % createdHoldingCodes.length]; // Different holding codes
       
       const record = new Laboratory({
         ...recordData,
         client: client._id,
+        holdingCode: holdingCode._id,
         createdBy: adminUser._id
       });
       await record.save();
@@ -766,8 +847,8 @@ async function seedDatabase() {
     console.log(`🔬 Laboratory Records: ${sampleLaboratory.length}`);
     console.log('');
     console.log('🚀 You can now start the server and login with these credentials');
-    console.log('📚 API Documentation: https://ahcp-backend-production.up.railway.app/api-docs');
-    console.log('🏥 Health Check: https://ahcp-backend-production.up.railway.app/health');
+    console.log('📚 API Documentation: http://localhost:3001/api-docs');
+    console.log('🏥 Health Check: http://localhost:3001/health');
     
   } catch (error) {
     console.error('❌ Error seeding database:', error);

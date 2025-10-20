@@ -27,9 +27,6 @@ const mongoose = require('mongoose');
  *         client:
  *           type: string
  *           description: Client ID reference
- *         farmLocation:
- *           type: string
- *           description: Location of the farm
  *         coordinates:
  *           type: object
  *           properties:
@@ -209,17 +206,6 @@ const mobileClinicSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [100, 'Client village cannot exceed 100 characters']
-  },
-  clientDetailedAddress: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Client address cannot exceed 500 characters']
-  },
-  farmLocation: {
-    type: String,
-    required: [true, 'Farm location is required'],
-    trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters']
   },
   coordinates: {
     latitude: {
