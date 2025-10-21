@@ -124,8 +124,14 @@ router.get('/',
     let records;
     try {
       records = await ParasiteControl.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress birthDate')
-        .populate('holdingCode', 'code village description isActive')
+        .populate({
+          path: 'client',
+          select: 'name nationalId phone village detailedAddress birthDate holdingCode',
+          populate: {
+            path: 'holdingCode',
+            select: 'code village description isActive'
+          }
+        })
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
@@ -372,8 +378,14 @@ router.get('/:id',
   auth,
   asyncHandler(async (req, res) => {
     const record = await ParasiteControl.findById(req.params.id)
-      .populate('client', 'name nationalId phone village detailedAddress')
-      .populate('holdingCode', 'code village description isActive')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress birthDate holdingCode',
+        populate: {
+          path: 'holdingCode',
+          select: 'code village description isActive'
+        }
+      })
       .populate('createdBy', 'name email role')
       .populate('updatedBy', 'name email role');
 

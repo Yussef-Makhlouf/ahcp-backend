@@ -123,9 +123,10 @@ const testResultSchema = new mongoose.Schema({
 const laboratorySchema = new mongoose.Schema({
   serialNo: { 
     type: Number, 
-    required: [true, 'Serial number is required'], 
+    required: false, // Made optional for import flexibility
     min: [0, 'Serial number cannot be negative'],
-    unique: true 
+    unique: false, // Removed unique constraint for import flexibility
+    default: function() { return Date.now() % 1000000; } // Auto-generate if missing
   },
   date: { 
     type: Date, 
@@ -138,31 +139,33 @@ const laboratorySchema = new mongoose.Schema({
   },
   sampleCode: { 
     type: String, 
-    required: [true, 'Sample code is required'], 
-    unique: true, 
+    required: false, // Made optional for import flexibility
+    unique: false, // Removed unique constraint for import flexibility
     trim: true, 
-    maxlength: [20, 'Sample code cannot exceed 20 characters'] 
+    maxlength: [50, 'Sample code cannot exceed 50 characters'],
+    default: function() { return 'LAB-' + Date.now(); } // Auto-generate if missing
   },
   clientName: { 
     type: String, 
-    required: [true, 'Client name is required'], 
+    required: false, // Made optional for import flexibility
     trim: true, 
-    maxlength: [100, 'Client name cannot exceed 100 characters'] 
+    maxlength: [200, 'Client name cannot exceed 200 characters'],
+    default: 'غير محدد' // Default value for missing data
   },
   clientId: { 
     type: String, 
-    required: [true, 'Client ID is required'], 
-    trim: true, 
-    match: [/^\d{9,10}$/, 'Client ID must be 9 or 10 digits'] 
+    required: false, // Made optional for import flexibility
+    trim: true,
+    default: 'N/A' // Default value for missing data
   },
   clientBirthDate: { 
     type: Date 
   },
   clientPhone: { 
     type: String, 
-    required: [true, 'Client phone is required'], 
-    trim: true, 
-    match: [/^\d{10}$/, 'Phone must be exactly 10 digits'] 
+    required: false, // Made optional for import flexibility
+    trim: true,
+    default: 'N/A' // Default value for missing data
   },
   client: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -216,33 +219,33 @@ const laboratorySchema = new mongoose.Schema({
   },
   collector: { 
     type: String, 
-    required: [true, 'Collector name is required'], 
+    required: false, // Made optional for import flexibility
     trim: true, 
-    maxlength: [100, 'Collector name cannot exceed 100 characters'] 
+    maxlength: [200, 'Collector name cannot exceed 200 characters'],
+    default: 'N/A' // Default value for missing data
   },
   sampleType: { 
     type: String, 
-    required: [true, 'Sample type is required'], 
-    enum: { 
-      values: ['Serum', 'Whole Blood', 'Fecal Sample', 'Skin Scrape'], 
-      message: 'Invalid sample type. Must be one of: Serum, Whole Blood, Fecal Sample, Skin Scrape' 
-    } 
+    required: false, // Made optional for import flexibility
+    trim: true,
+    default: 'Blood' // Default value for missing data
   },
   sampleNumber: { 
     type: String, 
-    required: [true, 'Collector code is required'], 
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [20, 'Collector code cannot exceed 20 characters']
+    maxlength: [50, 'Collector code cannot exceed 50 characters'],
+    default: 'N/A' // Default value for missing data
   },
   positiveCases: { 
     type: Number, 
-    required: [true, 'Positive cases count is required'], 
+    required: false, // Made optional for import flexibility
     min: [0, 'Positive cases cannot be negative'], 
     default: 0 
   },
   negativeCases: { 
     type: Number, 
-    required: [true, 'Negative cases count is required'], 
+    required: false, // Made optional for import flexibility
     min: [0, 'Negative cases cannot be negative'], 
     default: 0 
   },
@@ -255,7 +258,7 @@ const laboratorySchema = new mongoose.Schema({
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
-    required: true 
+    required: false // Made optional for import flexibility
   },
   updatedBy: { 
     type: mongoose.Schema.Types.ObjectId, 

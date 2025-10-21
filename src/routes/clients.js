@@ -228,6 +228,8 @@ router.get('/',
           },
           {
             $project: {
+              // Keep _id field - IMPORTANT!
+              _id: 1,
               // Keep all original client fields
               name: 1,
               nationalId: 1,
@@ -586,7 +588,8 @@ router.get('/:id',
   asyncHandler(async (req, res) => {
     const client = await Client.findById(req.params.id)
       .populate('createdBy', 'name email role')
-      .populate('updatedBy', 'name email role');
+      .populate('updatedBy', 'name email role')
+      .populate('holdingCode', 'code village description isActive');
 
     if (!client) {
       return res.status(404).json({
@@ -600,6 +603,92 @@ router.get('/:id',
       success: true,
       data: { client }
     });
+  })
+);
+
+/**
+ * @swagger
+ * /api/clients/{id}/visits:
+ *   get:
+ *     summary: Get all visits for a specific client
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Client ID
+ *     responses:
+ *       200:
+ *         description: Client visits retrieved successfully
+ *       404:
+ *         description: Client not found
+ */
+router.get('/:id/visits',
+  auth,
+  asyncHandler(async (req, res) => {
+    const clientId = req.params.id;
+    
+    // Verify client exists
+    const client = await Client.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: 'Client not found',
+        error: 'CLIENT_NOT_FOUND'
+      });
+    }
+
+    try {
+      // Get all visits for this client from different collections
+      const [mobileClinic, vaccination, parasiteControl, equineHealth, laboratory] = await Promise.all([
+        // Mobile Clinic visits
+        require('../models/MobileClinic').find({ client: clientId })
+          .populate('client', 'name nationalId phone village')
+          .sort({ date: -1 }),
+        
+        // Vaccination visits
+        require('../models/Vaccination').find({ client: clientId })
+          .populate('client', 'name nationalId phone village')
+          .sort({ date: -1 }),
+        
+        // Parasite Control visits
+        require('../models/ParasiteControl').find({ client: clientId })
+          .populate('client', 'name nationalId phone village')
+          .sort({ date: -1 }),
+        
+        // Equine Health visits
+        require('../models/EquineHealth').find({ client: clientId })
+          .populate('client', 'name nationalId phone village')
+          .sort({ date: -1 }),
+        
+        // Laboratory visits
+        require('../models/Laboratory').find({ client: clientId })
+          .populate('client', 'name nationalId phone village')
+          .sort({ date: -1 })
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          mobileClinic: mobileClinic || [],
+          vaccination: vaccination || [],
+          parasiteControl: parasiteControl || [],
+          equineHealth: equineHealth || [],
+          laboratory: laboratory || []
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching client visits:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching client visits',
+        error: 'INTERNAL_SERVER_ERROR'
+      });
+    }
   })
 );
 

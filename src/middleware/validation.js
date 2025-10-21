@@ -112,25 +112,25 @@ const schemas = {
     notes: Joi.string().max(1000).optional()
   }),
 
-  // Parasite Control schemas
+  // Parasite Control schemas - Flexible for import
   parasiteControlCreate: Joi.object({
-    serialNo: Joi.string().max(20).required(),
-    date: Joi.date().max('now').optional(),
+    serialNo: Joi.string().max(50).optional(),
+    date: Joi.date().optional(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.object({
-        name: Joi.string().required(),
-        nationalId: Joi.string().required(),
+        name: Joi.string().optional(),
+        nationalId: Joi.string().optional(),
         phone: Joi.string().optional(),
         village: Joi.string().optional()
       }) // Client object for create/update
-    ).required(),
+    ).optional(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
-    supervisor: Joi.string().max(100).required(),
-    vehicleNo: Joi.string().max(20).required(),
+    supervisor: Joi.string().max(200).optional(),
+    vehicleNo: Joi.string().max(50).optional(),
     herdCounts: Joi.object({
       sheep: Joi.object({
         total: Joi.number().min(0).default(0),
@@ -162,47 +162,47 @@ const schemas = {
         female: Joi.number().min(0).default(0),
         treated: Joi.number().min(0).default(0)
       }).optional()
-    }).required(),
+    }).optional(),
     insecticide: Joi.object({
-      type: Joi.string().max(100).required(),
-      method: Joi.string().max(100).required(),
-      volumeMl: Joi.number().min(0).required(),
-      status: Joi.string().valid('Sprayed', 'Not Sprayed').required(),
-      category: Joi.string().max(50).required()
-    }).required(),
-    animalBarnSizeSqM: Joi.number().min(0).required(),
-    breedingSites: Joi.string().max(500).optional(),
+      type: Joi.string().max(200).optional(),
+      method: Joi.string().max(200).optional(),
+      volumeMl: Joi.number().min(0).optional(),
+      status: Joi.string().optional(), // Removed enum validation
+      category: Joi.string().max(100).optional()
+    }).optional(),
+    animalBarnSizeSqM: Joi.number().min(0).optional(),
+    breedingSites: Joi.string().max(1000).optional(),
     holdingCode: Joi.string().optional(),
-    herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'ٍSporadic Cases').required(),
-    complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').default('Comply'),
+    herdHealthStatus: Joi.string().optional(), // Removed enum validation
+    complyingToInstructions: Joi.string().optional(), // Removed enum validation
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Ongoing', 'Closed').required(),
+      situation: Joi.string().optional(), // Removed enum validation
       fulfillingDate: Joi.date().optional()
-    }).required(),
-    remarks: Joi.string().max(1000).optional()
+    }).optional(),
+    remarks: Joi.string().max(2000).optional()
   }),
 
-  // Vaccination schemas
+  // Vaccination schemas - Flexible for import
   vaccinationCreate: Joi.object({
-    serialNo: Joi.string().max(20).required(),
-    date: Joi.date().max('now').optional(),
+    serialNo: Joi.string().max(50).optional(),
+    date: Joi.date().optional(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.object({
-        _id: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
-        name: Joi.string().required(),
-        nationalId: Joi.string().required(),
+        _id: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(), // Make _id optional
+        name: Joi.string().optional(),
+        nationalId: Joi.string().optional(),
         phone: Joi.string().allow('').optional(),
         village: Joi.string().allow('').optional(),
         birthDate: Joi.date().optional()
-      }), // Full client object
+      }), // Client object for create/update
       Joi.string().valid('temp-client-id') // Temporary ID for client creation
-    ).required(),
+    ).optional(),
     clientData: Joi.object({
-      name: Joi.string().required(),
-      nationalId: Joi.string().required(),
-      phone: Joi.string().required(),
+      name: Joi.string().optional(),
+      nationalId: Joi.string().optional(),
+      phone: Joi.string().optional(),
       village: Joi.string().optional(),
       birthDate: Joi.date().optional()
     }).optional(),
@@ -210,9 +210,9 @@ const schemas = {
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
-    supervisor: Joi.string().max(100).required(),
-    vehicleNo: Joi.string().max(20).required(),
-    vaccineType: Joi.string().max(100).required(),
+    supervisor: Joi.string().max(200).optional(),
+    vehicleNo: Joi.string().max(50).optional(),
+    vaccineType: Joi.string().max(200).optional(),
     herdCounts: Joi.object({
       sheep: Joi.object({
         total: Joi.number().min(0).default(0),
@@ -244,28 +244,28 @@ const schemas = {
         female: Joi.number().min(0).default(0),
         vaccinated: Joi.number().min(0).default(0)
       }).optional()
-    }).required(),
-    herdHealth: Joi.string().valid('Healthy', 'Sick', 'Sporadic Cases').required(),
-    animalsHandling: Joi.string().valid('Easy', 'Difficult').required(),
-    labours: Joi.string().valid('Available', 'Not Available', 'Not Helpful').required(),
-    reachableLocation: Joi.string().valid('Easy', 'Hard to reach' , 'Moderate').required(),
+    }).optional(),
+    herdHealth: Joi.string().optional(), // Removed enum validation
+    animalsHandling: Joi.string().optional(), // Removed enum validation
+    labours: Joi.string().optional(), // Removed enum validation
+    reachableLocation: Joi.string().optional(), // Removed enum validation
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Ongoing', 'Closed').required(),
+      situation: Joi.string().optional(), // Removed enum validation
       fulfillingDate: Joi.date().optional()
-    }).required(),
-    remarks: Joi.string().max(1000).optional()
+    }).optional(),
+    remarks: Joi.string().max(2000).optional()
   }),
 
-  // Laboratory schemas - Updated to match table structure
+  // Laboratory schemas - Updated for flexible import (removed strict validations)
   laboratoryCreate: Joi.object({
-    serialNo: Joi.number().integer().min(0).required(),
-    date: Joi.date().max('now').optional(),
-    sampleCode: Joi.string().max(20).required(),
-    clientName: Joi.string().min(2).max(100).required(),
-    clientId: Joi.string().pattern(/^\d{9,10}$/).required(),
+    serialNo: Joi.number().integer().min(0).optional(),
+    date: Joi.date().optional(),
+    sampleCode: Joi.string().max(50).optional(),
+    clientName: Joi.string().max(200).optional(),
+    clientId: Joi.string().optional(), // Removed pattern validation
     clientBirthDate: Joi.date().optional(),
-    clientPhone: Joi.string().pattern(/^05\d{8}$/).required(),
+    clientPhone: Joi.string().optional(), // Removed pattern validation
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
@@ -276,43 +276,45 @@ const schemas = {
       camel: Joi.number().min(0).default(0),
       cattle: Joi.number().min(0).default(0),
       horse: Joi.number().min(0).default(0),
-      other: Joi.string().max(100).allow('').optional()
-    }).required(),
-    collector: Joi.string().max(100).required(),
-    sampleType: Joi.string().valid('Serum', 'Whole Blood', 'Fecal Sample', 'Skin Scrape').required(),
-    sampleNumber: Joi.string().max(20).required(),
+      other: Joi.string().max(200).allow('').optional()
+    }).optional(),
+    collector: Joi.string().max(200).optional(),
+    sampleType: Joi.string().optional(), // Removed enum validation
+    sampleNumber: Joi.string().max(50).optional(),
     positiveCases: Joi.number().min(0).default(0),
     negativeCases: Joi.number().min(0).default(0),
-    remarks: Joi.string().max(1000).optional()
+    remarks: Joi.string().max(2000).optional(),
+    holdingCode: Joi.string().optional(),
+    client: Joi.string().optional() // Allow client reference
   }),
 
-  // Mobile Clinic schemas
+  // Mobile Clinic schemas - Flexible for import
   mobileClinicCreate: Joi.object({
-    serialNo: Joi.string().max(20).required(),
-    date: Joi.date().max('now').optional(),
+    serialNo: Joi.string().max(50).optional(),
+    date: Joi.date().optional(),
     // Client data can be provided as flat fields or as client object
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.object({
-        name: Joi.string().required(),
-        nationalId: Joi.string().required(),
+        name: Joi.string().optional(),
+        nationalId: Joi.string().optional(),
         phone: Joi.string().allow('').optional(),
         village: Joi.string().allow('').optional(),
         birthDate: Joi.date().optional()
       }) // Client object for create/update
     ).optional(),
     // Flat client fields (alternative to client object)
-    clientName: Joi.string().min(2).max(100).optional(),
-    clientId: Joi.string().pattern(/^\d{9,10}$/).optional(),
-    clientPhone: Joi.string().pattern(/^05\d{8}$/).allow('').optional(),
+    clientName: Joi.string().max(200).optional(),
+    clientId: Joi.string().optional(), // Removed pattern validation
+    clientPhone: Joi.string().optional(), // Removed pattern validation
     clientBirthDate: Joi.date().optional(),
-    clientVillage: Joi.string().max(100).allow('').optional(),
+    clientVillage: Joi.string().max(200).allow('').optional(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
-    supervisor: Joi.string().max(100).required(),
-    vehicleNo: Joi.string().max(20).optional(),
+    supervisor: Joi.string().max(200).optional(),
+    vehicleNo: Joi.string().max(50).optional(),
     animalCounts: Joi.object({
       sheep: Joi.number().min(0).default(0),
       goats: Joi.number().min(0).default(0),
@@ -320,35 +322,24 @@ const schemas = {
       cattle: Joi.number().min(0).default(0),
       horse: Joi.number().min(0).default(0)
     }).optional(),
-    diagnosis: Joi.string().min(2).max(500).optional(),
-    interventionCategory: Joi.string().valid('Clinical Examination', 'Surgical Operation', 'Ultrasonography', 'Lab Analysis', 'Farriery').required(),
-    treatment: Joi.string().min(2).max(1000).optional(),
+    diagnosis: Joi.string().max(1000).optional(),
+    interventionCategory: Joi.string().optional(), // Removed enum validation
+    treatment: Joi.string().max(2000).optional(),
     medication: Joi.object({
-      name: Joi.string().max(100).optional(),
-      dosage: Joi.string().max(50).optional(),
+      name: Joi.string().max(200).optional(),
+      dosage: Joi.string().max(100).optional(),
       quantity: Joi.number().min(0).optional(),
-      administrationRoute: Joi.string().max(50).optional()
+      administrationRoute: Joi.string().max(100).optional()
     }).optional(),
     request: Joi.object({
       date: Joi.date().optional(),
-      situation: Joi.string().valid('Ongoing', 'Closed').optional(),
+      situation: Joi.string().optional(), // Removed enum validation
       fulfillingDate: Joi.date().optional()
     }).optional(),
     followUpRequired: Joi.boolean().default(false),
     followUpDate: Joi.date().allow(null).optional(),
-    remarks: Joi.string().max(1000).optional()
-  }).custom((value, helpers) => {
-    // Ensure either client object or flat client fields are provided
-    const hasClientObject = value.client;
-    const hasFlatClientFields = value.clientName && value.clientId;
-    
-    if (!hasClientObject && !hasFlatClientFields) {
-      return helpers.error('any.custom', {
-        message: 'Either client object or flat client fields (clientName, clientId) must be provided'
-      });
-    }
-    
-    return value;
+    remarks: Joi.string().max(2000).optional(),
+    holdingCode: Joi.string().optional()
   }),
 
   mobileClinicUpdate: Joi.object({
@@ -489,61 +480,62 @@ const schemas = {
     isActive: Joi.boolean().optional()
   }),
 
-  // Equine Health schemas
+  // Equine Health schemas - Flexible for import
   equineHealthCreate: Joi.object({
-    serialNo: Joi.string().max(20).optional(),
-    date: Joi.date().max('now').optional(),
+    serialNo: Joi.string().max(50).optional(),
+    date: Joi.date().optional(),
     client: Joi.object({
-      name: Joi.string().min(2).max(100).required(),
-      nationalId: Joi.string().pattern(/^\d{10,14}$/).required(),
+      name: Joi.string().max(200).optional(),
+      nationalId: Joi.string().optional(), // Removed pattern validation
       birthDate: Joi.date().optional(),
-      phone: Joi.string().pattern(/^(\+966|0)?[5][0-9]{8}$/).required(),
-      village: Joi.string().min(2).max(100).required(),
-    }).required(),
+      phone: Joi.string().optional(), // Removed pattern validation
+      village: Joi.string().max(200).optional(),
+    }).optional(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
-    supervisor: Joi.string().min(2).max(100).required(),
-    vehicleNo: Joi.string().min(1).max(20).required(),
-    horseCount: Joi.number().integer().min(1).required(),
+    supervisor: Joi.string().max(200).optional(),
+    vehicleNo: Joi.string().max(50).optional(),
+    horseCount: Joi.number().integer().min(0).optional(),
     horseDetails: Joi.array().items(
       Joi.object({
-        id: Joi.string().max(20).required(),
-        breed: Joi.string().max(50).required(),
-        age: Joi.number().integer().min(0).max(50).required(),
-        gender: Joi.string().valid('ذكر', 'أنثى', 'مخصي').required(),
-        color: Joi.string().max(30).required(),
-        healthStatus: Joi.string().valid('سليم', 'مريض', 'تحت العلاج', 'متعافي').required(),
-        weight: Joi.number().min(0).max(2000).optional(),
-        temperature: Joi.number().min(35).max(45).optional(),
-        heartRate: Joi.number().min(20).max(100).optional(),
-        respiratoryRate: Joi.number().min(5).max(50).optional()
+        id: Joi.string().max(50).optional(),
+        breed: Joi.string().max(100).optional(),
+        age: Joi.number().integer().min(0).max(100).optional(),
+        gender: Joi.string().optional(), // Removed enum validation
+        color: Joi.string().max(100).optional(),
+        healthStatus: Joi.string().optional(), // Removed enum validation
+        weight: Joi.number().min(0).max(5000).optional(),
+        temperature: Joi.number().min(30).max(50).optional(),
+        heartRate: Joi.number().min(10).max(200).optional(),
+        respiratoryRate: Joi.number().min(1).max(100).optional()
       })
     ).optional(),
-    diagnosis: Joi.string().min(2).max(500).required(),
-    interventionCategory: Joi.string().valid('Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery').required(),
-    treatment: Joi.string().min(2).max(1000).required(),
+    diagnosis: Joi.string().max(1000).optional(),
+    interventionCategory: Joi.string().optional(), // Removed enum validation
+    treatment: Joi.string().max(2000).optional(),
     medicationsUsed: Joi.array().items(
       Joi.object({
-        name: Joi.string().max(100).required(),
-        dosage: Joi.string().max(50).optional(),
+        name: Joi.string().max(200).optional(),
+        dosage: Joi.string().max(100).optional(),
         quantity: Joi.number().min(0).optional(),
-        route: Joi.string().max(50).optional(),
-        frequency: Joi.string().max(50).optional(),
-        duration: Joi.string().max(50).optional()
+        route: Joi.string().max(100).optional(),
+        frequency: Joi.string().max(100).optional(),
+        duration: Joi.string().max(100).optional()
       })
     ).optional(),
     request: Joi.object({
-      date: Joi.date().required(),
-      situation: Joi.string().valid('Ongoing', 'Closed').required(),
+      date: Joi.date().optional(),
+      situation: Joi.string().optional(), // Removed enum validation
       fulfillingDate: Joi.date().optional()
-    }).required(),
+    }).optional(),
     followUpRequired: Joi.boolean().default(false),
     followUpDate: Joi.date().optional(),
-    vaccinationStatus: Joi.string().valid('Up to date', 'Overdue', 'Not applicable', 'Partial').optional(),
-    dewormingStatus: Joi.string().valid('Recent', 'Overdue', 'Not applicable').optional(),
-    remarks: Joi.string().max(1000).optional()
+    vaccinationStatus: Joi.string().optional(), // Removed enum validation
+    dewormingStatus: Joi.string().optional(), // Removed enum validation
+    remarks: Joi.string().max(2000).optional(),
+    holdingCode: Joi.string().optional()
   }),
 
   // Bulk delete schema - accepts serial numbers instead of ObjectIds

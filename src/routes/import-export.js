@@ -1733,7 +1733,7 @@ const processVaccinationRow = async (row, userId, errors) => {
         {
           'available': 'Available', 'متوفر': 'Available',
           'not available': 'Not Available', 'غير متوفر': 'Not Available',
-          'unavailable': 'Not Available', 'avaialable': 'Not Available'
+          'unavailable': 'Not Available', 'avaialable': 'Not Available' , 'not helpful': 'Not Helpful'
         },
         'Available'
       ),
@@ -1747,7 +1747,7 @@ const processVaccinationRow = async (row, userId, errors) => {
         },
         'Easy'
       ),
-      holdingCode: await processHoldingCodeReference(row),
+      holdingCode: await processHoldingCodeReference(row, userId),
       request: processRequest(row, dates),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row)
@@ -1852,7 +1852,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
         },
         'Comply'
       ),
-      holdingCode: await processHoldingCodeReference(row),
+      holdingCode: await processHoldingCodeReference(row, userId),
       request: processRequest(row, dates),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row),
@@ -1974,9 +1974,94 @@ const getFieldValue = (row, fieldNames) => {
 };
 
 /**
- * Process holding code reference - find HoldingCode by code and return ObjectId
+ * Smart holding code processor - finds existing or creates new holding code
+ * This is the same logic as in dromo-import.js
  */
-const processHoldingCodeReference = async (row) => {
+const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, userId) => {
+  try {
+    if (!holdingCodeValue || !village) {
+      console.log('⚠️ No holding code or village provided, skipping holding code creation');
+      return null;
+    }
+
+    // First, try to find existing holding code by code
+    let holdingCode = await HoldingCode.findOne({ 
+      code: holdingCodeValue.toString().trim(),
+      isActive: true 
+    });
+
+    if (holdingCode) {
+      console.log(`✅ Found existing holding code: ${holdingCode.code} for village: ${holdingCode.village}`);
+      return holdingCode._id;
+    }
+
+    // If not found by code, try to find by village (since village should be unique)
+    holdingCode = await HoldingCode.findOne({ 
+      village: village.toString().trim(),
+      isActive: true 
+    });
+
+    if (holdingCode) {
+      console.log(`✅ Found existing holding code by village: ${holdingCode.code} for village: ${holdingCode.village}`);
+      return holdingCode._id;
+    }
+
+    // If no holding code exists, create a new one
+    console.log(`🔄 Creating new holding code: ${holdingCodeValue} for village: ${village}`);
+    
+    const newHoldingCode = new HoldingCode({
+      code: holdingCodeValue.toString().trim(),
+      village: village.toString().trim(),
+      description: `Auto-created during import for village ${village}`,
+      isActive: true,
+      createdBy: userId
+    });
+
+    await newHoldingCode.save();
+    console.log(`✅ Created new holding code: ${newHoldingCode.code} (ID: ${newHoldingCode._id})`);
+    return newHoldingCode._id;
+
+  } catch (error) {
+    console.error('❌ Error in findOrCreateHoldingCodeImportExport:', error);
+    
+    // If it's a duplicate error, try to find the existing one
+    if (error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
+      console.log('🔄 Duplicate detected, trying to find existing holding code...');
+      
+      // Try to find by code first
+      let existingCode = await HoldingCode.findOne({ 
+        code: holdingCodeValue.toString().trim(),
+        isActive: true 
+      });
+      
+      if (existingCode) {
+        console.log(`✅ Found existing holding code after duplicate error: ${existingCode.code}`);
+        return existingCode._id;
+      }
+      
+      // Try to find by village
+      existingCode = await HoldingCode.findOne({ 
+        village: village.toString().trim(),
+        isActive: true 
+      });
+      
+      if (existingCode) {
+        console.log(`✅ Found existing holding code by village after duplicate error: ${existingCode.code}`);
+        return existingCode._id;
+      }
+    }
+    
+    // If all fails, return null and continue without holding code
+    console.warn(`⚠️ Could not create or find holding code ${holdingCodeValue} for village ${village}, continuing without it`);
+    return null;
+  }
+};
+
+/**
+ * Process holding code reference - find HoldingCode by code and return ObjectId
+ * Enhanced to create holding codes if they don't exist
+ */
+const processHoldingCodeReference = async (row, userId = null) => {
   try {
     const holdingCodeValue = getFieldValue(row, [
       'Holding Code', 'holdingCode', 'holding_code', 'Code','Holding Code',
@@ -1987,9 +2072,23 @@ const processHoldingCodeReference = async (row) => {
       return null;
     }
     
-    // Find holding code by code field
+    // Get village information for smart holding code creation
+    const village = getFieldValue(row, [
+      'Location', 'location', 'Village', 'village', 'clientVillage',
+      'Farm Location', 'farmLocation', 'address',
+      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان'
+    ]);
+    
+    // Use smart holding code creation if we have userId and village
+    if (userId && village) {
+      console.log(`🔄 Using smart holding code processing for: ${holdingCodeValue} in village: ${village}`);
+      return await findOrCreateHoldingCodeImportExport(holdingCodeValue, village, userId);
+    }
+    
+    // Fallback to old logic (find only) if no userId or village
     const holdingCode = await HoldingCode.findOne({ 
-      code: holdingCodeValue.trim() 
+      code: holdingCodeValue.trim(),
+      isActive: true 
     });
     
     if (holdingCode) {
@@ -2042,6 +2141,19 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
       'العنوان', 'العنوان التفصيلي'
     ]);
     
+    // Get holding code information
+    const holdingCodeValue = getFieldValue(row, [
+      'Holding Code', 'holdingCode', 'holding_code', 'Code','Holding Code',
+      'رمز الحيازة', 'الرمز'
+    ]);
+    
+    // Process holding code intelligently
+    let holdingCodeId = null;
+    if (holdingCodeValue && clientVillage && userId) {
+      console.log(`🔄 Processing holding code for client: ${holdingCodeValue} in village: ${clientVillage}`);
+      holdingCodeId = await findOrCreateHoldingCodeImportExport(holdingCodeValue, clientVillage, userId);
+    }
+    
     // For Laboratory and EquineHealth that store client as embedded data
     if (options.returnAsObject) {
       return {
@@ -2080,6 +2192,7 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
           village: clientVillage || '',
           detailedAddress: clientAddress || clientVillage || '',
           birthDate: parseBirthDate(row),
+          holdingCode: holdingCodeId, // Use ObjectId or null
           status: 'نشط',
           animals: [],
           availableServices: [],
@@ -2088,7 +2201,7 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
         
         await newClient.save();
         client = newClient;
-        console.log(`✅ Created new client: ${client.name}`);
+        console.log(`✅ Created new client: ${client.name} with holding code: ${holdingCodeId || 'none'}`);
       } catch (saveError) {
         // If duplicate key error, try to find existing client again
         if (saveError.code === 11000 && saveError.keyPattern && saveError.keyPattern.nationalId) {
@@ -2102,6 +2215,17 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
         } else {
           throw saveError;
         }
+      }
+    }
+    
+    // Update existing client with holding code if provided and not already set
+    if (client && holdingCodeId && !client.holdingCode) {
+      try {
+        client.holdingCode = holdingCodeId;
+        await client.save();
+        console.log(`✅ Updated existing client ${client.name} with holding code: ${holdingCodeId}`);
+      } catch (updateError) {
+        console.warn(`⚠️ Could not update client ${client.name} with holding code: ${updateError.message}`);
       }
     }
     
@@ -2502,12 +2626,9 @@ const processLaboratoryRow = async (row, userId, errors) => {
     const coordinates = processUnifiedCoordinatesEnhanced(row);
     const speciesCounts = processSpeciesCounts(row);
     
-    // For Laboratory, we allow "غير محدد" as a valid name since it stores client data directly
-    // Just ensure we have the basic required fields
-    if (!clientData.nationalId || !clientData.phone) {
-      console.error('❌ Missing required client data');
-      throw new Error(`Missing required client data: ID=${clientData.nationalId}, Phone=${clientData.phone}`);
-    }
+    // For Laboratory, we allow any client data since validation is now flexible
+    // No strict validation - accept whatever data is provided
+    console.log('✅ Laboratory accepts flexible client data for import');
     
     console.log(`✅ Laboratory client data processed: Name="${clientData.name}", ID="${clientData.nationalId}", Phone="${clientData.phone}"`);
     
@@ -2525,7 +2646,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       clientName: clientData.name || 'غير محدد',
       clientId: clientData.nationalId,
       clientBirthDate: clientData.birthDate,
-      clientPhone: clientData.phone,
+      clientPhone: clientData.phone || 'N/A', // Default if missing
       farmLocation: getFieldValue(row, [
         'farmLocation', 'Location', 'location', 'Farm Location',
         'الموقع', 'موقع المزرعة'
@@ -2539,7 +2660,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       sampleType: getFieldValue(row, [
         'sampleType', 'Sample Type', 'Type', 'sample_type',
         'نوع العينة', 'نوع'
-      ]) || 'Blood',
+      ]) || 'Blood', // Accept any value, default to Blood
       sampleNumber: getFieldValue(row, [
         'sampleNumber', 'Sample Number', 'Samples Number', 'sample_number',
         'رقم العينة', 'عدد العينات'
@@ -2556,7 +2677,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'testResults', 'Test Results', 'test_results', 'results',
         'النتائج', 'نتائج الفحص'
       ]), []),
-      holdingCode: await processHoldingCodeReference(row),
+      holdingCode: await processHoldingCodeReference(row, userId),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row),
       createdBy: userId

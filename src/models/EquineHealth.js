@@ -109,116 +109,127 @@ const { populate } = require('./Client');
 const horseDetailSchema = new mongoose.Schema({
   id: {
     type: String,
-    required: [true, 'Horse ID is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [20, 'Horse ID cannot exceed 20 characters']
+    maxlength: [50, 'Horse ID cannot exceed 50 characters'],
+    default: 'N/A' // Default value for missing data
   },
   breed: {
     type: String,
-    required: [true, 'Horse breed is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [50, 'Breed cannot exceed 50 characters']
+    maxlength: [100, 'Breed cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data
   },
   age: {
     type: Number,
-    required: [true, 'Horse age is required'],
+    required: false, // Made optional for import flexibility
     min: [0, 'Age cannot be negative'],
-    max: [50, 'Age seems unrealistic for a horse']
+    max: [100, 'Age limit increased for flexibility'],
+    default: 0 // Default value for missing data
   },
   gender: {
     type: String,
-    required: [true, 'Gender is required'],
-    enum: {
-      values: ['ذكر', 'أنثى', 'مخصي'],
-      message: 'Gender must be one of: ذكر, أنثى, مخصي'
-    }
+    required: false, // Made optional for import flexibility
+    trim: true,
+    maxlength: [50, 'Gender cannot exceed 50 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   color: {
     type: String,
-    required: [true, 'Horse color is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [30, 'Color description cannot exceed 30 characters']
+    maxlength: [100, 'Color description cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data
   },
   healthStatus: {
     type: String,
-    required: [true, 'Health status is required'],
-    enum: {
-      values: ['سليم', 'مريض', 'تحت العلاج', 'متعافي'],
-      message: 'Health status must be one of: سليم, مريض, تحت العلاج, متعافي'
-    }
+    required: false, // Made optional for import flexibility
+    trim: true,
+    maxlength: [100, 'Health status cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   weight: {
     type: Number,
     min: [0, 'Weight cannot be negative'],
-    max: [2000, 'Weight seems unrealistic']
+    max: [5000, 'Weight limit increased for flexibility'],
+    default: 0 // Default value for missing data
   },
   temperature: {
     type: Number,
-    min: [35, 'Temperature seems too low'],
-    max: [45, 'Temperature seems too high']
+    min: [30, 'Temperature range expanded'],
+    max: [50, 'Temperature range expanded'],
+    default: 0 // Default value for missing data
   },
   heartRate: {
     type: Number,
-    min: [20, 'Heart rate seems too low'],
-    max: [100, 'Heart rate seems too high']
+    min: [10, 'Heart rate range expanded'],
+    max: [200, 'Heart rate range expanded'],
+    default: 0 // Default value for missing data
   },
   respiratoryRate: {
     type: Number,
-    min: [5, 'Respiratory rate seems too low'],
-    max: [50, 'Respiratory rate seems too high']
+    min: [1, 'Respiratory rate range expanded'],
+    max: [100, 'Respiratory rate range expanded'],
+    default: 0 // Default value for missing data
   }
 }, { _id: false });
 
 const medicationSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Medication name is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [100, 'Medication name cannot exceed 100 characters']
+    maxlength: [200, 'Medication name cannot exceed 200 characters'],
+    default: 'N/A' // Default value for missing data
   },
   dosage: {
     type: String,
-    required: [true, 'Dosage is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [50, 'Dosage cannot exceed 50 characters']
+    maxlength: [100, 'Dosage cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data
   },
   quantity: {
     type: Number,
-    required: [true, 'Quantity is required'],
-    min: [0, 'Quantity cannot be negative']
+    required: false, // Made optional for import flexibility
+    min: [0, 'Quantity cannot be negative'],
+    default: 0 // Default value for missing data
   },
   route: {
     type: String,
-    required: [true, 'Administration route is required'],
-    enum: {
-      values: ['Oral', 'Injection', 'Topical', 'Intravenous', 'Intramuscular', 'Subcutaneous'],
-      message: 'Invalid administration route'
-    }
+    required: false, // Made optional for import flexibility
+    trim: true,
+    maxlength: [100, 'Administration route cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   frequency: {
     type: String,
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [50, 'Frequency cannot exceed 50 characters']
+    maxlength: [100, 'Frequency cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data
   },
   duration: {
     type: String,
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [50, 'Duration cannot exceed 50 characters']
+    maxlength: [100, 'Duration cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data
   }
 }, { _id: false });
 
 const requestSchema = new mongoose.Schema({
   date: {
     type: Date,
-    required: [true, 'Request date is required']
+    required: false // Made optional for import flexibility
   },
   situation: {
     type: String,
-    required: [true, 'Request situation is required'],
-    enum: {
-      values: ['Ongoing', 'Closed'],
-      message: 'Situation must be one of: Ongoing, Closed'
-    }
+    required: false, // Made optional for import flexibility
+    trim: true,
+    maxlength: [100, 'Situation cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   fulfillingDate: {
     type: Date
@@ -235,15 +246,16 @@ const generateSerialNo = () => {
 const equineHealthSchema = new mongoose.Schema({
   serialNo: {
     type: String,
-    required: [true, 'Serial number is required'],
-    unique: true,
+    required: false, // Made optional for import flexibility
+    unique: false, // Removed unique constraint for import flexibility
     trim: true,
-    maxlength: [20, 'Serial number cannot exceed 20 characters'],
+    maxlength: [50, 'Serial number cannot exceed 50 characters'],
     default: generateSerialNo
   },
   date: {
     type: Date,
-    required: [true, 'Date is required']
+    required: false, // Made optional for import flexibility
+    default: Date.now // Default to current date if missing
   },
   holdingCode: {
     type: mongoose.Schema.Types.ObjectId,
@@ -252,30 +264,34 @@ const equineHealthSchema = new mongoose.Schema({
   client: {
     name: {
       type: String,
-      required: [true, 'Client name is required'],
+      required: false, // Made optional for import flexibility
       trim: true,
-      maxlength: [100, 'Client name cannot exceed 100 characters']
+      maxlength: [200, 'Client name cannot exceed 200 characters'],
+      default: 'غير محدد' // Default value for missing data
     },
     nationalId: {
       type: String,
-      required: [true, 'Client national ID is required'],
+      required: false, // Made optional for import flexibility
       trim: true,
-      match: [/^\d{10,14}$/, 'National ID must be between 10-14 digits']
+      maxlength: [20, 'National ID cannot exceed 20 characters'],
+      default: 'N/A' // Default value for missing data - removed pattern validation
     },
     birthDate: {
       type: Date
     },
     phone: {
       type: String,
-      required: [true, 'Client phone is required'],
+      required: false, // Made optional for import flexibility
       trim: true,
-      match: [/^(\+966|0)?[5][0-9]{8}$/, 'Invalid Saudi phone number format']
+      maxlength: [20, 'Phone cannot exceed 20 characters'],
+      default: 'N/A' // Default value for missing data - removed pattern validation
     },
     village: {
       type: String,
-      required: [true, 'Client village is required'],
+      required: false, // Made optional for import flexibility
       trim: true,
-      maxlength: [100, 'Village name cannot exceed 100 characters']
+      maxlength: [200, 'Village name cannot exceed 200 characters'],
+      default: 'N/A' // Default value for missing data
     },
   },
   coordinates: {
@@ -292,78 +308,76 @@ const equineHealthSchema = new mongoose.Schema({
   },
   supervisor: {
     type: String,
-    required: [true, 'Supervisor is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [100, 'Supervisor name cannot exceed 100 characters']
+    maxlength: [200, 'Supervisor name cannot exceed 200 characters'],
+    default: 'N/A' // Default value for missing data
   },
   vehicleNo: {
     type: String,
-    required: [true, 'Vehicle number is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [20, 'Vehicle number cannot exceed 20 characters']
+    maxlength: [50, 'Vehicle number cannot exceed 50 characters'],
+    default: 'N/A' // Default value for missing data
   },
   horseCount: {
     type: Number,
-    required: [true, 'Horse count is required'],
-    min: [1, 'Horse count must be at least 1']
+    required: false, // Made optional for import flexibility
+    min: [0, 'Horse count cannot be negative'],
+    default: 0 // Default value for missing data
   },
   horseDetails: [horseDetailSchema],
   diagnosis: {
     type: String,
-    required: [true, 'Diagnosis is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [500, 'Diagnosis cannot exceed 500 characters']
+    maxlength: [1000, 'Diagnosis cannot exceed 1000 characters'],
+    default: 'N/A' // Default value for missing data
   },
   interventionCategory: {
     type: String,
-    required: [true, 'Intervention category is required'],
-    enum: {
-      values: ['Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery'],
-      message: 'Intervention category must be one of: Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery'
-    }
+    required: false, // Made optional for import flexibility
+    trim: true,
+    maxlength: [200, 'Intervention category cannot exceed 200 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   treatment: {
     type: String,
-    required: [true, 'Treatment is required'],
+    required: false, // Made optional for import flexibility
     trim: true,
-    maxlength: [1000, 'Treatment description cannot exceed 1000 characters']
+    maxlength: [2000, 'Treatment description cannot exceed 2000 characters'],
+    default: 'N/A' // Default value for missing data
   },
   medicationsUsed: [medicationSchema],
   request: {
     type: requestSchema,
-    required: [true, 'Request information is required']
+    required: false // Made optional for import flexibility
   },
   followUpRequired: {
     type: Boolean,
     default: false
   },
   followUpDate: {
-    type: Date,
-    validate: {
-      validator: function(date) {
-        return !date || date > this.date;
-      },
-      message: 'Follow-up date must be after visit date'
-    }
+    type: Date
+    // Removed validation for import flexibility
   },
   vaccinationStatus: {
     type: String,
-    enum: {
-      values: ['Up to date', 'Overdue', 'Not applicable', 'Partial'],
-      message: 'Invalid vaccination status'
-    }
+    trim: true,
+    maxlength: [100, 'Vaccination status cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   dewormingStatus: {
     type: String,
-    enum: {
-      values: ['Recent', 'Overdue', 'Not applicable'],
-      message: 'Invalid deworming status'
-    }
+    trim: true,
+    maxlength: [100, 'Deworming status cannot exceed 100 characters'],
+    default: 'N/A' // Default value for missing data - removed enum validation
   },
   remarks: {
     type: String,
     trim: true,
-    maxlength: [1000, 'Remarks cannot exceed 1000 characters']
+    maxlength: [2000, 'Remarks cannot exceed 2000 characters'],
+    default: '' // Default value for missing data
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
