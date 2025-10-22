@@ -17,6 +17,7 @@ const MobileClinic = require('../models/MobileClinic');
 const Laboratory = require('../models/Laboratory');
 const EquineHealth = require('../models/EquineHealth');
 const HoldingCode = require('../models/HoldingCode');
+const Village = require('../models/Village');
 
 const router = express.Router();
 
@@ -1926,6 +1927,7 @@ const processMobileClinicRow = async (row, userId, errors) => {
         false
       ),
       followUpDate: dates.followUpDate,
+      holdingCode: await processHoldingCodeReference(row, userId),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
       customImportData: processCustomImportData(row),
       createdBy: userId
@@ -1975,7 +1977,7 @@ const getFieldValue = (row, fieldNames) => {
 
 /**
  * Smart holding code processor - finds existing or creates new holding code
- * This is the same logic as in dromo-import.js
+ * Enhanced to handle duplicate codes across different villages
  */
 const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, userId) => {
   try {
@@ -1984,9 +1986,12 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
       return null;
     }
 
+    const codeValue = holdingCodeValue.toString().trim();
+    const villageValue = village.toString().trim();
+
     // First, try to find existing holding code by code
     let holdingCode = await HoldingCode.findOne({ 
-      code: holdingCodeValue.toString().trim(),
+      code: codeValue,
       isActive: true 
     });
 
@@ -1997,7 +2002,7 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
 
     // If not found by code, try to find by village (since village should be unique)
     holdingCode = await HoldingCode.findOne({ 
-      village: village.toString().trim(),
+      village: villageValue,
       isActive: true 
     });
 
@@ -2006,13 +2011,26 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
       return holdingCode._id;
     }
 
+    // Check if the same code exists for a different village
+    const existingCodeForDifferentVillage = await HoldingCode.findOne({ 
+      code: codeValue,
+      village: { $ne: villageValue },
+      isActive: true 
+    });
+
+    if (existingCodeForDifferentVillage) {
+      console.log(`⚠️ Code ${codeValue} already exists for village ${existingCodeForDifferentVillage.village}, cannot create for ${villageValue}`);
+      console.log(`🔄 Using existing holding code: ${existingCodeForDifferentVillage.code} for village: ${existingCodeForDifferentVillage.village}`);
+      return existingCodeForDifferentVillage._id;
+    }
+
     // If no holding code exists, create a new one
-    console.log(`🔄 Creating new holding code: ${holdingCodeValue} for village: ${village}`);
+    console.log(`🔄 Creating new holding code: ${codeValue} for village: ${villageValue}`);
     
     const newHoldingCode = new HoldingCode({
-      code: holdingCodeValue.toString().trim(),
-      village: village.toString().trim(),
-      description: `Auto-created during import for village ${village}`,
+      code: codeValue,
+      village: villageValue,
+      description: `Auto-created during import for village ${villageValue}`,
       isActive: true,
       createdBy: userId
     });
@@ -2025,7 +2043,7 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
     console.error('❌ Error in findOrCreateHoldingCodeImportExport:', error);
     
     // If it's a duplicate error, try to find the existing one
-    if (error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
+    if (error.code === 11000 || error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
       console.log('🔄 Duplicate detected, trying to find existing holding code...');
       
       // Try to find by code first
@@ -2058,6 +2076,47 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
 };
 
 /**
+ * Find or create village by name
+ */
+const findOrCreateVillage = async (villageName, userId) => {
+  try {
+    if (!villageName || villageName.trim() === '') {
+      return null;
+    }
+
+    // First try to find by exact name match
+    let village = await Village.findOne({
+      $or: [
+        { nameArabic: villageName.trim() },
+        { nameEnglish: villageName.trim() }
+      ]
+    });
+
+    if (village) {
+      console.log(`✅ Found existing village: ${village.nameArabic} (${village.nameEnglish})`);
+      return village._id;
+    }
+
+    // If not found, create a new village
+    console.log(`🔄 Creating new village: ${villageName}`);
+    const newVillage = new Village({
+      serialNumber: `AUTO${Date.now().toString().slice(-6)}`, // Auto-generated serial
+      sector: 'Unknown Sector', // Default sector
+      nameArabic: villageName.trim(),
+      nameEnglish: villageName.trim(), // Use same name for English
+      createdBy: userId
+    });
+
+    await newVillage.save();
+    console.log(`✅ Created new village: ${newVillage.nameArabic} with ID: ${newVillage._id}`);
+    return newVillage._id;
+  } catch (error) {
+    console.error('Error finding/creating village:', error);
+    return null;
+  }
+};
+
+/**
  * Process holding code reference - find HoldingCode by code and return ObjectId
  * Enhanced to create holding codes if they don't exist
  */
@@ -2076,7 +2135,7 @@ const processHoldingCodeReference = async (row, userId = null) => {
     const village = getFieldValue(row, [
       'Location', 'location', 'Village', 'village', 'clientVillage',
       'Farm Location', 'farmLocation', 'address',
-      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان'
+      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان', 'herd location' , 'Herd Location'
     ]);
     
     // Use smart holding code creation if we have userId and village
@@ -2133,7 +2192,7 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
     const clientVillage = getFieldValue(row, [
       'Location', 'location', 'Village', 'village', 'clientVillage',
       'Farm Location', 'farmLocation', 'address',
-      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان'
+      'القرية', 'الموقع', 'موقع المزرعة', 'العنوان', 'Herd Location'
     ]);
     
     const clientAddress = getFieldValue(row, [
@@ -2146,6 +2205,13 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
       'Holding Code', 'holdingCode', 'holding_code', 'Code','Holding Code',
       'رمز الحيازة', 'الرمز'
     ]);
+    
+    // Process village intelligently
+    let villageId = null;
+    if (clientVillage && userId) {
+      console.log(`🔄 Processing village: ${clientVillage}`);
+      villageId = await findOrCreateVillage(clientVillage, userId);
+    }
     
     // Process holding code intelligently
     let holdingCodeId = null;
@@ -2189,7 +2255,7 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
           name: clientName || 'غير محدد',
           nationalId: clientId || generateValidNationalId(),
           phone: clientPhone || generateDefaultPhone(),
-          village: clientVillage || '',
+          village: villageId, // Use village ObjectId instead of string
           detailedAddress: clientAddress || clientVillage || '',
           birthDate: parseBirthDate(row),
           holdingCode: holdingCodeId, // Use ObjectId or null

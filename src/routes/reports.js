@@ -10,14 +10,254 @@ const { asyncHandler } = require('../middleware/errorHandler');
 
 const router = express.Router();
 
+// Helper function to get client statistics
+async function getClientStatistics() {
+  const totalClients = await Client.countDocuments();
+  const activeClients = await Client.countDocuments({ isActive: true });
+  
+  // Get total animals from all client records
+  const clientStats = await Client.aggregate([
+    {
+      $group: {
+        _id: null,
+        totalAnimals: { $sum: '$totalAnimals' }
+      }
+    }
+  ]);
+  
+  return {
+    totalClients,
+    activeClients,
+    totalAnimals: clientStats[0]?.totalAnimals || 0
+  };
+}
+
+// Helper function to get recent activities
+async function getRecentActivities(limit = 5) {
+  const activities = [];
+  
+  // Get recent vaccination records
+  const recentVaccinations = await Vaccination.find()
+    .populate('client', 'name village')
+    .sort({ createdAt: -1 })
+    .limit(limit);
+  
+  recentVaccinations.forEach(record => {
+    activities.push({
+      id: record._id,
+      type: 'vaccination',
+      description: `تم تحصين ${record.totalVaccinated} حيوان لـ ${record.client?.name || 'عميل'}`,
+      date: record.date,
+      status: 'completed'
+    });
+  });
+  
+  return activities.slice(0, limit);
+}
+
+// Helper function to get detailed vaccination statistics
+async function getVaccinationDetailedStats(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: null,
+        uniqueOwners: { $addToSet: '$client' },
+        uniqueVillages: { $addToSet: '$client' },
+        uniqueHerds: { $sum: 1 },
+        totalVaccinatedAnimals: {
+          $sum: {
+            $add: [
+              '$herdCounts.sheep.vaccinated',
+              '$herdCounts.goats.vaccinated',
+              '$herdCounts.camel.vaccinated',
+              '$herdCounts.cattle.vaccinated',
+              '$herdCounts.horse.vaccinated'
+            ]
+          }
+        }
+      }
+    }
+  ];
+  
+  const result = await Vaccination.aggregate(pipeline);
+  const stats = result[0] || {};
+  
+  // Get unique villages by aggregating client data
+  const villageStats = await Vaccination.aggregate([
+    { $match: filters },
+    { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'clientData' } },
+    { $unwind: '$clientData' },
+    { $group: { _id: '$clientData.village' } },
+    { $count: 'uniqueVillages' }
+  ]);
+  
+  return {
+    servedOwners: stats.uniqueOwners?.length || 0,
+    visitedVillages: villageStats[0]?.uniqueVillages || 0,
+    visitedHerds: stats.uniqueHerds || 0,
+    vaccinatedAnimals: stats.totalVaccinatedAnimals || 0,
+    uniqueHerds: stats.uniqueHerds || 0
+  };
+}
+
+// Helper function to get detailed parasite control statistics
+async function getParasiteControlDetailedStats(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: null,
+        uniqueOwners: { $addToSet: '$client' },
+        uniqueHerds: { $sum: 1 },
+        totalTreatedAnimals: {
+          $sum: {
+            $add: [
+              '$herdCounts.sheep.treated',
+              '$herdCounts.goats.treated',
+              '$herdCounts.camel.treated',
+              '$herdCounts.cattle.treated',
+              '$herdCounts.horse.treated'
+            ]
+          }
+        }
+      }
+    }
+  ];
+  
+  const result = await ParasiteControl.aggregate(pipeline);
+  const stats = result[0] || {};
+  
+  // Get unique villages
+  const villageStats = await ParasiteControl.aggregate([
+    { $match: filters },
+    { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'clientData' } },
+    { $unwind: '$clientData' },
+    { $group: { _id: '$clientData.village' } },
+    { $count: 'uniqueVillages' }
+  ]);
+  
+  return {
+    servedOwners: stats.uniqueOwners?.length || 0,
+    visitedVillages: villageStats[0]?.uniqueVillages || 0,
+    visitedHerds: stats.uniqueHerds || 0,
+    treatedAnimals: stats.totalTreatedAnimals || 0,
+    uniqueHerds: stats.uniqueHerds || 0
+  };
+}
+
+// Helper function to get detailed mobile clinic statistics
+async function getMobileClinicDetailedStats(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: null,
+        uniqueOwners: { $addToSet: '$client' },
+        uniqueHerds: { $sum: 1 },
+        totalAnimals: {
+          $sum: {
+            $add: [
+              '$animalCounts.sheep',
+              '$animalCounts.goats',
+              '$animalCounts.camel',
+              '$animalCounts.cattle',
+              '$animalCounts.horse'
+            ]
+          }
+        }
+      }
+    }
+  ];
+  
+  const result = await MobileClinic.aggregate(pipeline);
+  const stats = result[0] || {};
+  
+  // Get unique villages
+  const villageStats = await MobileClinic.aggregate([
+    { $match: filters },
+    { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'clientData' } },
+    { $unwind: '$clientData' },
+    { $group: { _id: '$clientData.village' } },
+    { $count: 'uniqueVillages' }
+  ]);
+  
+  return {
+    servedOwners: stats.uniqueOwners?.length || 0,
+    visitedVillages: villageStats[0]?.uniqueVillages || 0,
+    visitedHerds: stats.uniqueHerds || 0,
+    treatedAnimals: stats.totalAnimals || 0,
+    uniqueHerds: stats.uniqueHerds || 0
+  };
+}
+
+// Helper function to get detailed laboratory statistics
+async function getLaboratoryDetailedStats(filters = {}) {
+  const pipeline = [
+    { $match: filters },
+    {
+      $group: {
+        _id: null,
+        uniqueOwners: { $addToSet: '$client' },
+        uniqueHerds: { $sum: 1 },
+        totalSamples: { $sum: { $add: ['$positiveCases', '$negativeCases'] } },
+        totalAnimals: {
+          $sum: {
+            $add: [
+              '$speciesCounts.sheep',
+              '$speciesCounts.goats',
+              '$speciesCounts.camel',
+              '$speciesCounts.cattle',
+              '$speciesCounts.horse'
+            ]
+          }
+        }
+      }
+    }
+  ];
+  
+  const result = await Laboratory.aggregate(pipeline);
+  const stats = result[0] || {};
+  
+  // Get unique villages
+  const villageStats = await Laboratory.aggregate([
+    { $match: filters },
+    { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'clientData' } },
+    { $unwind: '$clientData' },
+    { $group: { _id: '$clientData.village' } },
+    { $count: 'uniqueVillages' }
+  ]);
+  
+  return {
+    servedOwners: stats.uniqueOwners?.length || 0,
+    visitedVillages: villageStats[0]?.uniqueVillages || 0,
+    sampledHerds: stats.uniqueHerds || 0,
+    testedAnimals: stats.totalSamples || 0,
+    uniqueHerds: stats.uniqueHerds || 0
+  };
+}
+
 /**
  * @swagger
  * /api/reports/dashboard:
  *   get:
- *     summary: Get dashboard statistics
+ *     summary: Get comprehensive dashboard statistics
  *     tags: [Reports]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
  *     responses:
  *       200:
  *         description: Dashboard statistics retrieved successfully
@@ -35,7 +275,7 @@ router.get('/dashboard',
       };
     }
 
-    // Get statistics from all modules
+    // Get comprehensive statistics from all modules
     const [
       parasiteControlStats,
       vaccinationStats,
@@ -52,8 +292,35 @@ router.get('/dashboard',
       getClientStatistics()
     ]);
 
+    // Get detailed stats for each category
+    const [
+      vaccinationDetailedStats,
+      parasiteControlDetailedStats,
+      mobileClinicDetailedStats,
+      laboratoryDetailedStats
+    ] = await Promise.all([
+      getVaccinationDetailedStats(dateFilter),
+      getParasiteControlDetailedStats(dateFilter),
+      getMobileClinicDetailedStats(dateFilter),
+      getLaboratoryDetailedStats(dateFilter)
+    ]);
+
     // Recent activities
     const recentActivities = await getRecentActivities(5);
+
+    // Calculate comparative stats
+    const comparativeStats = {
+      servedHerds: {
+        vaccinated: vaccinationDetailedStats.uniqueHerds,
+        treated: mobileClinicDetailedStats.uniqueHerds,
+        sprayed: parasiteControlDetailedStats.uniqueHerds
+      },
+      servedAnimals: {
+        vaccination: vaccinationStats.totalVaccinated || 0,
+        treatment: mobileClinicStats.totalAnimals || 0,
+        parasiteControl: parasiteControlStats.totalTreated || 0
+      }
+    };
 
     const dashboardData = {
       overview: {
@@ -66,12 +333,25 @@ router.get('/dashboard',
                      equineHealthStats.totalRecords + 
                      laboratoryStats.totalRecords
       },
-      parasiteControl: parasiteControlStats,
-      vaccination: vaccinationStats,
-      mobileClinic: mobileClinicStats,
+      vaccination: {
+        ...vaccinationStats,
+        ...vaccinationDetailedStats
+      },
+      parasiteControl: {
+        ...parasiteControlStats,
+        ...parasiteControlDetailedStats
+      },
+      mobileClinic: {
+        ...mobileClinicStats,
+        ...mobileClinicDetailedStats
+      },
+      laboratory: {
+        ...laboratoryStats,
+        ...laboratoryDetailedStats
+      },
       equineHealth: equineHealthStats,
-      laboratory: laboratoryStats,
       clients: clientStats,
+      comparativeStats,
       recentActivities
     };
 

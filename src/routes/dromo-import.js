@@ -15,6 +15,7 @@ const router = express.Router();
 
 /**
  * Smart holding code handler - finds existing or creates new holding code
+ * Enhanced to handle duplicate codes across different villages
  */
 const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
   try {
@@ -23,9 +24,12 @@ const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
       return null;
     }
 
+    const codeValue = holdingCodeValue.toString().trim();
+    const villageValue = village.toString().trim();
+
     // First, try to find existing holding code by code
     let holdingCode = await HoldingCode.findOne({ 
-      code: holdingCodeValue.toString().trim(),
+      code: codeValue,
       isActive: true 
     });
 
@@ -36,7 +40,7 @@ const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
 
     // If not found by code, try to find by village (since village should be unique)
     holdingCode = await HoldingCode.findOne({ 
-      village: village.toString().trim(),
+      village: villageValue,
       isActive: true 
     });
 
@@ -45,13 +49,26 @@ const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
       return holdingCode._id;
     }
 
+    // Check if the same code exists for a different village
+    const existingCodeForDifferentVillage = await HoldingCode.findOne({ 
+      code: codeValue,
+      village: { $ne: villageValue },
+      isActive: true 
+    });
+
+    if (existingCodeForDifferentVillage) {
+      console.log(`⚠️ Code ${codeValue} already exists for village ${existingCodeForDifferentVillage.village}, cannot create for ${villageValue}`);
+      console.log(`🔄 Using existing holding code: ${existingCodeForDifferentVillage.code} for village: ${existingCodeForDifferentVillage.village}`);
+      return existingCodeForDifferentVillage._id;
+    }
+
     // If no holding code exists, create a new one
-    console.log(`🔄 Creating new holding code: ${holdingCodeValue} for village: ${village}`);
+    console.log(`🔄 Creating new holding code: ${codeValue} for village: ${villageValue}`);
     
     const newHoldingCode = new HoldingCode({
-      code: holdingCodeValue.toString().trim(),
-      village: village.toString().trim(),
-      description: `Auto-created during import for village ${village}`,
+      code: codeValue,
+      village: villageValue,
+      description: `Auto-created during import for village ${villageValue}`,
       isActive: true,
       createdBy: userId
     });
@@ -64,7 +81,7 @@ const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
     console.error('❌ Error in findOrCreateHoldingCode:', error);
     
     // If it's a duplicate error, try to find the existing one
-    if (error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
+    if (error.code === 11000 || error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
       console.log('🔄 Duplicate detected, trying to find existing holding code...');
       
       // Try to find by code first
@@ -105,14 +122,43 @@ const createSimpleClient = async (clientData, userId) => {
     const name = clientData.name || `مربي ${clientData.farmLocation || clientData.serialNo || 'غير محدد'}`;
     const nationalId = clientData.nationalId || `${Date.now()}`.substring(0, 10).padStart(10, '1');
     const phone = clientData.phone || `5${Math.floor(Math.random() * 100000000)}`.substring(0, 9);
-    const village = clientData.village || clientData.farmLocation || 'غير محدد';
+    const villageName = clientData.village || clientData.farmLocation || 'غير محدد';
     const detailedAddress = clientData.detailedAddress || clientData.farmLocation || 'غير محدد';
+    
+    // Handle village intelligently
+    let villageId = null;
+    if (villageName && villageName !== 'غير محدد') {
+      console.log(`🔄 Processing village: ${villageName}`);
+      // Import Village model
+      const Village = require('../models/Village');
+      
+      // Find or create village
+      let village = await Village.findOne({
+        $or: [
+          { nameArabic: villageName.trim() },
+          { nameEnglish: villageName.trim() }
+        ]
+      });
+
+      if (!village) {
+        console.log(`🔄 Creating new village: ${villageName}`);
+        village = new Village({
+          serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+          sector: 'Unknown Sector',
+          nameArabic: villageName.trim(),
+          nameEnglish: villageName.trim(),
+          createdBy: userId
+        });
+        await village.save();
+      }
+      villageId = village._id;
+    }
     
     // Handle holding code intelligently
     let holdingCodeId = null;
     if (clientData.holdingCode && clientData.holdingCode.trim() !== '') {
-      console.log(`🔄 Processing holding code: ${clientData.holdingCode} for village: ${village}`);
-      holdingCodeId = await findOrCreateHoldingCode(clientData.holdingCode, village, userId);
+      console.log(`🔄 Processing holding code: ${clientData.holdingCode} for village: ${villageName}`);
+      holdingCodeId = await findOrCreateHoldingCode(clientData.holdingCode, villageName, userId);
     }
     
     // Try to find existing client first
@@ -120,8 +166,7 @@ const createSimpleClient = async (clientData, userId) => {
       $or: [
         { name: name },
         { nationalId: nationalId },
-        { phone: phone },
-        { village: village }
+        { phone: phone }
       ]
     });
     
@@ -131,7 +176,7 @@ const createSimpleClient = async (clientData, userId) => {
         nationalId: nationalId,
         phone: phone,
         birthDate: clientData.birthDate || null,
-        village: village,
+        village: villageId, // Use village ObjectId instead of string
         detailedAddress: detailedAddress,
         holdingCode: holdingCodeId, // Use ObjectId or null
         status: 'نشط',

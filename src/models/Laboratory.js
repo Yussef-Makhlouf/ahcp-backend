@@ -133,9 +133,12 @@ const laboratorySchema = new mongoose.Schema({
     required: [true, 'Date is required']
     // Removed future date validation to allow flexible date entry
   },
-  holdingCode: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'HoldingCode'
+  farmLocation: { 
+    type: String, 
+    required: false, 
+    trim: true, 
+    maxlength: [200, 'Farm location cannot exceed 200 characters'],
+    default: 'غير محدد' 
   },
   sampleCode: { 
     type: String, 

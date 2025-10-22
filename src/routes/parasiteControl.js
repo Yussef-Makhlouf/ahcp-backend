@@ -126,20 +126,23 @@ router.get('/',
       records = await ParasiteControl.find(filter)
         .populate({
           path: 'client',
-          select: 'name nationalId phone village detailedAddress birthDate holdingCode',
+          select: 'name nationalId phone village detailedAddress birthDate',
           populate: {
-            path: 'holdingCode',
-            select: 'code village description isActive'
+            path: 'village',
+            select: 'nameArabic nameEnglish sector serialNumber'
           }
         })
+        .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
         .lean(); // Use lean() for better performance and avoid virtual issues
     } catch (populateError) {
       console.error('Populate error, falling back to basic query:', populateError);
-      // Fallback without populate if there's an issue
+      // Fallback with basic populate if there's an issue
       records = await ParasiteControl.find(filter)
+        .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ date: -1 })
@@ -147,6 +150,17 @@ router.get('/',
     }
 
     const total = await ParasiteControl.countDocuments(filter);
+
+    // Debug logging for holding code (can be removed in production)
+    // if (records.length > 0) {
+    //   console.log('🔍 API Debug - First record holding code:', {
+    //     recordId: records[0]._id,
+    //     serialNo: records[0].serialNo,
+    //     holdingCode: records[0].holdingCode,
+    //     holdingCodeType: typeof records[0].holdingCode,
+    //     hasHoldingCode: !!records[0].holdingCode
+    //   });
+    // }
 
     res.json({
       success: true,
@@ -217,6 +231,166 @@ router.get('/statistics',
         recordsThisMonth: 0,
         totalAnimalsProcessed: 0,
         totalVolumeUsed: 0
+      };
+      
+      res.json({
+        success: true,
+        data: defaultStats
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/parasite-control/detailed-statistics:
+ *   get:
+ *     summary: Get detailed parasite control statistics for charts
+ *     tags: [Parasite Control]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
+ *     responses:
+ *       200:
+ *         description: Detailed statistics retrieved successfully
+ */
+router.get('/detailed-statistics',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    try {
+      // Get treatment type statistics
+      const treatmentStats = await ParasiteControl.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            sprayedAnimals: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$insecticide.status', 'Sprayed'] },
+                  {
+                    $add: [
+                      '$herdCounts.sheep.treated',
+                      '$herdCounts.goats.treated',
+                      '$herdCounts.camel.treated',
+                      '$herdCounts.cattle.treated',
+                      '$herdCounts.horse.treated'
+                    ]
+                  },
+                  0
+                ]
+              }
+            },
+            sprayedBarns: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$insecticide.status', 'Sprayed'] },
+                  1,
+                  0
+                ]
+              }
+            },
+            pourOnAnimals: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$insecticide.method', 'Pour on'] },
+                  {
+                    $add: [
+                      '$herdCounts.sheep.treated',
+                      '$herdCounts.goats.treated',
+                      '$herdCounts.camel.treated',
+                      '$herdCounts.cattle.treated',
+                      '$herdCounts.horse.treated'
+                    ]
+                  },
+                  0
+                ]
+              }
+            },
+            oralDrenching: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$insecticide.method', 'Oral Drenching'] },
+                  {
+                    $add: [
+                      '$herdCounts.sheep.treated',
+                      '$herdCounts.goats.treated',
+                      '$herdCounts.camel.treated',
+                      '$herdCounts.cattle.treated',
+                      '$herdCounts.horse.treated'
+                    ]
+                  },
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]);
+
+      // Get species statistics
+      const speciesStats = await ParasiteControl.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            sheepTreated: { $sum: '$herdCounts.sheep.treated' },
+            goatsTreated: { $sum: '$herdCounts.goats.treated' },
+            cattleTreated: { $sum: '$herdCounts.cattle.treated' },
+            camelTreated: { $sum: '$herdCounts.camel.treated' },
+            horseTreated: { $sum: '$herdCounts.horse.treated' }
+          }
+        }
+      ]);
+
+      const treatmentData = treatmentStats[0] || {};
+      const speciesData = speciesStats[0] || {};
+
+      const detailedStats = {
+        ...treatmentData,
+        ...speciesData
+      };
+      
+      res.json({
+        success: true,
+        data: detailedStats
+      });
+    } catch (error) {
+      console.error('Error getting detailed parasite control statistics:', error);
+      
+      // Return default detailed statistics if method fails
+      const defaultStats = {
+        sprayedAnimals: 0,
+        sprayedBarns: 0,
+        pourOnAnimals: 0,
+        oralDrenching: 0,
+        sheepTreated: 0,
+        goatsTreated: 0,
+        cattleTreated: 0,
+        camelTreated: 0,
+        horseTreated: 0
       };
       
       res.json({
@@ -468,6 +642,7 @@ router.post('/',
           nationalId: req.body.client.nationalId || `AUTO_${Date.now()}`,
           phone: req.body.client.phone || '',
           village: req.body.client.village || '',
+          
           detailedAddress: req.body.client.detailedAddress || '',
           status: 'نشط',
           animals: [],
@@ -520,6 +695,9 @@ router.post('/',
       }
     }
     console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
+    console.log('🔍 Holding code type:', typeof req.body.holdingCode);
+    const mongoose = require('mongoose');
+    console.log('🔍 Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
 
     const record = new ParasiteControl({
       ...req.body,
@@ -529,7 +707,14 @@ router.post('/',
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate({
+      path: 'client',
+      select: 'name nationalId phone village detailedAddress',
+      populate: {
+        path: 'village',
+        select: 'nameArabic nameEnglish sector serialNumber'
+      }
+    });
     await record.populate('holdingCode', 'code village description isActive');
 
     res.status(201).json({
@@ -635,11 +820,35 @@ router.put('/:id',
       
       // If not found, create new client
       if (!client) {
+        // Handle village - find or create village if provided
+        let villageId = null;
+        if (req.body.client.village && req.body.client.village.trim() !== '') {
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: req.body.client.village.trim() },
+              { nameEnglish: req.body.client.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: req.body.client.village.trim(),
+              nameEnglish: req.body.client.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          villageId = village._id;
+        }
+
         client = new Client({
           name: req.body.client.name,
           nationalId: req.body.client.nationalId || `AUTO_${Date.now()}`,
           phone: req.body.client.phone || '',
-          village: req.body.client.village || '',
+          village: villageId, // Use village ObjectId instead of string
           detailedAddress: req.body.client.detailedAddress || '',
           status: 'نشط',
           animals: [],
@@ -695,13 +904,23 @@ router.put('/:id',
       }
     }
     console.log('🔍 PUT - Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
+    console.log('🔍 PUT - Holding code type:', typeof req.body.holdingCode);
+    const mongoose = require('mongoose');
+    console.log('🔍 PUT - Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
     updateData.holdingCode = holdingCodeId;
 
     // Update record
     Object.assign(record, updateData);
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate({
+      path: 'client',
+      select: 'name nationalId phone village detailedAddress',
+      populate: {
+        path: 'village',
+        select: 'nameArabic nameEnglish sector serialNumber'
+      }
+    });
     await record.populate('holdingCode', 'code village description isActive');
 
     res.json({

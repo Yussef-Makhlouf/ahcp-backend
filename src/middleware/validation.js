@@ -172,7 +172,6 @@ const schemas = {
     }).optional(),
     animalBarnSizeSqM: Joi.number().min(0).optional(),
     breedingSites: Joi.string().max(1000).optional(),
-    holdingCode: Joi.string().optional(),
     herdHealthStatus: Joi.string().optional(), // Removed enum validation
     complyingToInstructions: Joi.string().optional(), // Removed enum validation
     request: Joi.object({
@@ -284,7 +283,6 @@ const schemas = {
     positiveCases: Joi.number().min(0).default(0),
     negativeCases: Joi.number().min(0).default(0),
     remarks: Joi.string().max(2000).optional(),
-    holdingCode: Joi.string().optional(),
     client: Joi.string().optional() // Allow client reference
   }),
 
@@ -444,7 +442,6 @@ const schemas = {
     }).optional(),
     animalBarnSizeSqM: Joi.number().min(0).optional(),
     breedingSites: Joi.string().max(500).optional(),
-    holdingCode: Joi.string().optional(),
     herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'Sporadic Cases').optional(),
     complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').optional(),
     request: Joi.object({

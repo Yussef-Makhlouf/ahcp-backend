@@ -96,7 +96,14 @@ router.get('/',
     let records;
     try {
       records = await Vaccination.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate({
+          path: 'client',
+          select: 'name nationalId phone village detailedAddress birthDate',
+          populate: {
+            path: 'village',
+            select: 'nameArabic nameEnglish sector serialNumber'
+          }
+        })
         .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
@@ -214,6 +221,137 @@ router.get('/statistics',
       res.json({
         success: true,
         data: basicStats
+      });
+    }
+  })
+);
+
+/**
+ * @swagger
+ * /api/vaccination/detailed-statistics:
+ *   get:
+ *     summary: Get detailed vaccination statistics for dashboard
+ *     tags: [Vaccination]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter
+ *     responses:
+ *       200:
+ *         description: Detailed statistics retrieved successfully
+ */
+router.get('/detailed-statistics',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { startDate, endDate } = req.query;
+    
+    const filter = {};
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    try {
+      // Get all vaccination records with herd counts
+      const records = await Vaccination.find(filter)
+        .select('herdCounts vaccineType')
+        .lean();
+
+      // Initialize counters
+      let pprVaccinated = 0;
+      let fmdVaccinated = 0;
+      let etVaccinated = 0;
+      let hsVaccinated = 0;
+      let sgPoxVaccinated = 0;
+      let sheepVaccinated = 0;
+      let goatsVaccinated = 0;
+      let cattleVaccinated = 0;
+      let camelVaccinated = 0;
+
+      // Process each record
+      records.forEach(record => {
+        const herdCounts = record.herdCounts || {};
+        
+        // Count by vaccine type - more comprehensive matching
+        const vaccineType = (record.vaccineType || '').toLowerCase();
+        
+        // PPR Vaccine (Peste des Petits Ruminants)
+        if (vaccineType.includes('ppr') || vaccineType.includes('peste') || vaccineType.includes('petits') || vaccineType.includes('ruminants')) {
+          pprVaccinated += (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0);
+        }
+        // FMD Vaccine (Foot and Mouth Disease)
+        else if (vaccineType.includes('fmd') || vaccineType.includes('foot') || vaccineType.includes('mouth') || vaccineType.includes('حمى') || vaccineType.includes('قلاعية')) {
+          fmdVaccinated += (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0) + 
+                          (herdCounts.cattle?.vaccinated || 0) + (herdCounts.camel?.vaccinated || 0);
+        }
+        // ET Vaccine (Enterotoxemia)
+        else if (vaccineType.includes('et') || vaccineType.includes('enterotoxemia') || vaccineType.includes('enterotoxaemia')) {
+          etVaccinated += (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0);
+        }
+        // HS Vaccine (Hemorrhagic Septicemia)
+        else if (vaccineType.includes('hs') || vaccineType.includes('hemorrhagic') || vaccineType.includes('septicemia') || vaccineType.includes('septicaemia')) {
+          hsVaccinated += (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0);
+        }
+        // SG Pox Vaccine (Sheep and Goat Pox)
+        else if (vaccineType.includes('sg') || vaccineType.includes('pox') || vaccineType.includes('جدري') || vaccineType.includes('sheep') || vaccineType.includes('goat')) {
+          sgPoxVaccinated += (herdCounts.sheep?.vaccinated || 0) + (herdCounts.goats?.vaccinated || 0);
+        }
+
+        // Count by species (regardless of vaccine type)
+        sheepVaccinated += herdCounts.sheep?.vaccinated || 0;
+        goatsVaccinated += herdCounts.goats?.vaccinated || 0;
+        cattleVaccinated += herdCounts.cattle?.vaccinated || 0;
+        camelVaccinated += herdCounts.camel?.vaccinated || 0;
+      });
+
+      const detailedStats = {
+        pprVaccinated,
+        fmdVaccinated,
+        etVaccinated,
+        hsVaccinated,
+        sgPoxVaccinated,
+        sheepVaccinated,
+        goatsVaccinated,
+        cattleVaccinated,
+        camelVaccinated
+      };
+      
+      res.json({
+        success: true,
+        data: detailedStats
+      });
+    } catch (error) {
+      console.error('Error getting detailed vaccination statistics:', error);
+      
+      // Return default values if aggregation fails
+      const defaultStats = {
+        pprVaccinated: 0,
+        fmdVaccinated: 0,
+        etVaccinated: 0,
+        hsVaccinated: 0,
+        sgPoxVaccinated: 0,
+        sheepVaccinated: 0,
+        goatsVaccinated: 0,
+        cattleVaccinated: 0,
+        camelVaccinated: 0
+      };
+      
+      res.json({
+        success: true,
+        data: defaultStats
       });
     }
   })
@@ -376,7 +514,14 @@ router.get('/:id',
   auth,
   asyncHandler(async (req, res) => {
     const record = await Vaccination.findById(req.params.id)
-      .populate('client', 'name nationalId phone village detailedAddress')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress',
+        populate: {
+          path: 'village',
+          select: 'nameArabic nameEnglish sector serialNumber'
+        }
+      })
       .populate('holdingCode', 'code village description isActive')
       // .populate('createdBy', 'name email role')
       // .populate('updatedBy', 'name email role');
@@ -444,12 +589,36 @@ router.post('/',
       let client = await Client.findOne({ nationalId: clientData.nationalId });
       
       if (!client) {
+        // Find or create village
+        let villageId = null;
+        if (clientData.village && clientData.village.trim() !== '') {
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          villageId = village._id;
+        }
+
         // Create new client
         client = new Client({
           name: clientData.name,
           nationalId: clientData.nationalId,
           phone: clientData.phone,
-          village: clientData.village || '',
+          village: villageId, // Use village ObjectId instead of string
           detailedAddress: clientData.detailedAddress || '',
           birthDate: clientData.birthDate || undefined,
           status: 'نشط',
@@ -461,7 +630,28 @@ router.post('/',
         // Update existing client with new data if provided
         if (clientData.name) client.name = clientData.name;
         if (clientData.phone) client.phone = clientData.phone;
-        if (clientData.village) client.village = clientData.village;
+        if (clientData.village) {
+          // Find or create village
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          client.village = village._id;
+        }
         if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
         if (clientData.birthDate) client.birthDate = clientData.birthDate;
         
@@ -498,7 +688,28 @@ router.post('/',
         // Update existing client with new data if provided
         if (clientData.name) client.name = clientData.name;
         if (clientData.phone) client.phone = clientData.phone;
-        if (clientData.village) client.village = clientData.village;
+        if (clientData.village) {
+          // Find or create village
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          client.village = village._id;
+        }
         if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
         if (clientData.birthDate) client.birthDate = clientData.birthDate;
         
@@ -512,16 +723,44 @@ router.post('/',
       clientId = client._id;
     }
 
+    // Process holding code if provided
+    let holdingCodeId = null;
+    if (req.body.holdingCode && req.body.holdingCode.trim() !== '') {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(req.body.holdingCode)) {
+        holdingCodeId = req.body.holdingCode;
+      } else {
+        // If it's a code string, find the holding code by code
+        const HoldingCode = require('../models/HoldingCode');
+        const holdingCode = await HoldingCode.findOne({ code: req.body.holdingCode.trim() });
+        if (holdingCode) {
+          holdingCodeId = holdingCode._id;
+        }
+      }
+    }
+    console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
+    console.log('🔍 Holding code type:', typeof req.body.holdingCode);
+    const mongoose = require('mongoose');
+    console.log('🔍 Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
+
     const record = new Vaccination({
       ...req.body,
       client: clientId,
+      holdingCode: holdingCodeId,
       // createdBy: req.user._id,
       // Remove clientData from the record
       clientData: undefined
     });
 
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate({
+      path: 'client',
+      select: 'name nationalId phone village detailedAddress',
+      populate: {
+        path: 'village',
+        select: 'nameArabic nameEnglish sector serialNumber'
+      }
+    });
     await record.populate('holdingCode', 'code village description isActive');
 
     res.status(201).json({
@@ -612,12 +851,36 @@ router.put('/:id',
       let client = await Client.findOne({ nationalId: clientData.nationalId });
       
       if (!client) {
+        // Find or create village
+        let villageId = null;
+        if (clientData.village && clientData.village.trim() !== '') {
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          villageId = village._id;
+        }
+
         // Create new client
         client = new Client({
           name: clientData.name,
           nationalId: clientData.nationalId,
           phone: clientData.phone,
-          village: clientData.village || '',
+          village: villageId, // Use village ObjectId instead of string
           detailedAddress: clientData.detailedAddress || '',
           birthDate: clientData.birthDate || undefined,
           status: 'نشط',
@@ -629,7 +892,28 @@ router.put('/:id',
         // Update existing client with new data if provided
         if (clientData.name) client.name = clientData.name;
         if (clientData.phone) client.phone = clientData.phone;
-        if (clientData.village) client.village = clientData.village;
+        if (clientData.village) {
+          // Find or create village
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          client.village = village._id;
+        }
         if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
         if (clientData.birthDate) client.birthDate = clientData.birthDate;
         
@@ -666,7 +950,28 @@ router.put('/:id',
         // Update existing client with new data if provided
         if (clientData.name) client.name = clientData.name;
         if (clientData.phone) client.phone = clientData.phone;
-        if (clientData.village) client.village = clientData.village;
+        if (clientData.village) {
+          // Find or create village
+          const Village = require('../models/Village');
+          let village = await Village.findOne({
+            $or: [
+              { nameArabic: clientData.village.trim() },
+              { nameEnglish: clientData.village.trim() }
+            ]
+          });
+
+          if (!village) {
+            village = new Village({
+              serialNumber: `AUTO${Date.now().toString().slice(-6)}`,
+              sector: 'Unknown Sector',
+              nameArabic: clientData.village.trim(),
+              nameEnglish: clientData.village.trim(),
+              createdBy: req.user._id
+            });
+            await village.save();
+          }
+          client.village = village._id;
+        }
         if (clientData.detailedAddress) client.detailedAddress = clientData.detailedAddress;
         if (clientData.birthDate) client.birthDate = clientData.birthDate;
         
@@ -680,15 +985,40 @@ router.put('/:id',
       clientId = client._id;
     }
 
+    // Process holding code if provided
+    let holdingCodeId = null;
+    if (req.body.holdingCode && req.body.holdingCode.trim() !== '') {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(req.body.holdingCode)) {
+        holdingCodeId = req.body.holdingCode;
+      } else {
+        // If it's a code string, find the holding code by code
+        const HoldingCode = require('../models/HoldingCode');
+        const holdingCode = await HoldingCode.findOne({ code: req.body.holdingCode.trim() });
+        if (holdingCode) {
+          holdingCodeId = holdingCode._id;
+        }
+      }
+    }
+    console.log('🔍 Holding code processing (update):', req.body.holdingCode, '→', holdingCodeId);
+
     // Update record
     Object.assign(record, {
       ...req.body,
       client: clientId,
+      holdingCode: holdingCodeId,
       clientData: undefined // Remove clientData from the record
     });
     record.updatedBy = req.user._id;
     await record.save();
-    await record.populate('client', 'name nationalId phone village detailedAddress');
+    await record.populate({
+      path: 'client',
+      select: 'name nationalId phone village detailedAddress',
+      populate: {
+        path: 'village',
+        select: 'nameArabic nameEnglish sector serialNumber'
+      }
+    });
     await record.populate('holdingCode', 'code village description isActive');
 
     res.json({

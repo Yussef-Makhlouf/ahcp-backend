@@ -77,7 +77,14 @@ router.get('/',
     let records;
     try {
       records = await MobileClinic.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress birthDate')
+        .populate({
+          path: 'client',
+          select: 'name nationalId phone village detailedAddress birthDate',
+          populate: {
+            path: 'village',
+            select: 'nameArabic nameEnglish sector serialNumber'
+          }
+        })
         .populate('holdingCode', 'code village description isActive')
         .skip(skip)
         .limit(parseInt(limit))
@@ -283,7 +290,6 @@ router.post('/',
 
         // Additional information
         remarks: req.body.remarks,
-        holdingCode: req.body.holdingCode,
         createdBy: req.user._id
       };
 
@@ -300,11 +306,34 @@ router.post('/',
         mobileClinicData.clientDetailedAddress = req.body.clientDetailedAddress;
       }
 
+      // Process holding code if provided
+      let holdingCodeId = null;
+      if (req.body.holdingCode && req.body.holdingCode.trim() !== '') {
+        const mongoose = require('mongoose');
+        if (mongoose.Types.ObjectId.isValid(req.body.holdingCode)) {
+          holdingCodeId = req.body.holdingCode;
+        } else {
+          // If it's a code string, find the holding code by code
+          const HoldingCode = require('../models/HoldingCode');
+          const holdingCode = await HoldingCode.findOne({ code: req.body.holdingCode.trim() });
+          if (holdingCode) {
+            holdingCodeId = holdingCode._id;
+          }
+        }
+      }
+      console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
+      
+      // Add holding code to mobile clinic data
+      mobileClinicData.holdingCode = holdingCodeId;
+
       console.log('💾 Saving mobile clinic data:', mobileClinicData);
 
       // Create the mobile clinic record
       const mobileClinic = new MobileClinic(mobileClinicData);
       const savedRecord = await mobileClinic.save();
+
+      // Populate holding code for proper display
+      await savedRecord.populate('holdingCode', 'code village description isActive');
 
       console.log('✅ Mobile clinic record created successfully:', savedRecord._id);
 
@@ -436,11 +465,43 @@ router.get('/statistics',
         interventionCategory: 'Emergency'
       });
 
+      // إحصائيات فئات التدخل
+      const interventionStats = await MobileClinic.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: '$interventionCategory',
+            count: { $sum: 1 },
+            totalAnimals: {
+              $sum: {
+                $add: [
+                  { $ifNull: ['$animalCounts.sheep', 0] },
+                  { $ifNull: ['$animalCounts.goats', 0] },
+                  { $ifNull: ['$animalCounts.camel', 0] },
+                  { $ifNull: ['$animalCounts.horse', 0] },
+                  { $ifNull: ['$animalCounts.cattle', 0] }
+                ]
+              }
+            }
+          }
+        },
+        { $sort: { count: -1 } }
+      ]);
+
+      // تحويل إحصائيات فئات التدخل إلى تنسيق مناسب للرسم البياني
+      const interventionBreakdown = interventionStats.map(stat => ({
+        category: stat._id,
+        count: stat.count,
+        totalAnimals: stat.totalAnimals,
+        percentage: totalRecords > 0 ? Math.round((stat.count / totalRecords) * 100) : 0
+      }));
+
       const statistics = {
         totalRecords,
         recordsThisMonth,
         totalAnimalsExamined,
-        emergencyCases
+        emergencyCases,
+        interventionBreakdown
       };
 
       res.json({
@@ -1161,10 +1222,29 @@ router.put('/:id',
 
         // Additional information
         remarks: req.body.remarks,
-        holdingCode: req.body.holdingCode,
         updatedBy: req.user._id,
         updatedAt: new Date()
       };
+
+      // Process holding code if provided
+      let holdingCodeId = null;
+      if (req.body.holdingCode && req.body.holdingCode.trim() !== '') {
+        const mongoose = require('mongoose');
+        if (mongoose.Types.ObjectId.isValid(req.body.holdingCode)) {
+          holdingCodeId = req.body.holdingCode;
+        } else {
+          // If it's a code string, find the holding code by code
+          const HoldingCode = require('../models/HoldingCode');
+          const holdingCode = await HoldingCode.findOne({ code: req.body.holdingCode.trim() });
+          if (holdingCode) {
+            holdingCodeId = holdingCode._id;
+          }
+        }
+      }
+      console.log('🔍 Holding code processing (update):', req.body.holdingCode, '→', holdingCodeId);
+      
+      // Add holding code to update data
+      updateData.holdingCode = holdingCodeId;
 
       // Add client reference or flat client data
       if (clientData && clientData._id) {

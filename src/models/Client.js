@@ -183,9 +183,9 @@ const clientSchema = new mongoose.Schema({
     sparse: true // Allow multiple documents with null email
   },
   village: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'Village name cannot exceed 100 characters']
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Village',
+    sparse: true // Allow multiple documents with null village
   },
   holdingCode: {
     type: mongoose.Schema.Types.ObjectId,

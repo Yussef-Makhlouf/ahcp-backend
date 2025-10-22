@@ -129,8 +129,8 @@ const requestSchema = new mongoose.Schema({
   situation: {
     type: String,
     enum: {
-      values: ['Open', 'Closed'],
-      message: 'Situation must be one of: Open, Closed'
+      values: ['Ongoing', 'Closed'],
+      message: 'Situation must be one of: Ongoing, Closed'
     }
   },
   fulfillingDate: {
