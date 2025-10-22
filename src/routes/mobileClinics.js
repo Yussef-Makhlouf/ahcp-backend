@@ -465,43 +465,11 @@ router.get('/statistics',
         interventionCategory: 'Emergency'
       });
 
-      // إحصائيات فئات التدخل
-      const interventionStats = await MobileClinic.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: '$interventionCategory',
-            count: { $sum: 1 },
-            totalAnimals: {
-              $sum: {
-                $add: [
-                  { $ifNull: ['$animalCounts.sheep', 0] },
-                  { $ifNull: ['$animalCounts.goats', 0] },
-                  { $ifNull: ['$animalCounts.camel', 0] },
-                  { $ifNull: ['$animalCounts.horse', 0] },
-                  { $ifNull: ['$animalCounts.cattle', 0] }
-                ]
-              }
-            }
-          }
-        },
-        { $sort: { count: -1 } }
-      ]);
-
-      // تحويل إحصائيات فئات التدخل إلى تنسيق مناسب للرسم البياني
-      const interventionBreakdown = interventionStats.map(stat => ({
-        category: stat._id,
-        count: stat.count,
-        totalAnimals: stat.totalAnimals,
-        percentage: totalRecords > 0 ? Math.round((stat.count / totalRecords) * 100) : 0
-      }));
-
       const statistics = {
         totalRecords,
         recordsThisMonth,
         totalAnimalsExamined,
-        emergencyCases,
-        interventionBreakdown
+        emergencyCases
       };
 
       res.json({
