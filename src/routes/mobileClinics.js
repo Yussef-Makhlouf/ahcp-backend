@@ -294,9 +294,13 @@ router.post('/',
       };
 
       // Add client reference or flat client data
-      if (clientData && clientData._id) {
+      if (req.body.client && typeof req.body.client === 'string') {
+        // Client ID provided directly
+        mobileClinicData.client = req.body.client;
+      } else if (clientData && clientData._id) {
+        // Client object from findOrCreateClient
         mobileClinicData.client = clientData._id;
-      } else {
+      } else if (req.body.clientName && req.body.clientId) {
         // Use flat structure for client data
         mobileClinicData.clientName = req.body.clientName;
         mobileClinicData.clientId = req.body.clientId;
@@ -326,6 +330,14 @@ router.post('/',
       // Add holding code to mobile clinic data
       mobileClinicData.holdingCode = holdingCodeId;
 
+      console.log('✅ Client data processed:', {
+        hasClientReference: !!mobileClinicData.client,
+        hasFlatFields: !!(mobileClinicData.clientName && mobileClinicData.clientId),
+        clientReference: mobileClinicData.client,
+        flatClientName: mobileClinicData.clientName,
+        flatClientId: mobileClinicData.clientId
+      });
+
       console.log('💾 Saving mobile clinic data:', mobileClinicData);
 
       // Create the mobile clinic record
@@ -348,14 +360,25 @@ router.post('/',
       
       // Handle validation errors
       if (error.name === 'ValidationError') {
-        const validationErrors = Object.values(error.errors).map(err => ({
-          field: err.path,
-          message: err.message
-        }));
+        let validationErrors = [];
+        
+        // Handle different validation error formats
+        if (error.errors && typeof error.errors === 'object') {
+          validationErrors = Object.values(error.errors).map(err => ({
+            field: err.path,
+            message: err.message
+          }));
+        } else if (error.message) {
+          // Handle custom validation errors (like from pre-save middleware)
+          validationErrors = [{
+            field: 'general',
+            message: error.message
+          }];
+        }
         
         return res.status(400).json({
           success: false,
-          message: 'Validation error',
+          message: error.message || 'Validation error',
           errors: validationErrors
         });
       }
@@ -1250,14 +1273,25 @@ router.put('/:id',
       
       // Handle validation errors
       if (error.name === 'ValidationError') {
-        const validationErrors = Object.values(error.errors).map(err => ({
-          field: err.path,
-          message: err.message
-        }));
+        let validationErrors = [];
+        
+        // Handle different validation error formats
+        if (error.errors && typeof error.errors === 'object') {
+          validationErrors = Object.values(error.errors).map(err => ({
+            field: err.path,
+            message: err.message
+          }));
+        } else if (error.message) {
+          // Handle custom validation errors (like from pre-save middleware)
+          validationErrors = [{
+            field: 'general',
+            message: error.message
+          }];
+        }
         
         return res.status(400).json({
           success: false,
-          message: 'Validation error',
+          message: error.message || 'Validation error',
           errors: validationErrors
         });
       }
