@@ -554,12 +554,13 @@ router.get('/:id',
     const record = await ParasiteControl.findById(req.params.id)
       .populate({
         path: 'client',
-        select: 'name nationalId phone village detailedAddress birthDate holdingCode',
+        select: 'name nationalId phone village detailedAddress birthDate',
         populate: {
-          path: 'holdingCode',
-          select: 'code village description isActive'
+          path: 'village',
+          select: 'nameArabic nameEnglish sector serialNumber'
         }
       })
+      .populate('holdingCode', 'code village description isActive')
       .populate('createdBy', 'name email role')
       .populate('updatedBy', 'name email role');
 
@@ -890,23 +891,41 @@ router.put('/:id',
 
     // Handle holding code - convert to ObjectId if provided
     let holdingCodeId = null;
-    if (req.body.holdingCode && req.body.holdingCode !== null && req.body.holdingCode.trim() !== '') {
+    console.log('🔍 PUT - Raw holdingCode from request:', {
+      value: req.body.holdingCode,
+      type: typeof req.body.holdingCode,
+      isNull: req.body.holdingCode === null,
+      isUndefined: req.body.holdingCode === undefined,
+      isEmpty: req.body.holdingCode === '',
+      length: req.body.holdingCode?.length
+    });
+    
+    if (req.body.holdingCode && req.body.holdingCode !== null && typeof req.body.holdingCode === 'string' && req.body.holdingCode.trim() !== '') {
       const mongoose = require('mongoose');
-      if (mongoose.Types.ObjectId.isValid(req.body.holdingCode)) {
-        holdingCodeId = req.body.holdingCode;
+      const trimmedCode = req.body.holdingCode.trim();
+      console.log('🔍 PUT - Trimmed holdingCode:', trimmedCode);
+      console.log('🔍 PUT - Is valid ObjectId?', mongoose.Types.ObjectId.isValid(trimmedCode));
+      
+      if (mongoose.Types.ObjectId.isValid(trimmedCode)) {
+        holdingCodeId = trimmedCode;
+        console.log('✅ PUT - Using holdingCode as ObjectId:', holdingCodeId);
       } else {
         // If it's a code string, find the holding code by code
+        console.log('🔍 PUT - Searching for holdingCode by code:', trimmedCode);
         const HoldingCode = require('../models/HoldingCode');
-        const holdingCode = await HoldingCode.findOne({ code: req.body.holdingCode.trim() });
+        const holdingCode = await HoldingCode.findOne({ code: trimmedCode });
         if (holdingCode) {
           holdingCodeId = holdingCode._id;
+          console.log('✅ PUT - Found holdingCode by code:', holdingCodeId);
+        } else {
+          console.log('❌ PUT - No holdingCode found with code:', trimmedCode);
         }
       }
+    } else {
+      console.log('⚠️ PUT - holdingCode is null, undefined, or empty - will be set to null');
     }
-    console.log('🔍 PUT - Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
-    console.log('🔍 PUT - Holding code type:', typeof req.body.holdingCode);
-    const mongoose = require('mongoose');
-    console.log('🔍 PUT - Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
+    
+    console.log('🎯 PUT - Final holdingCodeId to save:', holdingCodeId);
     updateData.holdingCode = holdingCodeId;
 
     // Update record

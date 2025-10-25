@@ -447,7 +447,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
-  authorize(['super_admin', 'admin']),
+  authorize('super_admin', 'admin', 'section_supervisor'),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -531,7 +531,7 @@ router.get('/template', asyncHandler(async (req, res) => {
  */
 router.delete('/bulk-delete',
   auth,
-  authorize(['super_admin', 'admin']),
+  authorize('super_admin', 'admin'),
   validate(schemas.bulkDeleteSchema),
   asyncHandler(async (req, res) => {
     const { ids } = req.body;
@@ -591,7 +591,7 @@ router.delete('/bulk-delete',
  */
 router.delete('/delete-all',
   auth,
-  authorize(['super_admin']),
+  authorize('super_admin'),
   asyncHandler(async (req, res) => {
     try {
       // Get all unique client IDs from equine health records before deletion

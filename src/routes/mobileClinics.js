@@ -841,7 +841,7 @@ router.get('/template',
  */
 router.delete('/bulk-delete',
   auth,
-  authorize(['super_admin', 'admin']),
+  authorize('super_admin', 'admin', 'section_supervisor'),
   validate(schemas.bulkDeleteSchema),
   asyncHandler(async (req, res) => {
     const { ids } = req.body;
@@ -901,7 +901,7 @@ router.delete('/bulk-delete',
  */
 router.delete('/delete-all',
   auth,
-  authorize(['super_admin']),
+  authorize('super_admin'),
   asyncHandler(async (req, res) => {
     try {
       // Get all unique client IDs from mobile clinic records before deletion
@@ -1306,7 +1306,7 @@ router.put('/:id',
  */
 router.delete('/:id',
   auth,
-  authorize(['super_admin', 'admin']),
+  authorize('super_admin', 'admin'),
   asyncHandler(async (req, res) => {
     try {
       const record = await MobileClinic.findById(req.params.id);

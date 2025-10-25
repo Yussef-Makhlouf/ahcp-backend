@@ -268,7 +268,7 @@ router.get('/by-village/:village', auth, async (req, res) => {
  *       201:
  *         description: Holding code created successfully
  */
-router.post('/', auth, authorize(['admin', 'supervisor']), async (req, res) => {
+router.post('/', auth, authorize('admin', 'supervisor'), async (req, res) => {
   try {
     const { code, village, description } = req.body;
     
@@ -356,7 +356,7 @@ router.post('/', auth, authorize(['admin', 'supervisor']), async (req, res) => {
  *       200:
  *         description: Holding code updated successfully
  */
-router.put('/:id', auth, authorize(['admin', 'supervisor']), async (req, res) => {
+router.put('/:id', auth, authorize('admin', 'supervisor'), async (req, res) => {
   try {
     const { id } = req.params;
     const { code, village, description, isActive } = req.body;
@@ -430,7 +430,7 @@ router.put('/:id', auth, authorize(['admin', 'supervisor']), async (req, res) =>
  *       200:
  *         description: Holding code deleted successfully
  */
-router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
+router.delete('/:id', auth, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     

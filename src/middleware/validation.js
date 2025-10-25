@@ -396,16 +396,20 @@ const schemas = {
   // Common query schemas
   paginationQuery: Joi.object({
     page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(10),
+    limit: Joi.number().integer().min(1).max(1000).default(10), // زيادة الحد الأقصى إلى 1000
     sort: Joi.string().optional(),
-    search: Joi.string().optional()
+    search: Joi.string().optional(),
+    status: Joi.string().optional(),
+    village: Joi.string().optional(),
+    animalType: Joi.string().optional(),
+    includeServices: Joi.string().valid('true', 'false').optional()
   }),
 
   dateRangeQuery: Joi.object({
     startDate: Joi.date().optional(),
     endDate: Joi.date().optional(),
     page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(10)
+    limit: Joi.number().integer().min(1).max(1000).default(10) // زيادة الحد الأقصى إلى 1000
   }),
 
   // Parasite Control update schema (all fields optional)
@@ -471,7 +475,7 @@ const schemas = {
 
   villageQuery: Joi.object({
     page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(50),
+    limit: Joi.number().integer().min(1).max(1000).default(50), // زيادة الحد الأقصى إلى 1000
     search: Joi.string().optional(),
     sector: Joi.string().optional(),
     isActive: Joi.boolean().optional()
