@@ -90,6 +90,26 @@ router.get('/',
         { vehicleNo: { $regex: search, $options: 'i' } },
         { vaccineType: { $regex: search, $options: 'i' } }
       ];
+      
+      // Also search in populated client fields if search looks like ID or phone
+      if (/^\d+$/.test(search)) {
+        // If search is numeric, also search in client nationalId and phone
+        const clientFilter = {
+          $or: [
+            { nationalId: { $regex: search, $options: 'i' } },
+            { phone: { $regex: search, $options: 'i' } }
+          ]
+        };
+        
+        try {
+          const clientIds = await require('../models/Client').find(clientFilter).distinct('_id');
+          if (clientIds.length > 0) {
+            filter.$or.push({ client: { $in: clientIds } });
+          }
+        } catch (error) {
+          console.log('Client search error:', error);
+        }
+      }
     }
 
     // Get records with error handling

@@ -117,6 +117,18 @@ router.get('/',
         { vehicleNo: { $regex: search, $options: 'i' } },
         { diagnosis: { $regex: search, $options: 'i' } }
       ];
+      
+      // Also search in client fields (embedded in equine health)
+      if (/^\d+$/.test(search)) {
+        // If search is numeric, also search in client nationalId and phone
+        filter.$or.push(
+          { 'client.nationalId': { $regex: search, $options: 'i' } },
+          { 'client.phone': { $regex: search, $options: 'i' } }
+        );
+      } else {
+        // If search is text, also search in client name
+        filter.$or.push({ 'client.name': { $regex: search, $options: 'i' } });
+      }
     }
 
     // Get records

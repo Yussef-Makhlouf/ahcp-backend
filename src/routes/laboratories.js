@@ -109,9 +109,13 @@ router.get('/',
     if (priority) filter.priority = priority;
     if (search) {
       filter.$or = [
+        { serialNo: { $regex: search, $options: 'i' } },
         { sampleCode: { $regex: search, $options: 'i' } },
         { collector: { $regex: search, $options: 'i' } },
-        { laboratoryTechnician: { $regex: search, $options: 'i' } }
+        { laboratoryTechnician: { $regex: search, $options: 'i' } },
+        { clientName: { $regex: search, $options: 'i' } },
+        { clientId: { $regex: search, $options: 'i' } },
+        { clientPhone: { $regex: search, $options: 'i' } }
       ];
     }
 
