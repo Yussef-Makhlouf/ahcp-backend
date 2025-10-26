@@ -369,37 +369,116 @@ router.get('/export',
     if (testStatus) filter.testStatus = testStatus;
 
     const records = await Laboratory.find(filter)
+      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
+
+    // Transform data for export to match table columns
+    const transformedRecords = records.map(record => {
+      const speciesCounts = record.speciesCounts || {};
+      
+      // Handle client data (both flat and nested structures)
+      const clientName = record.clientName || record.client?.name || '';
+      const clientId = record.clientId || record.client?.nationalId || '';
+      const clientPhone = record.clientPhone || record.client?.phone || '';
+      const clientBirthDate = record.clientBirthDate || record.client?.birthDate;
+      
+      // Handle village from client or fallback to farmLocation
+      let village = 'غير محدد';
+      if (record.client && typeof record.client === 'object' && record.client.village) {
+        if (typeof record.client.village === 'string') {
+          village = record.client.village;
+        } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
+          village = record.client.village.nameArabic || record.client.village.nameEnglish;
+        }
+      } else if (record.farmLocation) {
+        village = record.farmLocation;
+      }
+      
+      return {
+        'Serial No': record.serialNo || '',
+        'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+        'Sample Code': record.sampleCode || '',
+        'Client Name': clientName,
+        'Client ID': clientId,
+        'Client Birth Date': clientBirthDate ? new Date(clientBirthDate).toISOString().split('T')[0] : '',
+        'Client Phone': clientPhone,
+        'Village': village,
+        'N Coordinate': (() => {
+          if (record.coordinates) {
+            if (typeof record.coordinates === 'string') {
+              try {
+                const parsed = JSON.parse(record.coordinates);
+                return parsed.latitude || '';
+              } catch (e) {
+                return '';
+              }
+            }
+            return record.coordinates.latitude || '';
+          }
+          return '';
+        })(),
+        'E Coordinate': (() => {
+          if (record.coordinates) {
+            if (typeof record.coordinates === 'string') {
+              try {
+                const parsed = JSON.parse(record.coordinates);
+                return parsed.longitude || '';
+              } catch (e) {
+                return '';
+              }
+            }
+            return record.coordinates.longitude || '';
+          }
+          return '';
+        })(),
+        'Sheep': speciesCounts.sheep || 0,
+        'Goats': speciesCounts.goats || 0,
+        'Camel': speciesCounts.camel || 0,
+        'Horse': speciesCounts.horse || 0,
+        'Cattle': speciesCounts.cattle || 0,
+        'Other Species': speciesCounts.other || '',
+        'Sample Collector': record.collector || '',
+        'Sample Type': record.sampleType || '',
+        'Sample Number': record.sampleNumber || '',
+        'Positive Cases': record.positiveCases || 0,
+        'Negative Cases': record.negativeCases || 0,
+        'Holding Code': record.holdingCode?.code || '',
+        'Holding Code Village': record.holdingCode?.village || '',
+        'Remarks': record.remarks || ''
+      };
+    });
 
     if (format === 'csv') {
       const { Parser } = require('json2csv');
-      const fields = [
-        'sampleCode',
-        'sampleType',
-        'collector',
-        'date',
-        'client.name',
-        'client.nationalId',
-        'testType',
-        'totalSamples',
-        'positiveCases',
-        'negativeCases',
-        'positiveRate',
-        'testStatus',
-        'priority',
-        'laboratoryTechnician'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(records);
+      const parser = new Parser();
+      const csv = parser.parse(transformedRecords);
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=laboratory-records.csv');
       res.send(csv);
+    } else if (format === 'excel') {
+      const XLSX = require('xlsx');
+      
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet
+      const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Laboratory Records');
+      
+      // Generate Excel file buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=laboratory-records.xlsx');
+      res.send(excelBuffer);
     } else {
       res.json({
         success: true,
-        data: records
+        data: { records }
       });
     }
   })

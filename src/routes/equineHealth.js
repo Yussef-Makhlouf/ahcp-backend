@@ -490,17 +490,168 @@ router.delete('/:id',
 
 // Export routes - must come before /:id route
 router.get('/export', asyncHandler(async (req, res) => {
-    // Add default user for export
+  // Add default user for export
   req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-  const { ids } = req.query;
+  const { format = 'json', startDate, endDate } = req.query;
   
-  let filter = {};
-  if (ids) {
-    const idArray = ids.split(',').map(id => id.trim());
-    filter._id = { $in: idArray };
+  const filter = {};
+  if (startDate && endDate) {
+    filter.date = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    };
   }
 
-  await handleExport(req, res, EquineHealth, filter, 'equine-health');
+  const records = await EquineHealth.find(filter)
+    .populate('client', 'name nationalId phone village detailedAddress birthDate')
+    .sort({ date: -1 });
+
+  // Transform data for export to match table columns exactly
+  const transformedRecords = records.map(record => {
+    // Handle client data (both flat and nested structures)
+    const clientName = record.clientName || record.client?.name || '';
+    const clientId = record.clientId || record.client?.nationalId || '';
+    const clientPhone = record.clientPhone || record.client?.phone || '';
+    const clientBirthDate = record.clientBirthDate || record.client?.birthDate;
+    
+    // Handle client birth date properly
+    let formattedBirthDate = '';
+    if (clientBirthDate) {
+      try {
+        formattedBirthDate = new Date(clientBirthDate).toISOString().split('T')[0];
+      } catch (e) {
+        formattedBirthDate = '';
+      }
+    }
+    
+    // Handle village from client or fallback
+    let village = 'غير محدد';
+    if (record.client && typeof record.client === 'object' && record.client.village) {
+      if (typeof record.client.village === 'string') {
+        village = record.client.village;
+      } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
+        village = record.client.village.nameArabic || record.client.village.nameEnglish;
+      }
+    } else if (record.clientVillage) {
+      village = record.clientVillage;
+    }
+    
+    // Handle holding code properly
+    let holdingCodeValue = '';
+    let holdingCodeVillage = '';
+    if (record.holdingCode) {
+      if (typeof record.holdingCode === 'string') {
+        holdingCodeValue = record.holdingCode;
+      } else if (typeof record.holdingCode === 'object') {
+        holdingCodeValue = record.holdingCode.code || '';
+        holdingCodeVillage = record.holdingCode.village || '';
+      }
+    }
+    
+    // Handle horse details
+    const horseDetails = record.horseDetails || {};
+    
+    return {
+      'Serial No': record.serialNo || '',
+      'Date': record.date ? record.date.toISOString().split('T')[0] : '',
+      'Client Name': clientName,
+      'Client ID': clientId,
+      'Client Birth Date': formattedBirthDate,
+      'Client Phone': clientPhone,
+      'Village': village,
+      'N Coordinate': (() => {
+        if (record.coordinates) {
+          if (typeof record.coordinates === 'string') {
+            try {
+              const parsed = JSON.parse(record.coordinates);
+              return parsed.latitude || '';
+            } catch (e) {
+              return '';
+            }
+          }
+          return record.coordinates.latitude || '';
+        }
+        return '';
+      })(),
+      'E Coordinate': (() => {
+        if (record.coordinates) {
+          if (typeof record.coordinates === 'string') {
+            try {
+              const parsed = JSON.parse(record.coordinates);
+              return parsed.longitude || '';
+            } catch (e) {
+              return '';
+            }
+          }
+          return record.coordinates.longitude || '';
+        }
+        return '';
+      })(),
+      'Horse Count': record.horseCount || 0,
+      'Horse ID': horseDetails.horseId || '',
+      'Horse Breed': horseDetails.breed || '',
+      'Horse Age': horseDetails.age || '',
+      'Horse Gender': horseDetails.gender || '',
+      'Horse Color': horseDetails.color || '',
+      'Horse Health Status': horseDetails.healthStatus || '',
+      'Horse Weight': horseDetails.weight || '',
+      'Horse Temperature': horseDetails.temperature || '',
+      'Horse Heart Rate': horseDetails.heartRate || '',
+      'Horse Respiratory Rate': horseDetails.respiratoryRate || '',
+      'Diagnosis': record.diagnosis || '',
+      'Intervention Category': record.interventionCategory || '',
+      'Treatment': record.treatment || '',
+      'Medication Name': record.medication?.name || '',
+      'Medication Dosage': record.medication?.dosage || '',
+      'Medication Quantity': record.medication?.quantity || '',
+      'Administration Route': record.medication?.route || '',
+      'Medication Frequency': record.medication?.frequency || '',
+      'Medication Duration': record.medication?.duration || '',
+      'Vaccination Status': record.vaccinationStatus || '',
+      'Deworming Status': record.dewormingStatus || '',
+      'Follow Up Required': record.followUpRequired ? 'Yes' : 'No',
+      'Follow Up Date': record.followUpDate ? new Date(record.followUpDate).toISOString().split('T')[0] : '',
+      'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
+      'Request Situation': record.request?.situation || '',
+      'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
+      'Holding Code': holdingCodeValue,
+      'Holding Code Village': holdingCodeVillage,
+      'Remarks': record.remarks || ''
+    };
+  });
+
+  if (format === 'csv') {
+    const { Parser } = require('json2csv');
+    const parser = new Parser();
+    const csv = parser.parse(transformedRecords);
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=equine-health-records.csv');
+    res.send(csv);
+  } else if (format === 'excel') {
+    const XLSX = require('xlsx');
+    
+    // Create a new workbook
+    const workbook = XLSX.utils.book_new();
+    
+    // Convert data to worksheet
+    const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Equine Health Records');
+    
+    // Generate Excel file buffer
+    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=equine-health-records.xlsx');
+    res.send(excelBuffer);
+  } else {
+    res.json({
+      success: true,
+      data: { records }
+    });
+  }
 }));
 
 router.get('/template', asyncHandler(async (req, res) => {

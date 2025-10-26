@@ -406,39 +406,43 @@ router.get('/export',
 
     const clients = await Client.find(filter).sort({ createdAt: -1 });
 
+    // Transform data for export to match table columns exactly
+    const transformedClients = clients.map(client => {
+      // Handle village data (both string and object types)
+      let village = 'غير محدد';
+      if (client.village) {
+        if (typeof client.village === 'string') {
+          village = client.village;
+        } else if (typeof client.village === 'object' && client.village !== null) {
+          village = client.village.nameArabic || client.village.nameEnglish || client.village.name || '';
+        }
+      }
+      
+      return {
+        'Name': client.name || '',
+        'National ID': client.nationalId || '',
+        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
+        'Phone': client.phone || '',
+        'Email': client.email || '',
+        'Village': village,
+        'Detailed Address': client.detailedAddress || '',
+        'Status': client.status || '',
+        'Total Animals': client.totalAnimals || 0,
+        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : '',
+        'Updated At': client.updatedAt ? client.updatedAt.toISOString().split('T')[0] : ''
+      };
+    });
+
     if (format === 'csv') {
       const { Parser } = require('json2csv');
-      const fields = [
-        'name',
-        'nationalId',
-        'phone',
-        'email',
-        'village',
-        'status',
-        'totalAnimals',
-        'createdAt'
-      ];
-      
-      const parser = new Parser({ fields });
-      const csv = parser.parse(clients);
+      const parser = new Parser();
+      const csv = parser.parse(transformedClients);
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=clients.csv');
       res.send(csv);
     } else if (format === 'excel') {
       const XLSX = require('xlsx');
-      
-      // Transform data for Excel export
-      const transformedClients = clients.map(client => ({
-        'Name': client.name || '',
-        'National ID': client.nationalId || '',
-        'Phone': client.phone || '',
-        'Email': client.email || '',
-        'Village': client.village || '',
-        'Status': client.status || '',
-        'Total Animals': client.totalAnimals || 0,
-        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : ''
-      }));
       
       // Create a new workbook
       const workbook = XLSX.utils.book_new();

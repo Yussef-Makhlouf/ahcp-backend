@@ -631,44 +631,89 @@ router.get('/export',
       .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
-    // Transform data for export
+    // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
-      // تحويل animalCounts إلى object بسيط
       const animalCounts = record.animalCounts || {};
       
-      // تحويل client إلى object بسيط
-      const client = record.client || {};
+      // Handle client data (both flat and nested structures)
+      const clientName = record.clientName || record.client?.name || '';
+      const clientId = record.clientId || record.client?.nationalId || '';
+      const clientPhone = record.clientPhone || record.client?.phone || '';
+      const clientBirthDate = record.clientBirthDate || record.client?.birthDate;
       
-      // تحويل coordinates إلى object بسيط
-      const coordinates = record.coordinates || {};
+      // Handle village from client or fallback
+      let village = 'غير محدد';
+      if (record.client && typeof record.client === 'object' && record.client.village) {
+        if (typeof record.client.village === 'string') {
+          village = record.client.village;
+        } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
+          village = record.client.village.nameArabic || record.client.village.nameEnglish;
+        }
+      } else if (record.clientVillage) {
+        village = record.clientVillage;
+      } else if (record.holdingCode && typeof record.holdingCode === 'object' && record.holdingCode.village) {
+        village = record.holdingCode.village;
+      }
       
-      // تحويل request إلى object بسيط
-      const request = record.request || {};
+      // Calculate total animals
+      const totalAnimals = (animalCounts.sheep || 0) + (animalCounts.goats || 0) + 
+                          (animalCounts.camel || 0) + (animalCounts.horse || 0) + (animalCounts.cattle || 0);
       
       return {
         'Serial No': record.serialNo || '',
         'Date': record.date ? record.date.toISOString().split('T')[0] : '',
-        'Name': client.name || '',
-        'ID': client.nationalId || '',
-        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
-        'Phone': client.phone || '',
-        'Holding Code': record.holdingCode?.code || '',
-        'N Coordinate': coordinates.latitude || '',
-        'E Coordinate': coordinates.longitude || '',
+        'Client Name': clientName,
+        'Client ID': clientId,
+        'Client Birth Date': clientBirthDate ? new Date(clientBirthDate).toISOString().split('T')[0] : '',
+        'Client Phone': clientPhone,
+        'Village': village,
+        'N Coordinate': (() => {
+          if (record.coordinates) {
+            if (typeof record.coordinates === 'string') {
+              try {
+                const parsed = JSON.parse(record.coordinates);
+                return parsed.latitude || '';
+              } catch (e) {
+                return '';
+              }
+            }
+            return record.coordinates.latitude || '';
+          }
+          return '';
+        })(),
+        'E Coordinate': (() => {
+          if (record.coordinates) {
+            if (typeof record.coordinates === 'string') {
+              try {
+                const parsed = JSON.parse(record.coordinates);
+                return parsed.longitude || '';
+              } catch (e) {
+                return '';
+              }
+            }
+            return record.coordinates.longitude || '';
+          }
+          return '';
+        })(),
         'Supervisor': record.supervisor || '',
-        'Vehicle No.': record.vehicleNo || '',
-        'Sheep': animalCounts.sheep || 0,
-        'Goats': animalCounts.goats || 0,
-        'Camel': animalCounts.camel || 0,
-        'Horse': animalCounts.horse || 0,
-        'Cattle': animalCounts.cattle || 0,
+        'Vehicle No': record.vehicleNo || '',
+        'Holding Code': record.holdingCode?.code || '',
+        'Holding Code Village': record.holdingCode?.village || '',
+        'Sheep Count': animalCounts.sheep || 0,
+        'Goats Count': animalCounts.goats || 0,
+        'Camel Count': animalCounts.camel || 0,
+        'Horse Count': animalCounts.horse || 0,
+        'Cattle Count': animalCounts.cattle || 0,
+        'Total Animals': totalAnimals,
         'Diagnosis': record.diagnosis || '',
         'Intervention Category': record.interventionCategory || '',
         'Treatment': record.treatment || '',
-        'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
-        'Request Status': request.situation || '',
-        'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
-        'Category': record.category || '',
+        'Medications Used': record.medicationsUsed || '',
+        'Follow Up Required': record.followUpRequired ? 'Yes' : 'No',
+        'Follow Up Date': record.followUpDate ? new Date(record.followUpDate).toISOString().split('T')[0] : '',
+        'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
+        'Request Situation': record.request?.situation || '',
+        'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
         'Remarks': record.remarks || ''
       };
     });
@@ -708,104 +753,7 @@ router.get('/export',
   })
 );
 
-// Specific routes must come before parameterized routes
-// Export route
-router.get('/export',
-  asyncHandler(async (req, res) => {
-    // Add default user for export
-    req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (interventionCategory) filter.interventionCategory = interventionCategory;
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const records = await MobileClinic.find(filter)
-      .populate('client', 'name nationalId phone village detailedAddress birthDate')
-      .populate('holdingCode', 'code village description isActive')
-      .sort({ date: -1 });
-
-    // Transform data for export
-    const transformedRecords = records.map(record => {
-      // تحويل animalCounts إلى object بسيط
-      const animalCounts = record.animalCounts || {};
-      
-      // تحويل client إلى object بسيط
-      const client = record.client || {};
-      
-      // تحويل coordinates إلى object بسيط
-      const coordinates = record.coordinates || {};
-      
-      // تحويل request إلى object بسيط
-      const request = record.request || {};
-      
-      return {
-        'Serial No': record.serialNo || '',
-        'Date': record.date ? record.date.toISOString().split('T')[0] : '',
-        'Name': client.name || '',
-        'ID': client.nationalId || '',
-        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
-        'Phone': client.phone || '',
-        'Holding Code': record.holdingCode?.code || '',
-        'N Coordinate': coordinates.latitude || '',
-        'E Coordinate': coordinates.longitude || '',
-        'Supervisor': record.supervisor || '',
-        'Vehicle No.': record.vehicleNo || '',
-        'Sheep': animalCounts.sheep || 0,
-        'Goats': animalCounts.goats || 0,
-        'Camel': animalCounts.camel || 0,
-        'Horse': animalCounts.horse || 0,
-        'Cattle': animalCounts.cattle || 0,
-        'Diagnosis': record.diagnosis || '',
-        'Intervention Category': record.interventionCategory || '',
-        'Treatment': record.treatment || '',
-        'Request Date': request.date ? new Date(request.date).toISOString().split('T')[0] : '',
-        'Request Status': request.situation || '',
-        'Request Fulfilling Date': request.fulfillingDate ? new Date(request.fulfillingDate).toISOString().split('T')[0] : '',
-        'Category': record.category || '',
-        'Remarks': record.remarks || ''
-      };
-    });
-
-    if (format === 'csv') {
-      const { Parser } = require('json2csv');
-      const parser = new Parser();
-      const csv = parser.parse(transformedRecords);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.csv');
-      res.send(csv);
-    } else if (format === 'excel') {
-      const XLSX = require('xlsx');
-      
-      // Create a new workbook
-      const workbook = XLSX.utils.book_new();
-      
-      // Convert data to worksheet
-      const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
-      
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Mobile Clinics');
-      
-      // Generate Excel file buffer
-      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=mobile-clinics.xlsx');
-      res.send(excelBuffer);
-    } else {
-      res.json({
-        success: true,
-        data: records
-      });
-    }
-  })
-);
+// Removed duplicate export route - using the first one above
 
 // Template route
 router.get('/template',

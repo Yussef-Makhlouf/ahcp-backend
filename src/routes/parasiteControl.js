@@ -489,11 +489,58 @@ router.get('/export',
           'Date': record.date ? record.date.toISOString().split('T')[0] : '',
           'Name': record.client?.name || '',
           'ID': record.client?.nationalId || '',
-          'Date of Birth': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
+          'Client Birth Date': (() => {
+            const birthDate = record.client?.birthDate;
+            if (birthDate) {
+              try {
+                return new Date(birthDate).toISOString().split('T')[0];
+              } catch (e) {
+                return '';
+              }
+            }
+            return '';
+          })(),
+          'Village': (() => {
+            if (record.client && typeof record.client === 'object' && record.client.village) {
+              if (typeof record.client.village === 'string') {
+                return record.client.village;
+              } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
+                return record.client.village.nameArabic || record.client.village.nameEnglish;
+              }
+            }
+            return 'غير محدد';
+          })(),
           'Phone': record.client?.phone || '',
           'Holding Code': record.holdingCode?.code || '',
-          'E': record.coordinates?.latitude || '',
-          'N': record.coordinates?.longitude || '',
+          'Holding Code Village': record.holdingCode?.village || '',
+          'N Coordinate': (() => {
+            if (record.coordinates) {
+              if (typeof record.coordinates === 'string') {
+                try {
+                  const parsed = JSON.parse(record.coordinates);
+                  return parsed.latitude || '';
+                } catch (e) {
+                  return '';
+                }
+              }
+              return record.coordinates.latitude || '';
+            }
+            return '';
+          })(),
+          'E Coordinate': (() => {
+            if (record.coordinates) {
+              if (typeof record.coordinates === 'string') {
+                try {
+                  const parsed = JSON.parse(record.coordinates);
+                  return parsed.longitude || '';
+                } catch (e) {
+                  return '';
+                }
+              }
+              return record.coordinates.longitude || '';
+            }
+            return '';
+          })(),
           'Supervisor': record.supervisor || '',
           'Vehicle No.': record.vehicleNo || '',
           'Total Sheep': herdCounts.sheep?.total || 0,
@@ -521,6 +568,9 @@ router.get('/export',
           'Insecticide Volume (ml)': record.insecticide?.volumeMl || 0,
           'Insecticide Status': record.insecticide?.status || '',
           'Insecticide Category': record.insecticide?.category || '',
+          'Insecticide Summary': record.insecticide ? 
+            `${record.insecticide.type || ''} - ${record.insecticide.method || ''} - ${record.insecticide.volumeMl || 0}ml - ${record.insecticide.status || ''}` : 
+            '',
           'Animal Barn Size (sqM)': record.animalBarnSizeSqM || 0,
           'Breeding Sites': record.breedingSites || '',
           'Herd Health Status': record.herdHealthStatus || '',
