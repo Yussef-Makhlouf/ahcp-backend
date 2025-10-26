@@ -6,6 +6,8 @@ const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { findOrCreateClient, parseFileData } = require('../utils/importExportHelpers');
+const queryLogger = require('../utils/queryLogger');
+const filterBuilder = require('../utils/filterBuilder');
 
 const router = express.Router();
 
@@ -50,85 +52,113 @@ router.get('/',
   auth,
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, startDate, endDate, interventionCategory, followUpRequired, supervisor, search } = req.query;
-    const skip = (page - 1) * limit;
+    const startTime = Date.now();
+    
+    console.log('🔍 MobileClinic Backend - Received query params:', req.query);
+    
+    // Build advanced filter using FilterBuilder
+    const filter = filterBuilder.buildMobileClinicFilter(req.query);
+    const paginationParams = filterBuilder.buildPaginationParams(req.query);
+    const sortParams = filterBuilder.buildSortParams(req.query);
 
-    // Build filter
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
+    console.log('📋 Built mobile clinic filter object:', JSON.stringify(filter, null, 2));
+    console.log('📄 Pagination params:', paginationParams);
+
+    // Execute query with performance tracking
+    const queryStartTime = Date.now();
+    
+    let records, total;
+    try {
+      // Execute both queries in parallel for better performance
+      [records, total] = await Promise.all([
+        MobileClinic.find(filter)
+          .populate({
+            path: 'client',
+            select: 'name nationalId phone village detailedAddress birthDate',
+            populate: {
+              path: 'village',
+              select: 'nameArabic nameEnglish sector serialNumber'
+            }
+          })
+          .populate('holdingCode', 'code village description isActive')
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(), // Use lean() for better performance
+        MobileClinic.countDocuments(filter)
+      ]);
+    } catch (populateError) {
+      console.error('🚨 MobileClinic populate error, falling back to basic query:', populateError);
+      // Fallback with basic populate if there's an issue
+      [records, total] = await Promise.all([
+        MobileClinic.find(filter)
+          .populate('client', 'name nationalId phone village detailedAddress birthDate')
+          .populate('holdingCode', 'code village description isActive')
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(),
+        MobileClinic.countDocuments(filter)
+      ]);
     }
-    if (interventionCategory) filter.interventionCategory = interventionCategory;
-    if (followUpRequired !== undefined) filter.followUpRequired = followUpRequired === 'true';
-    if (supervisor) filter.supervisor = { $regex: supervisor, $options: 'i' };
-    if (search) {
-      filter.$or = [
-        { serialNo: { $regex: search, $options: 'i' } },
-        { supervisor: { $regex: search, $options: 'i' } },
-        { vehicleNo: { $regex: search, $options: 'i' } },
-        { diagnosis: { $regex: search, $options: 'i' } }
-      ];
-      
-      // Also search in populated client fields if search looks like ID or phone
-      if (/^\d+$/.test(search)) {
-        // If search is numeric, also search in client nationalId and phone
-        const clientFilter = {
-          $or: [
-            { nationalId: { $regex: search, $options: 'i' } },
-            { phone: { $regex: search, $options: 'i' } }
-          ]
-        };
-        
-        try {
-          const clientIds = await require('../models/Client').find(clientFilter).distinct('_id');
-          if (clientIds.length > 0) {
-            filter.$or.push({ client: { $in: clientIds } });
-          }
-        } catch (error) {
-          console.log('Client search error:', error);
+
+    // Ensure records is always an array
+    if (!records) {
+      records = [];
+    }
+
+    const queryExecutionTime = Date.now() - queryStartTime;
+    const totalExecutionTime = Date.now() - startTime;
+
+    // Log performance with detailed metrics
+    queryLogger.log(
+      'MobileClinic Query',
+      filter,
+      queryExecutionTime,
+      records.length,
+      {
+        totalRecords: total,
+        pagination: paginationParams,
+        totalExecutionTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length,
+        hasPopulation: true
+      }
+    );
+
+    // Get query explanation for development environment
+    if (process.env.NODE_ENV === 'development' && Object.keys(filter).length > 0) {
+      try {
+        const explanation = await queryLogger.explainQuery(MobileClinic, filter);
+        if (explanation) {
+          console.log('🔍 MobileClinic Query Performance Analysis:', {
+            indexesUsed: explanation.indexesUsed,
+            documentsExamined: explanation.documentsExamined,
+            keysExamined: explanation.keysExamined,
+            efficiency: explanation.keysExamined > 0 ? 
+              (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
+          });
         }
+      } catch (explainError) {
+        console.warn('⚠️ Could not explain mobile clinic query:', explainError.message);
       }
     }
 
-    // Get records with error handling
-    let records;
-    try {
-      records = await MobileClinic.find(filter)
-        .populate({
-          path: 'client',
-          select: 'name nationalId phone village detailedAddress birthDate',
-          populate: {
-            path: 'village',
-            select: 'nameArabic nameEnglish sector serialNumber'
-          }
-        })
-        .populate('holdingCode', 'code village description isActive')
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1 })
-        .lean(); // Use lean() for better performance
-    } catch (populateError) {
-      console.error('Populate error, falling back to basic query:', populateError);
-      // Fallback without populate if there's an issue
-      records = await MobileClinic.find(filter)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1 })
-        .lean();
-    }
-
-    const total = await MobileClinic.countDocuments(filter);
+    console.log(`📊 MobileClinic query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
       data: records,
       total: total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      page: paginationParams.page,
+      limit: paginationParams.limit,
+      totalPages: Math.ceil(total / paginationParams.limit),
+      hasNextPage: paginationParams.page < Math.ceil(total / paginationParams.limit),
+      hasPrevPage: paginationParams.page > 1,
+      performance: {
+        queryTime: `${queryExecutionTime}ms`,
+        totalTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length
+      }
     });
   })
 );

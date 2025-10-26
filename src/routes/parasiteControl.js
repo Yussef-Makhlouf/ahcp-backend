@@ -7,6 +7,8 @@ const Client = require('../models/Client');
 const { validate, validateQuery, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const queryLogger = require('../utils/queryLogger');
+const filterBuilder = require('../utils/filterBuilder');
 // Import/Export functionality moved to import-export routes
 
 const router = express.Router();
@@ -90,6 +92,46 @@ const upload = multer({
  *         schema:
  *           type: string
  *         description: Filter by supervisor
+ *       - in: query
+ *         name: insecticide.method
+ *         schema:
+ *           type: string
+ *         description: Filter by insecticide method (comma-separated)
+ *       - in: query
+ *         name: insecticide.category
+ *         schema:
+ *           type: string
+ *         description: Filter by insecticide category (comma-separated)
+ *       - in: query
+ *         name: insecticide.status
+ *         schema:
+ *           type: string
+ *         description: Filter by insecticide status (comma-separated)
+ *       - in: query
+ *         name: insecticide.type
+ *         schema:
+ *           type: string
+ *         description: Filter by insecticide type (comma-separated)
+ *       - in: query
+ *         name: herdHealthStatus
+ *         schema:
+ *           type: string
+ *         description: Filter by herd health status (comma-separated)
+ *       - in: query
+ *         name: complyingToInstructions
+ *         schema:
+ *           type: string
+ *         description: Filter by compliance status
+ *       - in: query
+ *         name: parasiteControlStatus
+ *         schema:
+ *           type: string
+ *         description: Filter by parasite control status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by serial number, supervisor, vehicle number, client name, client national ID, or client phone
  *     responses:
  *       200:
  *         description: Records retrieved successfully
@@ -98,100 +140,111 @@ router.get('/',
   auth,
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, startDate, endDate, supervisor, search } = req.query;
-    const skip = (page - 1) * limit;
+    const startTime = Date.now();
+    
+    console.log('🔍 ParasiteControl Backend - Received query params:', req.query);
+    
+    // Build advanced filter using FilterBuilder
+    const filter = filterBuilder.buildParasiteControlFilter(req.query);
+    const paginationParams = filterBuilder.buildPaginationParams(req.query);
+    const sortParams = filterBuilder.buildSortParams(req.query);
 
-    // Build filter
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
+    console.log('📋 Built filter object:', JSON.stringify(filter, null, 2));
+    console.log('📄 Pagination params:', paginationParams);
+
+    // Execute query with performance tracking
+    const queryStartTime = Date.now();
+    
+    let records, total;
+    try {
+      // Execute both queries in parallel for better performance
+      [records, total] = await Promise.all([
+        ParasiteControl.find(filter)
+          .populate({
+            path: 'client',
+            select: 'name nationalId phone village detailedAddress birthDate',
+            populate: {
+              path: 'village',
+              select: 'nameArabic nameEnglish sector serialNumber'
+            }
+          })
+          .populate('holdingCode', 'code village description isActive')
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(), // Use lean() for better performance
+        ParasiteControl.countDocuments(filter)
+      ]);
+    } catch (populateError) {
+      console.error('🚨 Populate error, falling back to basic query:', populateError);
+      // Fallback with basic populate if there's an issue
+      [records, total] = await Promise.all([
+        ParasiteControl.find(filter)
+          .populate('client', 'name nationalId phone village detailedAddress birthDate')
+          .populate('holdingCode', 'code village description isActive')
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(),
+        ParasiteControl.countDocuments(filter)
+      ]);
     }
-    if (supervisor) {
-      filter.supervisor = { $regex: supervisor, $options: 'i' };
-    }
-    if (search) {
-      filter.$or = [
-        { serialNo: { $regex: search, $options: 'i' } },
-        { supervisor: { $regex: search, $options: 'i' } },
-        { vehicleNo: { $regex: search, $options: 'i' } },
-      ];
-      
-      // Also search in populated client fields if search looks like ID or phone
-      if (/^\d+$/.test(search)) {
-        // If search is numeric, also search in client nationalId and phone
-        const clientFilter = {
-          $or: [
-            { nationalId: { $regex: search, $options: 'i' } },
-            { phone: { $regex: search, $options: 'i' } }
-          ]
-        };
-        
-        try {
-          const clientIds = await require('../models/Client').find(clientFilter).distinct('_id');
-          if (clientIds.length > 0) {
-            filter.$or.push({ client: { $in: clientIds } });
-          }
-        } catch (error) {
-          console.log('Client search error:', error);
+
+    const queryExecutionTime = Date.now() - queryStartTime;
+    const totalExecutionTime = Date.now() - startTime;
+
+    // Log performance with detailed metrics
+    queryLogger.log(
+      'ParasiteControl Query',
+      filter,
+      queryExecutionTime,
+      records.length,
+      {
+        totalRecords: total,
+        pagination: paginationParams,
+        totalExecutionTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length,
+        hasPopulation: true
+      }
+    );
+
+    // Get query explanation for development environment
+    if (process.env.NODE_ENV === 'development' && Object.keys(filter).length > 0) {
+      try {
+        const explanation = await queryLogger.explainQuery(ParasiteControl, filter);
+        if (explanation) {
+          console.log('🔍 Query Performance Analysis:', {
+            indexesUsed: explanation.indexesUsed,
+            documentsExamined: explanation.documentsExamined,
+            keysExamined: explanation.keysExamined,
+            efficiency: explanation.keysExamined > 0 ? 
+              (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
+          });
         }
+      } catch (explainError) {
+        console.warn('⚠️ Could not explain query:', explainError.message);
       }
     }
 
-    // Get records with error handling
-    let records;
-    try {
-      records = await ParasiteControl.find(filter)
-        .populate({
-          path: 'client',
-          select: 'name nationalId phone village detailedAddress birthDate',
-          populate: {
-            path: 'village',
-            select: 'nameArabic nameEnglish sector serialNumber'
-          }
-        })
-        .populate('holdingCode', 'code village description isActive')
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1 })
-        .lean(); // Use lean() for better performance and avoid virtual issues
-    } catch (populateError) {
-      console.error('Populate error, falling back to basic query:', populateError);
-      // Fallback with basic populate if there's an issue
-      records = await ParasiteControl.find(filter)
-        .populate('client', 'name nationalId phone village detailedAddress birthDate')
-        .populate('holdingCode', 'code village description isActive')
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1 })
-        .lean();
-    }
-
-    const total = await ParasiteControl.countDocuments(filter);
-
-    // Debug logging for holding code (can be removed in production)
-    // if (records.length > 0) {
-    //   console.log('🔍 API Debug - First record holding code:', {
-    //     recordId: records[0]._id,
-    //     serialNo: records[0].serialNo,
-    //     holdingCode: records[0].holdingCode,
-    //     holdingCodeType: typeof records[0].holdingCode,
-    //     hasHoldingCode: !!records[0].holdingCode
-    //   });
-    // }
+    console.log(`📊 Query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
       data: {
         records,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: paginationParams.page,
+          limit: paginationParams.limit,
           total,
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / paginationParams.limit),
+          hasNextPage: paginationParams.page < Math.ceil(total / paginationParams.limit),
+          hasPrevPage: paginationParams.page > 1
         }
+      },
+      performance: {
+        queryTime: `${queryExecutionTime}ms`,
+        totalTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length
       }
     });
   })

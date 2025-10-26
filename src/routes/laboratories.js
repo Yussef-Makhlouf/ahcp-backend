@@ -9,6 +9,8 @@ const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { handleExport, handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
+const queryLogger = require('../utils/queryLogger');
+const filterBuilder = require('../utils/filterBuilder');
 
 const router = express.Router();
 // Configure multer for file uploads
@@ -99,61 +101,111 @@ router.get('/',
   auth,
   validateQuery(schemas.paginationQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, testStatus, testType, priority, search } = req.query;
-    const skip = (page - 1) * limit;
+    const startTime = Date.now();
+    
+    console.log('🔍 Laboratory Backend - Received query params:', req.query);
+    
+    // Build advanced filter using FilterBuilder
+    const filter = filterBuilder.buildLaboratoryFilter(req.query);
+    const paginationParams = filterBuilder.buildPaginationParams(req.query);
+    const sortParams = filterBuilder.buildSortParams(req.query);
 
-    // Build filter
-    const filter = {};
-    if (testStatus) filter.testStatus = testStatus;
-    if (testType) filter.testType = testType;
-    if (priority) filter.priority = priority;
-    if (search) {
-      filter.$or = [
-        { serialNo: { $regex: search, $options: 'i' } },
-        { sampleCode: { $regex: search, $options: 'i' } },
-        { collector: { $regex: search, $options: 'i' } },
-        { laboratoryTechnician: { $regex: search, $options: 'i' } },
-        { clientName: { $regex: search, $options: 'i' } },
-        { clientId: { $regex: search, $options: 'i' } },
-        { clientPhone: { $regex: search, $options: 'i' } }
-      ];
-    }
+    console.log('📋 Built laboratory filter object:', JSON.stringify(filter, null, 2));
+    console.log('📄 Pagination params:', paginationParams);
 
-    // Get records with error handling
-    let records;
+    // Execute query with performance tracking
+    const queryStartTime = Date.now();
+    
+    let records, total;
     try {
-      records = await Laboratory.find(filter)
-        .populate({
-          path: 'client',
-          select: 'name nationalId phone birthDate village detailedAddress',
-          populate: {
-            path: 'village',
-            select: 'nameArabic nameEnglish sector serialNumber'
-          }
-        })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1, priority: -1 })
-        .lean(); // Use lean() for better performance
+      // Execute both queries in parallel for better performance
+      [records, total] = await Promise.all([
+        Laboratory.find(filter)
+          .populate({
+            path: 'client',
+            select: 'name nationalId phone birthDate village detailedAddress',
+            populate: {
+              path: 'village',
+              select: 'nameArabic nameEnglish sector serialNumber'
+            }
+          })
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(), // Use lean() for better performance
+        Laboratory.countDocuments(filter)
+      ]);
     } catch (populateError) {
-      console.error('Populate error, falling back to basic query:', populateError);
-      // Fallback without populate if there's an issue
-      records = await Laboratory.find(filter)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ date: -1, priority: -1 })
-        .lean();
+      console.error('🚨 Laboratory populate error, falling back to basic query:', populateError);
+      // Fallback with basic populate if there's an issue
+      [records, total] = await Promise.all([
+        Laboratory.find(filter)
+          .populate('client', 'name nationalId phone birthDate village detailedAddress')
+          .sort(sortParams)
+          .skip(paginationParams.skip)
+          .limit(paginationParams.limit)
+          .lean(),
+        Laboratory.countDocuments(filter)
+      ]);
     }
 
-    const total = await Laboratory.countDocuments(filter);
+    // Ensure records is always an array
+    if (!records) {
+      records = [];
+    }
+
+    const queryExecutionTime = Date.now() - queryStartTime;
+    const totalExecutionTime = Date.now() - startTime;
+
+    // Log performance with detailed metrics
+    queryLogger.log(
+      'Laboratory Query',
+      filter,
+      queryExecutionTime,
+      records.length,
+      {
+        totalRecords: total,
+        pagination: paginationParams,
+        totalExecutionTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length,
+        hasPopulation: true
+      }
+    );
+
+    // Get query explanation for development environment
+    if (process.env.NODE_ENV === 'development' && Object.keys(filter).length > 0) {
+      try {
+        const explanation = await queryLogger.explainQuery(Laboratory, filter);
+        if (explanation) {
+          console.log('🔍 Laboratory Query Performance Analysis:', {
+            indexesUsed: explanation.indexesUsed,
+            documentsExamined: explanation.documentsExamined,
+            keysExamined: explanation.keysExamined,
+            efficiency: explanation.keysExamined > 0 ? 
+              (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
+          });
+        }
+      } catch (explainError) {
+        console.warn('⚠️ Could not explain laboratory query:', explainError.message);
+      }
+    }
+
+    console.log(`📊 Laboratory query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
       data: records,
       total: total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      page: paginationParams.page,
+      limit: paginationParams.limit,
+      totalPages: Math.ceil(total / paginationParams.limit),
+      hasNextPage: paginationParams.page < Math.ceil(total / paginationParams.limit),
+      hasPrevPage: paginationParams.page > 1,
+      performance: {
+        queryTime: `${queryExecutionTime}ms`,
+        totalTime: `${totalExecutionTime}ms`,
+        filterComplexity: Object.keys(filter).length
+      }
     });
   })
 );

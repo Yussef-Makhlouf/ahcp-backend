@@ -96,14 +96,43 @@ router.get('/',
   auth,
   validateQuery(schemas.paginationQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, status, village, search, animalType, includeServices = 'true' } = req.query;
+    const { 
+      page = 1, 
+      limit = 30, 
+      status, 
+      village, 
+      search, 
+      animalType, 
+      includeServices = 'true',
+      servicesReceived,
+      'animals.animalType': animalsAnimalType,
+      totalAnimals,
+      startDate,
+      endDate
+    } = req.query;
     const skip = (page - 1) * limit;
 
     // Build filter
     const filter = {};
     if (status) filter.status = status;
     if (village) filter.village = { $regex: village, $options: 'i' };
-    if (animalType) filter['animals.animalType'] = animalType;
+    if (animalType || animalsAnimalType) {
+      const animalTypeFilter = animalType || animalsAnimalType;
+      if (animalTypeFilter.includes(',')) {
+        // Multiple animal types
+        filter['animals.animalType'] = { $in: animalTypeFilter.split(',') };
+      } else {
+        filter['animals.animalType'] = animalTypeFilter;
+      }
+    }
+    
+    // Date range filter
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate + 'T23:59:59.999Z');
+    }
+    
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -226,6 +255,57 @@ router.get('/',
               }
             }
           },
+          // Add additional filtering after aggregation
+          ...(servicesReceived || totalAnimals ? [{
+            $match: {
+              ...(servicesReceived && {
+                servicesReceived: servicesReceived.includes(',') 
+                  ? { $in: servicesReceived.split(',') }
+                  : servicesReceived
+              }),
+              ...(totalAnimals && (() => {
+                // Calculate total animals and filter based on range
+                const totalAnimalsCount = {
+                  $sum: {
+                    $map: {
+                      input: '$animals',
+                      as: 'animal',
+                      in: '$$animal.animalCount'
+                    }
+                  }
+                };
+                
+                switch (totalAnimals) {
+                  case '1-10':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 1] }, { $lte: [totalAnimalsCount, 10] }] } };
+                  case '11-50':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 11] }, { $lte: [totalAnimalsCount, 50] }] } };
+                  case '51-100':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 51] }, { $lte: [totalAnimalsCount, 100] }] } };
+                  case '101-500':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 101] }, { $lte: [totalAnimalsCount, 500] }] } };
+                  case '500+':
+                    return { $expr: { $gt: [totalAnimalsCount, 500] } };
+                  default:
+                    return {};
+                }
+              })())
+            }
+          }] : []),
+          {
+            $addFields: {
+              // Calculate total animals for display
+              totalAnimals: {
+                $sum: {
+                  $map: {
+                    input: '$animals',
+                    as: 'animal',
+                    in: '$$animal.animalCount'
+                  }
+                }
+              }
+            }
+          },
           {
             $project: {
               // Keep _id field - IMPORTANT!
@@ -250,6 +330,7 @@ router.get('/',
               birthDateFromForms: 1,
               totalVisits: 1,
               lastServiceDate: 1,
+              totalAnimals: 1,
               // Add individual service counts
               mobileClinicCount: { $size: '$mobileClinics' },
               vaccinationCount: { $size: '$vaccinations' },
@@ -296,7 +377,107 @@ router.get('/',
     }
     
     try {
-      total = await Client.countDocuments(filter);
+      if (includeServices === 'true' && (servicesReceived || totalAnimals)) {
+        // Use aggregation to count with complex filters
+        const countPipeline = [
+          { $match: filter },
+          {
+            $lookup: {
+              from: 'mobileclinics',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'mobileClinics'
+            }
+          },
+          {
+            $lookup: {
+              from: 'vaccinations',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'vaccinations'
+            }
+          },
+          {
+            $lookup: {
+              from: 'equinehealths',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'equineHealths'
+            }
+          },
+          {
+            $lookup: {
+              from: 'laboratories',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'laboratories'
+            }
+          },
+          {
+            $lookup: {
+              from: 'parasitecontrols',
+              localField: '_id',
+              foreignField: 'client',
+              as: 'parasiteControls'
+            }
+          },
+          {
+            $addFields: {
+              servicesReceived: {
+                $concatArrays: [
+                  { $map: { input: '$mobileClinics', as: 'mc', in: 'mobile_clinic' } },
+                  { $map: { input: '$vaccinations', as: 'v', in: 'vaccination' } },
+                  { $map: { input: '$equineHealths', as: 'eh', in: 'equine_health' } },
+                  { $map: { input: '$laboratories', as: 'l', in: 'laboratory' } },
+                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } }
+                ]
+              }
+            }
+          },
+          // Apply the same additional filters
+          ...(servicesReceived || totalAnimals ? [{
+            $match: {
+              ...(servicesReceived && {
+                servicesReceived: servicesReceived.includes(',') 
+                  ? { $in: servicesReceived.split(',') }
+                  : servicesReceived
+              }),
+              ...(totalAnimals && (() => {
+                const totalAnimalsCount = {
+                  $sum: {
+                    $map: {
+                      input: '$animals',
+                      as: 'animal',
+                      in: '$$animal.animalCount'
+                    }
+                  }
+                };
+                
+                switch (totalAnimals) {
+                  case '1-10':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 1] }, { $lte: [totalAnimalsCount, 10] }] } };
+                  case '11-50':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 11] }, { $lte: [totalAnimalsCount, 50] }] } };
+                  case '51-100':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 51] }, { $lte: [totalAnimalsCount, 100] }] } };
+                  case '101-500':
+                    return { $expr: { $and: [{ $gte: [totalAnimalsCount, 101] }, { $lte: [totalAnimalsCount, 500] }] } };
+                  case '500+':
+                    return { $expr: { $gt: [totalAnimalsCount, 500] } };
+                  default:
+                    return {};
+                }
+              })())
+            }
+          }] : []),
+          { $count: "total" }
+        ];
+        
+        const countResult = await Client.aggregate(countPipeline);
+        total = countResult.length > 0 ? countResult[0].total : 0;
+      } else {
+        total = await Client.countDocuments(filter);
+      }
     } catch (countError) {
       console.error('Error counting clients:', countError);
       total = 0;
