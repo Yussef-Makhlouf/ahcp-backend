@@ -414,6 +414,221 @@ router.put('/:id', auth, authorize('admin', 'supervisor'), async (req, res) => {
 
 /**
  * @swagger
+ * /api/holding-codes/bulk-delete:
+ *   delete:
+ *     summary: Delete multiple holding codes
+ *     tags: [HoldingCodes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of holding code IDs to delete
+ *     responses:
+ *       200:
+ *         description: Bulk delete completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 results:
+ *                   type: object
+ *                   properties:
+ *                     deleted:
+ *                       type: number
+ *                     failed:
+ *                       type: number
+ *                     errors:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ */
+router.delete('/bulk-delete', auth, authorize('super_admin'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs array is required and cannot be empty'
+      });
+    }
+    
+    console.log('🗑️ Bulk delete request for holding codes:', ids);
+    
+    const results = {
+      deleted: 0,
+      failed: 0,
+      errors: []
+    };
+    
+    // Models to check for usage
+    const models = [
+      require('../models/ParasiteControl'),
+      require('../models/MobileClinic'),
+      require('../models/EquineHealth'),
+      require('../models/Vaccination'),
+      require('../models/Laboratory')
+    ];
+    
+    for (const id of ids) {
+      try {
+        const holdingCode = await HoldingCode.findById(id);
+        if (!holdingCode) {
+          results.failed++;
+          results.errors.push({
+            id,
+            error: 'Holding code not found'
+          });
+          continue;
+        }
+        
+        // Check if holding code is being used
+        let isUsed = false;
+        let usageCount = 0;
+        
+        for (const Model of models) {
+          const count = await Model.countDocuments({ holdingCode: id });
+          if (count > 0) {
+            isUsed = true;
+            usageCount += count;
+          }
+        }
+        
+        if (isUsed) {
+          results.failed++;
+          results.errors.push({
+            id,
+            code: holdingCode.code,
+            error: `Cannot delete. Used in ${usageCount} record(s)`
+          });
+          continue;
+        }
+        
+        await HoldingCode.findByIdAndDelete(id);
+        results.deleted++;
+        
+      } catch (error) {
+        console.error(`Error deleting holding code ${id}:`, error);
+        results.failed++;
+        results.errors.push({
+          id,
+          error: error.message
+        });
+      }
+    }
+    
+    console.log('✅ Bulk delete results:', results);
+    
+    res.json({
+      success: true,
+      message: `Bulk delete completed. ${results.deleted} deleted, ${results.failed} failed.`,
+      results
+    });
+  } catch (error) {
+    console.error('Bulk delete holding codes error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during bulk delete operation',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/holding-codes/delete-all:
+ *   delete:
+ *     summary: Delete all holding codes
+ *     tags: [HoldingCodes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All holding codes deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 deletedCount:
+ *                   type: number
+ */
+router.delete('/delete-all', auth, authorize('super_admin'), async (req, res) => {
+  try {
+    console.log('🗑️ Delete all holding codes request');
+    
+    // Check if any holding codes are being used
+    const models = [
+      require('../models/ParasiteControl'),
+      require('../models/MobileClinic'),
+      require('../models/EquineHealth'),
+      require('../models/Vaccination'),
+      require('../models/Laboratory')
+    ];
+    
+    let totalUsage = 0;
+    const usageDetails = [];
+    
+    for (const Model of models) {
+      const count = await Model.countDocuments({ holdingCode: { $exists: true, $ne: null } });
+      if (count > 0) {
+        totalUsage += count;
+        usageDetails.push({
+          model: Model.modelName,
+          count
+        });
+      }
+    }
+    
+    if (totalUsage > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete all holding codes. ${totalUsage} record(s) are using holding codes.`,
+        usageDetails
+      });
+    }
+    
+    const result = await HoldingCode.deleteMany({});
+    
+    console.log('✅ Deleted all holding codes:', result.deletedCount);
+    
+    res.json({
+      success: true,
+      message: `Successfully deleted all holding codes (${result.deletedCount} records)`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Delete all holding codes error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting all holding codes',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/holding-codes/{id}:
  *   delete:
  *     summary: Delete a holding code
@@ -430,7 +645,7 @@ router.put('/:id', auth, authorize('admin', 'supervisor'), async (req, res) => {
  *       200:
  *         description: Holding code deleted successfully
  */
-router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+router.delete('/:id', auth, authorize('super_admin'), async (req, res) => {
   try {
     const { id } = req.params;
     

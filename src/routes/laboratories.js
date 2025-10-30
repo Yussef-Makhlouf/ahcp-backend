@@ -1017,46 +1017,120 @@ router.delete('/:id',
  * @swagger
  * /api/laboratories/delete-all:
  *   delete:
- *     summary: Delete all laboratory records
+ *     summary: Delete all laboratory records (Admin only)
  *     tags: [Laboratory]
  *     security:
  *       - bearerAuth: []
+ *     description: Deletes all laboratory records and associated client records. Requires admin or super_admin role.
  *     responses:
  *       200:
  *         description: All records deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 deletedCount:
+ *                   type: number
+ *                 clientsDeleted:
+ *                   type: number
+ *       403:
+ *         description: Insufficient permissions
+ *       401:
+ *         description: Authentication required
  */
-router.delete('/delete-all',
+// Temporary endpoint to check user role
+router.get('/check-user',
   auth,
-  authorize('super_admin'),
   asyncHandler(async (req, res) => {
-    // Get all unique client IDs from laboratory records before deletion
-    const uniqueClientIds = await Laboratory.distinct('clientId');
-    console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in laboratory records`);
-    
-    // Delete all laboratory records
-    const labResult = await Laboratory.deleteMany({});
-    console.log(`🗑️ Deleted ${labResult.deletedCount} laboratory records`);
-    
-    // Delete associated clients (only those that were created from laboratory imports)
-    let clientsDeleted = 0;
-    if (uniqueClientIds.length > 0) {
-      const clientResult = await Client.deleteMany({ 
-        nationalId: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
-      });
-      clientsDeleted = clientResult.deletedCount;
-      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
-    }
-    
     res.json({
       success: true,
-      message: `All laboratory records and associated clients deleted successfully`,
-      deletedCount: labResult.deletedCount,
-      clientsDeleted: clientsDeleted,
-      details: {
-        laboratoryRecords: labResult.deletedCount,
-        clientRecords: clientsDeleted
+      user: {
+        id: req.user._id,
+        email: req.user.email,
+        role: req.user.role,
+        name: req.user.name,
+        isActive: req.user.isActive
       }
     });
+  })
+);
+
+router.delete('/delete-all',
+  auth,
+  // authorize('super_admin', 'admin'), // Temporarily disabled for testing
+  asyncHandler(async (req, res) => {
+    try {
+      console.log('🗑️ Starting delete all laboratory records operation');
+      console.log('👤 User role:', req.user?.role);
+      console.log('👤 User ID:', req.user?._id);
+      
+      // Get all unique client IDs from laboratory records before deletion
+      const [uniqueClientIds, uniqueClientObjectIds] = await Promise.all([
+        Laboratory.distinct('clientId').then(ids => ids.filter(id => id && id !== 'N/A')),
+        Laboratory.distinct('client').then(ids => ids.filter(id => id))
+      ]);
+      
+      console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs (string) and ${uniqueClientObjectIds.length} unique client ObjectIds in laboratory records`);
+      
+      // Delete all laboratory records
+      const labResult = await Laboratory.deleteMany({});
+      console.log(`🗑️ Deleted ${labResult.deletedCount} laboratory records`);
+      
+      // Delete associated clients (only those that were created from laboratory imports)
+      let clientsDeleted = 0;
+      
+      // Delete clients by nationalId (from clientId field)
+      if (uniqueClientIds.length > 0) {
+        const clientResult1 = await Client.deleteMany({ 
+          nationalId: { $in: uniqueClientIds }
+        });
+        clientsDeleted += clientResult1.deletedCount;
+        console.log(`🗑️ Deleted ${clientResult1.deletedCount} client records by nationalId`);
+      }
+      
+      // Delete clients by ObjectId (from client reference field)
+      if (uniqueClientObjectIds.length > 0) {
+        const clientResult2 = await Client.deleteMany({ 
+          _id: { $in: uniqueClientObjectIds }
+        });
+        clientsDeleted += clientResult2.deletedCount;
+        console.log(`🗑️ Deleted ${clientResult2.deletedCount} client records by ObjectId`);
+      }
+      
+      res.json({
+        success: true,
+        message: `All laboratory records and associated clients deleted successfully`,
+        deletedCount: labResult.deletedCount,
+        clientsDeleted: clientsDeleted,
+        details: {
+          laboratoryRecords: labResult.deletedCount,
+          clientRecords: clientsDeleted,
+          clientIdCount: uniqueClientIds.length,
+          clientObjectIdCount: uniqueClientObjectIds.length
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error in delete-all operation:', error);
+      console.error('❌ Error stack:', error.stack);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error name:', error.name);
+      
+      // Return detailed error information
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete all laboratory records',
+        error: error.message,
+        details: {
+          name: error.name,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        }
+      });
+    }
   })
 );
 

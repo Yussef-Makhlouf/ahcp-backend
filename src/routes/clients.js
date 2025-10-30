@@ -88,6 +88,22 @@ const upload = multer({
  *         schema:
  *           type: string
  *         description: Search in name, national ID, or phone
+ *       - in: query
+ *         name: servicesReceived
+ *         schema:
+ *           type: string
+ *         description: Filter by services received (comma-separated)
+ *       - in: query
+ *         name: animals.animalType
+ *         schema:
+ *           type: string
+ *         description: Filter by animal type (comma-separated)
+ *       - in: query
+ *         name: totalAnimals
+ *         schema:
+ *           type: string
+ *           enum: [1-10, 11-50, 51-100, 101-500, 500+]
+ *         description: Filter by total animals range
  *     responses:
  *       200:
  *         description: Clients retrieved successfully
@@ -123,6 +139,22 @@ router.get('/',
         filter['animals.animalType'] = { $in: animalTypeFilter.split(',') };
       } else {
         filter['animals.animalType'] = animalTypeFilter;
+      }
+    }
+    
+    // Total animals filter
+    if (totalAnimals) {
+      const totalAnimalsFilter = totalAnimals;
+      if (totalAnimalsFilter === '1-10') {
+        filter['totalAnimals'] = { $gte: 1, $lte: 10 };
+      } else if (totalAnimalsFilter === '11-50') {
+        filter['totalAnimals'] = { $gte: 11, $lte: 50 };
+      } else if (totalAnimalsFilter === '51-100') {
+        filter['totalAnimals'] = { $gte: 51, $lte: 100 };
+      } else if (totalAnimalsFilter === '101-500') {
+        filter['totalAnimals'] = { $gte: 101, $lte: 500 };
+      } else if (totalAnimalsFilter === '500+') {
+        filter['totalAnimals'] = { $gt: 500 };
       }
     }
     

@@ -90,6 +90,12 @@ const upload = multer({
  *           type: string
  *           enum: [Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery]
  *         description: Filter by intervention category
+ *       - in: query
+ *         name: request.situation
+ *         schema:
+ *           type: string
+ *           enum: [Ongoing, Closed]
+ *         description: Filter by request status
  *     responses:
  *       200:
  *         description: Records retrieved successfully
@@ -108,7 +114,17 @@ router.get('/',
         $lte: new Date(endDate)
       };
     }
-    if (interventionCategory) filter.interventionCategory = interventionCategory;
+    if (interventionCategory) {
+      // Handle multiple intervention categories (comma-separated)
+      if (interventionCategory.includes(',')) {
+        filter.interventionCategory = { $in: interventionCategory.split(',') };
+      } else {
+        filter.interventionCategory = interventionCategory;
+      }
+    }
+    if (req.query['request.situation']) {
+      filter['request.situation'] = req.query['request.situation'];
+    }
     if (supervisor) filter.supervisor = { $regex: supervisor, $options: 'i' };
     if (search) {
       filter.$or = [
