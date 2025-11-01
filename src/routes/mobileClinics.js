@@ -11,6 +11,135 @@ const filterBuilder = require('../utils/filterBuilder');
 
 const router = express.Router();
 
+const INTERVENTION_CATEGORY_NORMALIZATION_MAP = {
+  'emergency': 'Emergency',
+  'urgent': 'Emergency',
+  'routine': 'Routine',
+  'regular': 'Routine',
+  'preventive': 'Preventive',
+  'prevention': 'Preventive',
+  'follow-up': 'Follow-up',
+  'follow up': 'Follow-up',
+  'followup': 'Follow-up',
+  'متابعة': 'Follow-up',
+  'clinical examination': 'Clinical Examination',
+  'فحص سريري': 'Clinical Examination',
+  'ultrasonography': 'Ultrasonography',
+  'تصوير بالموجات فوق الصوتية': 'Ultrasonography',
+  'surgical operation': 'Surgical Operation',
+  'عملية جراحية': 'Surgical Operation',
+  'lab analysis': 'Lab Analysis',
+  'laboratory analysis': 'Lab Analysis',
+  'laboratory': 'Lab Analysis',
+  'تحليل مخبري': 'Lab Analysis',
+  'farriery': 'Farriery',
+  'حدادة الخيل': 'Farriery'
+};
+
+const normalizeInterventionCategoryLabel = (value) => {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  const stringValue = value.toString().trim();
+  if (!stringValue) {
+    return '';
+  }
+
+  const key = stringValue.toLowerCase();
+  return INTERVENTION_CATEGORY_NORMALIZATION_MAP[key] || stringValue;
+};
+
+const splitMultiValueString = (value) => {
+  if (!value || typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(/[\n\r\|;,\/]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+};
+
+const parseCategoryInput = (input) => {
+  if (input === undefined || input === null) {
+    return [];
+  }
+
+  if (Array.isArray(input)) {
+    return input;
+  }
+
+  if (typeof input === 'object') {
+    return Object.values(input);
+  }
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        return Object.values(parsed);
+      }
+    } catch (error) {
+      // Not JSON - fall back to delimiter split
+    }
+    return splitMultiValueString(trimmed);
+  }
+
+  return [input];
+};
+
+const normalizeInterventionCategoriesInput = (primaryValue, categoriesInput, defaultValue = '') => {
+  let values = [];
+
+  values = values.concat(parseCategoryInput(primaryValue));
+  values = values.concat(parseCategoryInput(categoriesInput));
+
+  const normalized = values
+    .map(normalizeInterventionCategoryLabel)
+    .filter(value => value && value !== '-');
+
+  const unique = [...new Set(normalized)];
+
+  if (!unique.length && defaultValue) {
+    unique.push(normalizeInterventionCategoryLabel(defaultValue));
+  }
+
+  return {
+    list: unique,
+    primary: unique[0] || ''
+  };
+};
+
+const ensureInterventionCategoryShape = (record) => {
+  if (!record) {
+    return record;
+  }
+
+  const list = Array.isArray(record.interventionCategories) ? record.interventionCategories : [];
+  const normalizedList = list
+    .map(normalizeInterventionCategoryLabel)
+    .filter(value => value && value !== '-');
+
+  if (normalizedList.length === 0 && record.interventionCategory) {
+    normalizedList.push(normalizeInterventionCategoryLabel(record.interventionCategory));
+  }
+
+  record.interventionCategories = [...new Set(normalizedList)];
+
+  if (!record.interventionCategory && record.interventionCategories.length > 0) {
+    record.interventionCategory = record.interventionCategories[0];
+  }
+
+  return record;
+};
+
 /**
  * @swagger
  * /api/mobile-clinics:
@@ -106,6 +235,8 @@ router.get('/',
     if (!records) {
       records = [];
     }
+
+    records = records.map(record => ensureInterventionCategoryShape(record));
 
     const queryExecutionTime = Date.now() - queryStartTime;
     const totalExecutionTime = Date.now() - startTime;
@@ -310,7 +441,6 @@ router.post('/',
 
         // Medical information
         diagnosis: req.body.diagnosis,
-        interventionCategory: req.body.interventionCategory,
         treatment: req.body.treatment,
 
         // Medication information
@@ -342,6 +472,15 @@ router.post('/',
         remarks: req.body.remarks,
         createdBy: req.user._id
       };
+
+      const categoryPayload = normalizeInterventionCategoriesInput(
+        req.body.interventionCategory,
+        req.body.interventionCategories,
+        'Routine'
+      );
+
+      mobileClinicData.interventionCategory = categoryPayload.primary || '';
+      mobileClinicData.interventionCategories = categoryPayload.list;
 
       // Add client reference or flat client data
       if (req.body.client && typeof req.body.client === 'string') {
@@ -396,6 +535,8 @@ router.post('/',
 
       // Populate holding code for proper display
       await savedRecord.populate('holdingCode', 'code village description isActive');
+
+      ensureInterventionCategoryShape(savedRecord);
 
       console.log('✅ Mobile clinic record created successfully:', savedRecord._id);
 
@@ -533,10 +674,24 @@ router.get('/statistics',
       }
 
       // الحالات الطارئة
-      const emergencyCases = await MobileClinic.countDocuments({
-        ...filter,
-        interventionCategory: 'Emergency'
-      });
+      const emergencyCategoryCondition = {
+        $or: [
+          { interventionCategory: 'Emergency' },
+          { interventionCategories: 'Emergency' }
+        ]
+      };
+
+      const emergencyQuery = {
+        ...filter
+      };
+
+      if (filter.$and) {
+        emergencyQuery.$and = [...filter.$and, emergencyCategoryCondition];
+      } else {
+        emergencyQuery.$and = [emergencyCategoryCondition];
+      }
+
+      const emergencyCases = await MobileClinic.countDocuments(emergencyQuery);
 
       const statistics = {
         totalRecords,
@@ -645,16 +800,48 @@ router.get('/export',
   asyncHandler(async (req, res) => {
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', interventionCategory, startDate, endDate } = req.query;
+    const { 
+      format = 'json', 
+      startDate, 
+      endDate,
+      diagnosis,
+      interventionCategory,
+      followUpRequired
+    } = req.query;
+    
+    console.log('🔍 Mobile Clinic Export - Received query params:', req.query);
     
     const filter = {};
-    if (interventionCategory) filter.interventionCategory = interventionCategory;
+    
+    // Date filter
     if (startDate && endDate) {
       filter.date = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
+      console.log('📅 Mobile Clinic Export - Date filter applied:', filter.date);
     }
+    
+    // Diagnosis filter
+    if (diagnosis && diagnosis !== '__all__') {
+      filter.diagnosis = { $in: diagnosis.split(',') };
+      console.log('🩺 Mobile Clinic Export - Diagnosis filter applied:', filter.diagnosis);
+    }
+    
+    // Intervention category filter
+    if (interventionCategory && interventionCategory !== '__all__') {
+      filter.interventionCategory = { $in: interventionCategory.split(',') };
+      console.log('🏥 Mobile Clinic Export - Intervention category filter applied:', filter.interventionCategory);
+    }
+    
+    // Follow up required filter
+    if (followUpRequired && followUpRequired !== '__all__') {
+      const followUpValues = followUpRequired.split(',').map(val => val === 'true');
+      filter.followUpRequired = { $in: followUpValues };
+      console.log('📋 Mobile Clinic Export - Follow up filter applied:', filter.followUpRequired);
+    }
+    
+    console.log('🔍 Mobile Clinic Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
 
     const records = await MobileClinic.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
@@ -663,6 +850,7 @@ router.get('/export',
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
+      ensureInterventionCategoryShape(record);
       const animalCounts = record.animalCounts || {};
       
       // Handle client data (both flat and nested structures)
@@ -737,6 +925,9 @@ router.get('/export',
         'Total Animals': totalAnimals,
         'Diagnosis': record.diagnosis || '',
         'Intervention Category': record.interventionCategory || '',
+        'Intervention Categories': Array.isArray(record.interventionCategories) && record.interventionCategories.length > 0
+          ? record.interventionCategories.join(' | ')
+          : '',
         'Treatment': record.treatment || '',
         'Medications Used': record.medicationsUsed || '',
         'Follow Up Required': record.followUpRequired ? 'Yes' : 'No',
@@ -1014,6 +1205,8 @@ router.get('/:id',
         });
       }
 
+      ensureInterventionCategoryShape(record);
+
       res.json({
         success: true,
         data: record
@@ -1181,7 +1374,6 @@ router.put('/:id',
 
         // Medical information
         diagnosis: req.body.diagnosis,
-        interventionCategory: req.body.interventionCategory,
         treatment: req.body.treatment,
 
         // Medication information
@@ -1214,6 +1406,19 @@ router.put('/:id',
         updatedBy: req.user._id,
         updatedAt: new Date()
       };
+
+      const hasCategoryInput = Object.prototype.hasOwnProperty.call(req.body, 'interventionCategory') ||
+        Object.prototype.hasOwnProperty.call(req.body, 'interventionCategories');
+
+      if (hasCategoryInput) {
+        const categoryPayload = normalizeInterventionCategoriesInput(
+          req.body.interventionCategory,
+          req.body.interventionCategories,
+          existingRecord.interventionCategory || ''
+        );
+        updateData.interventionCategories = categoryPayload.list;
+        updateData.interventionCategory = categoryPayload.primary || '';
+      }
 
       // Process holding code if provided
       let holdingCodeId = null;
@@ -1259,6 +1464,8 @@ router.put('/:id',
        .populate('holdingCode', 'code village description isActive');
 
       console.log('✅ Mobile clinic record updated successfully:', updatedRecord._id);
+
+      ensureInterventionCategoryShape(updatedRecord);
 
       res.json({
         success: true,

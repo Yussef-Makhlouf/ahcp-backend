@@ -424,15 +424,54 @@ router.get('/export',
   asyncHandler(async (req, res) => {
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', startDate, endDate } = req.query;
+    const { 
+      format = 'json', 
+      startDate, 
+      endDate,
+      'vaccine.type': vaccineType,
+      'vaccine.category': vaccineCategory,
+      herdHealthStatus,
+      'request.situation': requestSituation
+    } = req.query;
+    
+    console.log('🔍 Vaccination Export - Received query params:', req.query);
     
     const filter = {};
+    
+    // Date filter
     if (startDate && endDate) {
       filter.date = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
+      console.log('📅 Vaccination Export - Date filter applied:', filter.date);
     }
+    
+    // Vaccine type filter
+    if (vaccineType && vaccineType !== '__all__') {
+      filter.vaccineType = { $in: vaccineType.split(',') };
+      console.log('💉 Vaccination Export - Vaccine type filter applied:', filter.vaccineType);
+    }
+    
+    // Vaccine category filter
+    if (vaccineCategory && vaccineCategory !== '__all__') {
+      filter.vaccineCategory = { $in: vaccineCategory.split(',') };
+      console.log('🏷️ Vaccination Export - Vaccine category filter applied:', filter.vaccineCategory);
+    }
+    
+    // Herd health status filter
+    if (herdHealthStatus && herdHealthStatus !== '__all__') {
+      filter.herdHealthStatus = { $in: herdHealthStatus.split(',') };
+      console.log('🐑 Vaccination Export - Herd health filter applied:', filter.herdHealthStatus);
+    }
+    
+    // Request situation filter
+    if (requestSituation && requestSituation !== '__all__') {
+      filter['request.situation'] = { $in: requestSituation.split(',') };
+      console.log('📋 Vaccination Export - Request situation filter applied:', filter['request.situation']);
+    }
+    
+    console.log('🔍 Vaccination Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
 
     const records = await Vaccination.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')

@@ -203,6 +203,14 @@ const vaccinationSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Vaccine type cannot exceed 100 characters']
   },
+  vaccineCategory: {
+    type: String,
+    enum: {
+      values: ['Preventive', 'Emergency'],
+      message: 'Vaccine category must be either Preventive or Emergency'
+    },
+    default: 'Preventive'
+  },
   herdCounts: {
     sheep: herdCountSchema,
     goats: herdCountSchema,
@@ -272,6 +280,7 @@ vaccinationSchema.index({ date: -1 });
 vaccinationSchema.index({ client: 1 });
 vaccinationSchema.index({ supervisor: 1 });
 vaccinationSchema.index({ vaccineType: 1 });
+vaccinationSchema.index({ vaccineCategory: 1 });
 vaccinationSchema.index({ 'request.situation': 1 });
 vaccinationSchema.index({ herdHealth: 1 });
 vaccinationSchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });

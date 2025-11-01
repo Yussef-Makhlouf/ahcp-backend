@@ -1,7 +1,79 @@
+const { normalizeEquineInterventionCategoryList } = require('./interventionCategories');
+
 class FilterBuilder {
   constructor() {
     this.DEFAULT_LIMIT = 30;
     this.MAX_LIMIT = 1000;
+  }
+
+  // تحويل القيمة إلى جميع الصيغ المحتملة (slug, عنوان، lowercase...)
+  normalizeFilterValues(values = []) {
+    const normalizedSet = new Set();
+
+    const toTitleCase = (str) => {
+      return str
+        .split(' ')
+        .filter(Boolean)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    };
+
+    values.forEach((value) => {
+      if (value === undefined || value === null) return;
+
+      const stringValue = value.toString().trim();
+      if (!stringValue) return;
+
+      // القيمة الأصلية
+      normalizedSet.add(stringValue);
+
+      // العنوان مع المحافظة على الشرطات إن وجدت
+      if (stringValue.includes('-')) {
+        const hyphenTitle = stringValue
+          .split('-')
+          .filter(Boolean)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join('-');
+        if (hyphenTitle) {
+          normalizedSet.add(hyphenTitle);
+        }
+      }
+
+      if (stringValue.includes('_')) {
+        const underscoreTitle = stringValue
+          .split('_')
+          .filter(Boolean)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join('_');
+        if (underscoreTitle) {
+          normalizedSet.add(underscoreTitle);
+        }
+      }
+
+      // استبدال الشرطات والشرطات السفلية بمسافات
+      const spaceSeparated = stringValue
+        .replace(/[\-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (spaceSeparated && spaceSeparated !== stringValue) {
+        normalizedSet.add(spaceSeparated);
+      }
+
+      if (spaceSeparated) {
+        const titleCase = toTitleCase(spaceSeparated);
+        if (titleCase) {
+          normalizedSet.add(titleCase);
+        }
+
+        const lowerCase = spaceSeparated.toLowerCase();
+        if (lowerCase) {
+          normalizedSet.add(lowerCase);
+        }
+      }
+    });
+
+    return Array.from(normalizedSet).filter(Boolean);
   }
 
   // بناء فلتر النطاق الزمني المحسن
@@ -31,21 +103,34 @@ class FilterBuilder {
   // بناء فلتر القيم المتعددة مع دعم النفي
   buildMultiValueFilter(value) {
     if (!value) return null;
-    
-    const values = value.split(',').map(v => v.trim()).filter(v => v);
+
+    let values = [];
+
+    if (Array.isArray(value)) {
+      values = value;
+    } else if (typeof value === 'string') {
+      values = value.split(',');
+    } else {
+      values = [value];
+    }
+
+    values = values
+      .map(v => (v === undefined || v === null) ? '' : v.toString().trim())
+      .filter(v => v);
+
     if (values.length === 0) return null;
-    
+
     const included = values.filter(v => !v.startsWith('!'));
     const excluded = values.filter(v => v.startsWith('!')).map(v => v.substring(1));
-    
+
     const filter = {};
     if (included.length > 0) {
-      filter.$in = included;
+      filter.$in = this.normalizeFilterValues(included);
     }
     if (excluded.length > 0) {
-      filter.$nin = excluded;
+      filter.$nin = this.normalizeFilterValues(excluded);
     }
-    
+
     return Object.keys(filter).length > 0 ? filter : null;
   }
 
@@ -133,10 +218,10 @@ class FilterBuilder {
     
     // فلاتر اللقاح
     const vaccineTypeFilter = this.buildMultiValueFilter(query.vaccineType || query['vaccine.type']);
-    if (vaccineTypeFilter) filter['vaccine.type'] = vaccineTypeFilter;
+    if (vaccineTypeFilter) filter.vaccineType = vaccineTypeFilter; // استخدام vaccineType بدلاً من vaccine.type
     
     const vaccineCategoryFilter = this.buildMultiValueFilter(query.vaccineCategory || query['vaccine.category']);
-    if (vaccineCategoryFilter) filter['vaccine.category'] = vaccineCategoryFilter;
+    if (vaccineCategoryFilter) filter.vaccineCategory = vaccineCategoryFilter; // استخدام vaccineCategory بدلاً من vaccine.category
     
     // فلتر الحالة الصحية للقطيع
     const herdHealthFilter = this.buildMultiValueFilter(query.herdHealthStatus);
@@ -167,7 +252,7 @@ class FilterBuilder {
     
     // فلتر التاريخ
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.collectionDate = dateFilter;
+    if (dateFilter) filter.date = dateFilter;
     
     // فلتر الجامع
     if (query.collector) {
@@ -232,7 +317,19 @@ class FilterBuilder {
     
     // فلتر فئة التدخل
     const interventionCategoryFilter = this.buildMultiValueFilter(query.interventionCategory);
-    if (interventionCategoryFilter) filter.interventionCategory = interventionCategoryFilter;
+    if (interventionCategoryFilter) {
+      const categoryCondition = {
+        $or: [
+          { interventionCategory: interventionCategoryFilter },
+          { interventionCategories: interventionCategoryFilter }
+        ]
+      };
+      if (filter.$and) {
+        filter.$and.push(categoryCondition);
+      } else {
+        filter.$and = [categoryCondition];
+      }
+    }
     
     // فلتر يتطلب متابعة
     if (query.followUpRequired !== undefined) {
@@ -243,6 +340,67 @@ class FilterBuilder {
     const requestSituationFilter = this.buildMultiValueFilter(query.mobileClinicStatus || query['request.situation']);
     if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
     
+    return filter;
+  }
+
+  // بناء فلتر صحة الخيول
+  buildEquineHealthFilter(query) {
+    const filter = {};
+
+    const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
+    if (dateFilter) filter.date = dateFilter;
+
+    const interventionFilter = this.buildMultiValueFilter(query.interventionCategory);
+    if (interventionFilter) {
+      console.log('🔍 Original intervention filter:', interventionFilter);
+      
+      if (interventionFilter.$in) {
+        const normalizedIn = normalizeEquineInterventionCategoryList(interventionFilter.$in);
+        console.log('🔄 Normalized $in values:', normalizedIn);
+        if (normalizedIn.length) {
+          interventionFilter.$in = normalizedIn;
+        } else {
+          delete interventionFilter.$in;
+        }
+      }
+
+      if (interventionFilter.$nin) {
+        const normalizedNin = normalizeEquineInterventionCategoryList(interventionFilter.$nin);
+        console.log('🔄 Normalized $nin values:', normalizedNin);
+        if (normalizedNin.length) {
+          interventionFilter.$nin = normalizedNin;
+        } else {
+          delete interventionFilter.$nin;
+        }
+      }
+
+      if (Object.keys(interventionFilter).length > 0) {
+        filter.interventionCategory = interventionFilter;
+        console.log('✅ Final intervention filter applied:', interventionFilter);
+      }
+    }
+
+    const requestSituationFilter = this.buildMultiValueFilter(query['request.situation']);
+    if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
+
+    if (query.supervisor) {
+      filter.supervisor = new RegExp(query.supervisor, 'i');
+    }
+
+    if (query.search) {
+      const searchFilter = this.buildTextSearchFilter(query.search, [
+        'serialNo',
+        'supervisor',
+        'vehicleNo',
+        'diagnosis',
+        'client.name',
+        'client.nationalId',
+        'client.phone'
+      ]);
+      if (searchFilter) Object.assign(filter, searchFilter);
+    }
+
+    console.log('🎯 Final EquineHealth filter:', JSON.stringify(filter, null, 2));
     return filter;
   }
 

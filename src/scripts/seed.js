@@ -568,6 +568,7 @@ const sampleMobileClinics = [
     },
     diagnosis: 'فحص سريري روتيني للماشية والماعز',
     interventionCategory: 'Routine',
+    interventionCategories: ['Routine'],
     treatment: 'فحص عام وإعطاء الفيتامينات اللازمة',
     medicationsUsed: [
       {
@@ -601,6 +602,7 @@ const sampleMobileClinics = [
     },
     diagnosis: 'عملية جراحية طارئة لإزالة جسم غريب',
     interventionCategory: 'Emergency',
+    interventionCategories: ['Emergency'],
     treatment: 'عملية جراحية ناجحة مع المضادات الحيوية',
     medicationsUsed: [
       {

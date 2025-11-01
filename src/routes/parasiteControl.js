@@ -509,15 +509,68 @@ router.get('/export',
   asyncHandler(async (req, res) => {
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', startDate, endDate } = req.query;
+    const { 
+      format = 'json', 
+      startDate, 
+      endDate,
+      'insecticide.method': method,
+      'insecticide.category': category,
+      'insecticide.status': status,
+      'insecticide.type': type,
+      herdHealthStatus,
+      complyingToInstructions
+    } = req.query;
+    
+    console.log('🔍 Export - Received query params:', req.query);
     
     const filter = {};
+    
+    // Date filter
     if (startDate && endDate) {
       filter.date = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
+      console.log('📅 Export - Date filter applied:', filter.date);
     }
+    
+    // Insecticide method filter
+    if (method && method !== '__all__') {
+      filter['insecticide.method'] = { $in: method.split(',') };
+      console.log('🧪 Export - Method filter applied:', filter['insecticide.method']);
+    }
+    
+    // Insecticide category filter
+    if (category && category !== '__all__') {
+      filter['insecticide.category'] = { $in: category.split(',') };
+      console.log('🏷️ Export - Category filter applied:', filter['insecticide.category']);
+    }
+    
+    // Insecticide status filter
+    if (status && status !== '__all__') {
+      filter['insecticide.status'] = { $in: status.split(',') };
+      console.log('📊 Export - Status filter applied:', filter['insecticide.status']);
+    }
+    
+    // Insecticide type filter
+    if (type && type !== '__all__') {
+      filter['insecticide.type'] = { $in: type.split(',') };
+      console.log('🔬 Export - Type filter applied:', filter['insecticide.type']);
+    }
+    
+    // Herd health status filter
+    if (herdHealthStatus && herdHealthStatus !== '__all__') {
+      filter.herdHealthStatus = { $in: herdHealthStatus.split(',') };
+      console.log('🐑 Export - Herd health filter applied:', filter.herdHealthStatus);
+    }
+    
+    // Complying to instructions filter
+    if (complyingToInstructions && complyingToInstructions !== '__all__') {
+      filter.complyingToInstructions = { $in: complyingToInstructions.split(',') };
+      console.log('✅ Export - Complying filter applied:', filter.complyingToInstructions);
+    }
+    
+    console.log('🔍 Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
 
     const records = await ParasiteControl.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')

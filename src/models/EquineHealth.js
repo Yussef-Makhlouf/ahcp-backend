@@ -448,17 +448,20 @@ equineHealthSchema.statics.getStatistics = async function(filters = {}) {
         _id: null,
         totalRecords: { $sum: 1 },
         totalHorses: { $sum: '$horseCount' },
-        emergencyInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Emergency'] }, 1, 0] }
+        clinicalExaminations: {
+          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Clinical Examination'] }, 1, 0] }
         },
-        routineInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Routine'] }, 1, 0] }
+        surgicalOperations: {
+          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Surgical Operation'] }, 1, 0] }
         },
-        preventiveInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Preventive'] }, 1, 0] }
+        ultrasonography: {
+          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Ultrasonography'] }, 1, 0] }
         },
-        breedingInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Breeding'] }, 1, 0] }
+        labAnalyses: {
+          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Lab Analysis'] }, 1, 0] }
+        },
+        farriery: {
+          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Farriery'] }, 1, 0] }
         },
         followUpRequired: {
           $sum: { $cond: ['$followUpRequired', 1, 0] }
@@ -471,10 +474,11 @@ equineHealthSchema.statics.getStatistics = async function(filters = {}) {
   return result[0] || {
     totalRecords: 0,
     totalHorses: 0,
-    emergencyInterventions: 0,
-    routineInterventions: 0,
-    preventiveInterventions: 0,
-    breedingInterventions: 0,
+    clinicalExaminations: 0,
+    surgicalOperations: 0,
+    ultrasonography: 0,
+    labAnalyses: 0,
+    farriery: 0,
     followUpRequired: 0
   };
 };

@@ -18,6 +18,11 @@ const Laboratory = require('../models/Laboratory');
 const EquineHealth = require('../models/EquineHealth');
 const HoldingCode = require('../models/HoldingCode');
 const Village = require('../models/Village');
+const filterBuilder = require('../utils/filterBuilder');
+const {
+  normalizeEquineInterventionCategory,
+  normalizeEquineInterventionCategoryList
+} = require('../utils/interventionCategories');
 
 const router = express.Router();
 
@@ -86,6 +91,96 @@ const arabicHeaders = {
   'coordinates': 'الإحداثيات',
   'latitude': 'خط العرض',
   'longitude': 'خط الطول'
+};
+
+const normalizeFilterValue = (value) => {
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) {
+    const cleaned = value.map(v => String(v).trim()).filter(Boolean);
+    return cleaned.length > 0 ? cleaned.join(',') : undefined;
+  }
+  const stringValue = String(value).trim();
+  return stringValue === '' || stringValue === '__all__' ? undefined : stringValue;
+};
+
+const buildClientExportFilters = (query = {}) => {
+  const match = {};
+
+  const dateFilter = filterBuilder.buildDateFilter(query.startDate, query.endDate);
+  if (dateFilter) {
+    match.createdAt = dateFilter;
+  }
+
+  const status = normalizeFilterValue(query.status);
+  if (status) {
+    match.status = status;
+  }
+
+  const village = normalizeFilterValue(query.village);
+  if (village) {
+    match.village = { $regex: village, $options: 'i' };
+  }
+
+  const animalTypeValue = normalizeFilterValue(query.animalType || query['animals.animalType']);
+  if (animalTypeValue) {
+    const animalTypeFilter = filterBuilder.buildMultiValueFilter(animalTypeValue);
+    if (animalTypeFilter) {
+      match['animals.animalType'] = animalTypeFilter;
+    }
+  }
+
+  const search = normalizeFilterValue(query.search);
+  if (search) {
+    match.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { nationalId: { $regex: search, $options: 'i' } },
+      { phone: { $regex: search, $options: 'i' } },
+      { village: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  const servicesValue = normalizeFilterValue(query.servicesReceived);
+  const servicesFilter = servicesValue ? filterBuilder.buildMultiValueFilter(servicesValue) : null;
+
+  const totalAnimalsRange = normalizeFilterValue(query.totalAnimals);
+
+  return { match, servicesFilter, totalAnimalsRange };
+};
+
+const applyServicesMatch = (pipeline, servicesFilter) => {
+  if (!servicesFilter || Object.keys(servicesFilter).length === 0) {
+    return;
+  }
+  pipeline.push({ $match: { servicesReceived: servicesFilter } });
+};
+
+const applyTotalAnimalsMatch = (pipeline, range) => {
+  if (!range) return;
+
+  let condition = null;
+  switch (range) {
+    case '1-10':
+      condition = { $gte: 1, $lte: 10 };
+      break;
+    case '11-50':
+      condition = { $gte: 11, $lte: 50 };
+      break;
+    case '51-100':
+      condition = { $gte: 51, $lte: 100 };
+      break;
+    case '101-500':
+      condition = { $gte: 101, $lte: 500 };
+      break;
+    case '500+':
+      condition = { $gt: 500 };
+      break;
+    default:
+      break;
+  }
+
+  if (condition) {
+    pipeline.push({ $match: { totalAnimals: condition } });
+  }
 };
 
 // Configure multer for memory storage (better for serverless)
@@ -1437,23 +1532,14 @@ const processUnifiedAnimalCounts = (row) => {
  * Handles enum values consistently
  */
 const processUnifiedEnums = (row) => {
+  const categoriesResult = extractInterventionCategories(row, [
+    'Intervention Categories', 'interventionCategories', 'Categories', 'categories',
+    'Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'
+  ]);
+
   return {
-    interventionCategory: (() => {
-      const category = (row['Intervention Category'] || row.interventionCategory || 'Routine').toString().trim();
-      const categoryMap = {
-        'Clinical Examination': 'Clinical Examination', 'Surgical Operation': 'Surgical Operation', 'Ultrasonography': 'Ultrasonography', 'Preventive': 'Preventive', 'Lab Analysis': 'Lab Analysis', 'Farriery': 'Farriery'
-      };
-      const lowerCategory = category.toLowerCase();
-      if (categoryMap[lowerCategory]) {
-        return categoryMap[lowerCategory];
-      }
-      
-      if (['Clinical Examination', 'Surgical Operation', 'Ultrasonography', 'Preventive', 'Lab Analysis', 'Farriery'].includes(category)) {
-        return category;
-      }
-      
-      return 'Routine';
-    })(),
+    interventionCategory: categoriesResult.primary,
+    interventionCategories: categoriesResult.all,
     requestSituation: (() => {
       const status = (row['Request Status'] || row.requestStatus || 'Ongoing').toString().trim();
       const statusMap = {
@@ -1508,6 +1594,20 @@ const parseDateField = (dateString) => {
   
   const dateStr = dateString.toString().trim();
   console.log(`🔍 Parsing date: ${dateStr}`);
+  
+  // Skip text values that are clearly not dates
+  const textValues = [
+    'not-comply', 'not comply', 'comply', 'partially comply', 'parially comply',
+    'healthy', 'sick', 'sporadic cases', 'sporadic-cases',
+    'sprayed', 'not sprayed', 'not avialable', 'not available',
+    'ongoing', 'closed', 'pending',
+    'parasite control activity', 'activity'
+  ];
+  
+  if (textValues.some(text => dateStr.toLowerCase().includes(text.toLowerCase()))) {
+    console.log(`⚠️ Skipping text value that is not a date: ${dateStr}`);
+    return null;
+  }
   
   // Handle Excel serial date numbers (Excel stores dates as numbers)
   if (!isNaN(dateStr) && parseFloat(dateStr) > 0) {
@@ -1811,34 +1911,98 @@ const processParasiteControlRow = async (row, userId, errors) => {
         // Fallback to individual fields
         return {
           type: getFieldValue(row, [
-            'Insecticide Type', 'insecticideType', 'insecticide_type',
+            'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
             'نوع المبيد', 'المبيد المستخدم'
           ]) || 'N/A',
-          method: getFieldValue(row, [
-            'Insecticide Method', 'insecticideMethod', 'insecticide_method',
-            'طريقة الرش', 'النوع'
-          ]) || 'N/A',
+          method: (() => {
+            // Try to get method from various fields
+            let method = getFieldValue(row, [
+              'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
+              'Application Method', 'applicationMethod', 'application_method',
+              'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
+            ]);
+            
+            if (!method) {
+              // Fallback to category if method not found
+              const category = getFieldValue(row, [
+                'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
+                'فئة المبيد'
+              ]);
+              
+              // Map common categories to methods
+              if (category) {
+                const categoryLower = category.toLowerCase();
+                if (categoryLower.includes('pour') || categoryLower.includes('صب')) method = 'Pour on';
+                else if (categoryLower.includes('spray') || categoryLower.includes('رش')) method = 'Spraying';
+                else if (categoryLower.includes('dip') || categoryLower.includes('غمس')) method = 'Dipping';
+                else method = 'Other';
+              }
+            }
+            
+            // Validate method against allowed values
+            const validMethods = ['Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other'];
+            return validMethods.includes(method) ? method : 'Pour on';
+          })(),
           volumeMl: parseInt(getFieldValue(row, [
-            'Insecticide Volume (ml)', 'insecticideVolume', 'insecticide_volume',
+            'Volume (ml)', 'Volume', 'Insecticide Volume (ml)', 'insecticideVolume', 'insecticide_volume',
             'الحجم (مل)', 'الحجم'
           ]) || 0),
-          status: processEnumValue(
-            row,
-            ['Insecticide Status', 'insecticideStatus', 'insecticide_status', 'حالة الرش'],
-            {
-              'sprayed': 'Sprayed', 'yes': 'Sprayed', 'مرشوش': 'Sprayed', 'نعم': 'Sprayed',
-              'not sprayed': 'Not Sprayed', 'no': 'Not Sprayed', 'غير مرشوش': 'Not Sprayed', 'لا': 'Not Sprayed'
-            },
-            'Sprayed'
-          ),
-          category: getFieldValue(row, [
-            'Insecticide Category', 'insecticideCategory', 'insecticide_category',
-            'فئة المبيد'
-          ]) || 'N/A'
+          status: (() => {
+            const statusValue = getFieldValue(row, [
+              'Status', 'Insecticide Status', 'insecticideStatus', 'insecticide_status', 'حالة الرش'
+            ]);
+            
+            if (!statusValue) return 'Not Sprayed';
+            
+            const statusLower = statusValue.toString().toLowerCase().trim();
+            
+            // Handle all variations
+            if (statusLower.includes('spray') && !statusLower.includes('not')) return 'Sprayed';
+            if (statusLower === 'yes' || statusLower === 'نعم' || statusLower === 'مرشوش') return 'Sprayed';
+            if (statusLower.includes('not') || statusLower === 'no' || statusLower === 'لا') return 'Not Sprayed';
+            if (statusLower.includes('avialable') || statusLower.includes('available')) return 'Not Sprayed';
+            if (statusLower.includes('partial')) return 'Partially Sprayed';
+            
+            return 'Not Sprayed'; // Default
+          })(),
+          category: (() => {
+            // Get category from various fields
+            const category = getFieldValue(row, [
+              'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
+              'فئة المبيد'
+            ]);
+            
+            if (category && category !== 'N/A') return category;
+            
+            // Fallback to type if category not found
+            const type = getFieldValue(row, [
+              'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
+              'نوع المبيد', 'المبيد المستخدم'
+            ]);
+            
+            return type || 'Pour-on'; // Default category
+          })(),
+          // Extract concentration from type if available
+          concentration: (() => {
+            const type = getFieldValue(row, [
+              'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
+              'نوع المبيد', 'المبيد المستخدم'
+            ]);
+            
+            if (type) {
+              // Extract percentage from type name (e.g., "Ultra-Pour 1%" -> "1%")
+              const match = type.match(/(\d+(?:\.\d+)?%)/);
+              return match ? match[1] : '';
+            }
+            return '';
+          })(),
+          manufacturer: getFieldValue(row, [
+            'Manufacturer', 'manufacturer', 'الشركة المصنعة', 'المصنع'
+          ]) || ''
         };
       })(),
       animalBarnSizeSqM: parseInt(getFieldValue(row, [
-        'Size (sqM)', 'Barn Size', 'animalBarnSize', 'animal_barn_size',
+        'Size (sqM)', 'Size', 'Barn Size', 'animalBarnSize', 'animal_barn_size',
         'مساحة الحظيرة', 'الحجم (متر مربع)'
       ]) || 0),
       breedingSites: (() => {
@@ -1894,29 +2058,84 @@ const processParasiteControlRow = async (row, userId, errors) => {
         'Parasite Control Status', 'parasiteControlStatus', 'parasite_control_status',
         'حالة مكافحة الطفيليات'
       ]) || getFieldValue(row, ['Insecticide']) || 'N/A',
-      herdHealthStatus: processEnumValue(
-        row,
-        ['Herd Health Status', 'herdHealthStatus', 'herd_health_status', 'حالة صحة القطيع'],
-        {
-          'healthy': 'Healthy', 'صحي': 'Healthy', 'سليم': 'Healthy',
-          'sick': 'Sick', 'مريض': 'Sick', 'sporadic': 'Sick', 'sporadic cases': 'Sick',
-          'under treatment': 'Under Treatment', 'تحت العلاج': 'Under Treatment' , 'Sporadic Cases': 'Sporadic Cases', 'sporadic Cases': 'sporadic Cases'
-        },
-        'Healthy'
-      ),
-      complyingToInstructions: processEnumValue(
-        row,
-        ['Complying to instructions', 'complyingToInstructions', 'complying_to_instructions', 'الالتزام بالتعليمات'],
-        {
-          'comply': 'Comply', 'true': 'Comply', 'yes': 'Comply', 'ملتزم': 'Comply', 'نعم': 'Comply',
-          'not comply': 'Not Comply', 'false': 'Not Comply', 'no': 'Not Comply', 'غير ملتزم': 'Not Comply', 'لا': 'Not Comply',
-          'partially comply': 'Partially Comply', 'partial': 'Partially Comply', 'ملتزم جزئيا': 'Partially Comply'
-        },
-        'Comply'
-      ),
+      herdHealthStatus: (() => {
+        const healthValue = getFieldValue(row, [
+          'Herd Health Status', 'herdHealthStatus', 'herd_health_status', 'حالة صحة القطيع'
+        ]);
+        
+        if (!healthValue) return 'Healthy';
+        
+        const healthLower = healthValue.toString().toLowerCase().trim();
+        
+        // Handle all variations
+        if (healthLower === 'healthy' || healthLower === 'صحي' || healthLower === 'سليم') return 'Healthy';
+        if (healthLower === 'sick' || healthLower === 'مريض') return 'Sick';
+        if (healthLower.includes('sporadic') || healthLower.includes('cases')) return 'Sporadic cases';
+        if (healthLower.includes('treatment') || healthLower === 'تحت العلاج') return 'Sporadic cases';
+        
+        return 'Healthy'; // Default
+      })(),
+      complyingToInstructions: (() => {
+        const complianceValue = getFieldValue(row, [
+          'Complying to instructions', 'complyingToInstructions', 'complying_to_instructions', 'الالتزام بالتعليمات'
+        ]);
+        
+        if (!complianceValue) return 'Comply';
+        
+        const complianceLower = complianceValue.toString().toLowerCase().trim();
+        
+        // Handle all variations
+        if (complianceLower === 'comply' || complianceLower === 'true' || complianceLower === 'yes' || 
+            complianceLower === 'ملتزم' || complianceLower === 'نعم') return 'Comply';
+        
+        if (complianceLower.includes('not') && complianceLower.includes('comply') || 
+            complianceLower === 'false' || complianceLower === 'no' || 
+            complianceLower === 'غير ملتزم' || complianceLower === 'لا') return 'Not Comply';
+        
+        if (complianceLower.includes('partial') || complianceLower.includes('parially') || 
+            complianceLower === 'ملتزم جزئيا') return 'Partially Comply';
+        
+        return 'Comply'; // Default
+      })(),
       holdingCode: await processHoldingCodeReference(row, userId),
       request: processRequest(row, dates),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',
+      // Calculate totals from herd counts
+      totalHerdCount: (() => {
+        const total = (herdCounts.sheep?.total || 0) + 
+                     (herdCounts.goats?.total || 0) + 
+                     (herdCounts.camel?.total || 0) + 
+                     (herdCounts.cattle?.total || 0) + 
+                     (herdCounts.horse?.total || 0);
+        return total;
+      })(),
+      totalYoung: (() => {
+        const total = (herdCounts.sheep?.young || 0) + 
+                     (herdCounts.goats?.young || 0) + 
+                     (herdCounts.camel?.young || 0) + 
+                     (herdCounts.cattle?.young || 0) + 
+                     (herdCounts.horse?.young || 0);
+        return total;
+      })(),
+      totalFemale: (() => {
+        const total = (herdCounts.sheep?.female || 0) + 
+                     (herdCounts.goats?.female || 0) + 
+                     (herdCounts.camel?.female || 0) + 
+                     (herdCounts.cattle?.female || 0) + 
+                     (herdCounts.horse?.female || 0);
+        return total;
+      })(),
+      totalTreated: (() => {
+        const total = (herdCounts.sheep?.treated || 0) + 
+                     (herdCounts.goats?.treated || 0) + 
+                     (herdCounts.camel?.treated || 0) + 
+                     (herdCounts.cattle?.treated || 0) + 
+                     (herdCounts.horse?.treated || 0);
+        return total;
+      })(),
+      activityType: getFieldValue(row, ['Activity Type', 'activityType', 'نوع النشاط']) || 'Parasite Control Activity',
+      importSource: 'excel',
+      importDate: new Date(),
       customImportData: processCustomImportData(row),
       createdBy: userId
     });
@@ -1940,6 +2159,11 @@ const processMobileClinicRow = async (row, userId, errors) => {
     const animalCounts = processAnimalCounts(row);
     
     // Create mobile clinic record
+    const categoriesResult = extractInterventionCategories(row, [
+      'Intervention Categories', 'interventionCategories', 'Categories', 'categories',
+      'Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'
+    ]);
+
     const mobileClinic = new MobileClinic({
       serialNo: generateSerialNo(row, 'MC'),
       date: dates.mainDate,
@@ -1960,17 +2184,8 @@ const processMobileClinicRow = async (row, userId, errors) => {
       diagnosis: getFieldValue(row, [
         'Diagnosis', 'diagnosis', 'التشخيص'
       ]) || '',
-      interventionCategory: processEnumValue(
-        row,
-        ['Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'],
-        {
-          'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
-          'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
-          'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
-          'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up'
-        },
-        'Routine'
-      ),
+      interventionCategory: categoriesResult.primary || '',
+      interventionCategories: categoriesResult.all,
       treatment: getFieldValue(row, [
         'Treatment', 'treatment', 'العلاج'
       ]) || '',
@@ -2012,7 +2227,11 @@ const processMobileClinicRow = async (row, userId, errors) => {
 const getFieldValue = (row, fieldNames) => {
   // First try exact match
   for (const name of fieldNames) {
-    if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+    if (row[name] !== undefined && row[name] !== null && row[name] !== '' && row[name] !== '-') {
+      // Handle multiple phone numbers separated by comma
+      if (name.toLowerCase().includes('phone') && typeof row[name] === 'string' && row[name].includes(',')) {
+        return row[name].split(',')[0].trim(); // Take first phone number
+      }
       return row[name];
     }
   }
@@ -2034,6 +2253,199 @@ const getFieldValue = (row, fieldNames) => {
   }
   
   return undefined;
+};
+
+// ========================================
+// LOCATION/VILLAGE HELPERS
+// ========================================
+
+const INVALID_LOCATION_VALUES = new Set([
+  '',
+  '-',
+  'na',
+  'n/a',
+  'غير محدد',
+  'غير  محدد',
+  'غير محددة',
+  'غير معروف',
+  'غير معروفة',
+  'غير معرف',
+  'غير معرفه',
+  'not specified',
+  'not specified.',
+  'not available',
+  'غير متوفر',
+  'غير متوفرة',
+  'undefined',
+  'null',
+  'none',
+  'n\u002fa'
+].map(value => value.toLowerCase()));
+
+const normalizeLocationString = (value) => {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  const stringValue = value.toString().trim();
+  if (!stringValue) {
+    return '';
+  }
+
+  const normalized = stringValue.replace(/\s+/g, ' ').toLowerCase();
+  if (INVALID_LOCATION_VALUES.has(normalized)) {
+    return '';
+  }
+
+  return stringValue;
+};
+
+const extractVillageName = (value) => {
+  if (!value && value !== 0) {
+    return '';
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = extractVillageName(item);
+      if (result) {
+        return result;
+      }
+    }
+    return '';
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return normalizeLocationString(value);
+  }
+
+  if (typeof value === 'object') {
+    if (value === null) {
+      return '';
+    }
+
+    const candidateKeys = [
+      'nameArabic',
+      'nameEnglish',
+      'arabicName',
+      'englishName',
+      'name',
+      'village',
+      'label',
+      'value',
+      'title',
+      'displayName',
+      'text'
+    ];
+
+    for (const key of candidateKeys) {
+      if (value[key]) {
+        const result = normalizeLocationString(value[key]);
+        if (result) {
+          return result;
+        }
+      }
+    }
+
+    // Some structures may nest the actual value deeper
+    if (value.metadata) {
+      const nested = extractVillageName(value.metadata);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    if (value.details) {
+      const nested = extractVillageName(value.details);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return '';
+};
+
+const getValueByPath = (source, path) => {
+  if (!source || !path) {
+    return undefined;
+  }
+
+  const parts = path.split('.');
+  let current = source;
+
+  for (const part of parts) {
+    if (current && Object.prototype.hasOwnProperty.call(current, part)) {
+      current = current[part];
+    } else {
+      return undefined;
+    }
+  }
+
+  return current;
+};
+
+const resolveRecordLocation = (record, fallbackPaths = []) => {
+  if (!record) {
+    return 'غير محدد';
+  }
+
+  const candidates = [];
+
+  // Direct record fields
+  candidates.push(record.village);
+  candidates.push(record.clientVillage);
+  candidates.push(record.herdLocation);
+  candidates.push(record.farmLocation);
+  candidates.push(record.location);
+  candidates.push(record.owner?.village);
+  candidates.push(record.owner?.location);
+  candidates.push(record.request?.location);
+
+  // Client based fields
+  const client = record.client;
+  if (client) {
+    candidates.push(client.village);
+    candidates.push(client.clientVillage);
+    candidates.push(client.detailedAddress);
+    candidates.push(client.address);
+    candidates.push(client.location);
+  }
+
+  // Additional nested client data formats
+  if (record.clientData) {
+    candidates.push(record.clientData.village);
+    candidates.push(record.clientData.location);
+    candidates.push(record.clientData.address);
+  }
+
+  // Holding code village reference
+  if (record.holdingCode) {
+    candidates.push(record.holdingCode.village);
+  }
+
+  // Custom import metadata often stores village/location
+  if (record.customImportData) {
+    candidates.push(record.customImportData.village);
+    candidates.push(record.customImportData.location);
+  }
+
+  // Apply explicit fallback paths supplied by caller
+  for (const path of fallbackPaths) {
+    const value = getValueByPath(record, path);
+    if (value !== undefined && value !== null) {
+      candidates.push(value);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const resolved = extractVillageName(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return 'غير محدد';
 };
 
 /**
@@ -2693,6 +3105,122 @@ const processEnumValue = (row, fieldNames, enumMap, defaultValue) => {
   return defaultValue;
 };
 
+const INTERVENTION_CATEGORY_NORMALIZATION_MAP = {
+  'emergency': 'Emergency',
+  'urgent': 'Emergency',
+  'routine': 'Routine',
+  'regular': 'Routine',
+  'preventive': 'Preventive',
+  'prevention': 'Preventive',
+  'follow-up': 'Follow-up',
+  'follow up': 'Follow-up',
+  'followup': 'Follow-up',
+  'متابعة': 'Follow-up',
+  'clinical examination': 'Clinical Examination',
+  'فحص سريري': 'Clinical Examination',
+  'ultrasonography': 'Ultrasonography',
+  'تصوير بالموجات فوق الصوتية': 'Ultrasonography',
+  'surgical operation': 'Surgical Operation',
+  'عملية جراحية': 'Surgical Operation',
+  'lab analysis': 'Lab Analysis',
+  'laboratory analysis': 'Lab Analysis',
+  'laboratory': 'Lab Analysis',
+  'تحليل مخبري': 'Lab Analysis',
+  'farriery': 'Farriery',
+  'حدادة الخيل': 'Farriery'
+};
+
+const normalizeInterventionCategoryLabel = (value) => {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  const stringValue = value.toString().trim();
+  if (!stringValue) {
+    return '';
+  }
+
+  const key = stringValue.toLowerCase();
+  return INTERVENTION_CATEGORY_NORMALIZATION_MAP[key] || stringValue;
+};
+
+const splitMultiValueString = (value) => {
+  if (!value || typeof value !== 'string') {
+    return [];
+  }
+
+  return value
+    .split(/[\n\r\|;,\/]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+};
+
+const parseInterventionCategoryValue = (value) => {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        return Object.values(parsed);
+      }
+    } catch (error) {
+      // Not JSON - fall back to delimiter split
+    }
+
+    return splitMultiValueString(trimmed);
+  }
+
+  return [value];
+};
+
+const extractInterventionCategories = (row, fieldNames, defaultValue = '') => {
+  const collectedValues = [];
+
+  fieldNames.forEach((name) => {
+    if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+      collectedValues.push(row[name]);
+    }
+  });
+
+  let categories = collectedValues
+    .flatMap(parseInterventionCategoryValue)
+    .map(normalizeInterventionCategoryLabel)
+    .filter(value => value && value !== '-');
+
+  categories = [...new Set(categories)];
+
+  if (!categories.length && defaultValue) {
+    const normalizedDefault = normalizeInterventionCategoryLabel(defaultValue);
+    if (normalizedDefault) {
+      categories.push(normalizedDefault);
+    }
+  }
+
+  return {
+    primary: categories[0] || '',
+    all: categories
+  };
+};
+
 /**
  * Process request object
  */
@@ -2713,19 +3241,28 @@ const processRequest = (row, dates) => {
   }
   
   // Fallback to individual fields
+  const situation = processEnumValue(
+    row,
+    ['Request Status', 'Request Situation', 'requestSituation', 'requestStatus', 'حالة الطلب'],
+    {
+      'Ongoing': 'Ongoing', 'مفتوح': 'Ongoing', 'نشط': 'Ongoing', 'active': 'Ongoing',
+      'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
+      'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
+    },
+    'Ongoing'
+  );
+
+  // If status is Closed but no fulfilling date, use request date
+  let fulfillingDate = dates.fulfillingDate;
+  if (situation === 'Closed' && !fulfillingDate) {
+    fulfillingDate = dates.requestDate;
+    console.log(`ℹ️ Request is Closed but no fulfilling date provided, using request date: ${fulfillingDate}`);
+  }
+
   return {
     date: dates.requestDate,
-    situation: processEnumValue(
-      row,
-      ['Request Status', 'Request Situation', 'requestSituation', 'requestStatus', 'حالة الطلب'],
-      {
-        'Ongoing': 'Ongoing', 'مفتوح': 'Ongoing', 'نشط': 'Ongoing', 'active': 'Ongoing',
-        'closed': 'Closed', 'مغلق': 'Closed', 'منتهي': 'Closed', 'finished': 'Closed',
-        'pending': 'Pending', 'في الانتظار': 'Pending', 'معلق': 'Pending', 'waiting': 'Pending'
-      },
-      'Ongoing'
-    ),
-    fulfillingDate: dates.fulfillingDate
+    situation: situation,
+    fulfillingDate: fulfillingDate
   };
 };
 
@@ -2955,18 +3492,18 @@ const processEquineHealthRow = async (row, userId, errors) => {
         return [];
       })(),
       diagnosis: finalDiagnosis,
-      interventionCategory: processEnumValue(
-        row,
-        ['Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'],
-        {
-          'emergency': 'Emergency', 'urgent': 'Emergency', 'عاجل': 'Emergency', 'طوارئ': 'Emergency',
-          'routine': 'Routine', 'عادي': 'Routine', 'روتيني': 'Routine',
-          'preventive': 'Preventive', 'وقائي': 'Preventive', 'prevention': 'Preventive',
-          'follow-up': 'Follow-up', 'followup': 'Follow-up', 'متابعة': 'Follow-up', 'follow': 'Follow-up',
-          'clinical examination': 'Routine', 'فحص سريري': 'Routine'
-        },
-        'Routine'
-      ),
+      interventionCategory: (() => {
+        const categoriesResult = extractInterventionCategories(row, [
+          'Intervention Category', 'interventionCategory', 'intervention_category', 'فئة التدخل'
+        ], 'Clinical Examination');
+
+        const normalizedCategories = normalizeEquineInterventionCategoryList(
+          categoriesResult.all,
+          { fallback: categoriesResult.primary || 'Clinical Examination' }
+        );
+
+        return normalizedCategories[0] || 'Clinical Examination';
+      })(),
       treatment: finalTreatment,
       medication: (() => {
         // First try to get medication as JSON string
@@ -3044,35 +3581,180 @@ const processEquineHealthRow = async (row, userId, errors) => {
 // Export routes with proper field definitions
 router.get('/clients/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (startDate && endDate) {
-      filter.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const { format = 'excel' } = req.query;
 
-    const records = await Client.find(filter)
-      .populate('village', 'nameArabic nameEnglish sector serialNumber')
-      .sort({ createdAt: -1 });
+    const { match, servicesFilter, totalAnimalsRange } = buildClientExportFilters(req.query);
 
-    // Transform data for export to match table columns exactly
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'mobileclinics',
+          localField: '_id',
+          foreignField: 'client',
+          as: 'mobileClinics'
+        }
+      },
+      {
+        $lookup: {
+          from: 'vaccinations',
+          localField: '_id',
+          foreignField: 'client',
+          as: 'vaccinations'
+        }
+      },
+      {
+        $lookup: {
+          from: 'equinehealths',
+          localField: '_id',
+          foreignField: 'client',
+          as: 'equineHealths'
+        }
+      },
+      {
+        $lookup: {
+          from: 'laboratories',
+          localField: '_id',
+          foreignField: 'client',
+          as: 'laboratories'
+        }
+      },
+      {
+        $lookup: {
+          from: 'parasitecontrols',
+          localField: '_id',
+          foreignField: 'client',
+          as: 'parasiteControls'
+        }
+      },
+      {
+        $addFields: {
+          servicesReceived: {
+            $setUnion: [
+              { $map: { input: '$mobileClinics', as: 'mc', in: 'mobile_clinic' } },
+              { $map: { input: '$vaccinations', as: 'v', in: 'vaccination' } },
+              { $map: { input: '$equineHealths', as: 'eh', in: 'equine_health' } },
+              { $map: { input: '$laboratories', as: 'lab', in: 'laboratory' } },
+              { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } }
+            ]
+          },
+          birthDateFromForms: {
+            $let: {
+              vars: {
+                vaccinationBirthDate: { $arrayElemAt: ['$vaccinations.client.birthDate', 0] },
+                laboratoryBirthDate: { $arrayElemAt: ['$laboratories.clientBirthDate', 0] },
+                mobileClinicBirthDate: { $arrayElemAt: ['$mobileClinics.client.birthDate', 0] }
+              },
+              in: {
+                $cond: [
+                  { $ne: ['$$vaccinationBirthDate', null] },
+                  '$$vaccinationBirthDate',
+                  {
+                    $cond: [
+                      { $ne: ['$$laboratoryBirthDate', null] },
+                      '$$laboratoryBirthDate',
+                      '$$mobileClinicBirthDate'
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          totalVisits: {
+            $add: [
+              { $size: '$mobileClinics' },
+              { $size: '$vaccinations' },
+              { $size: '$equineHealths' },
+              { $size: '$laboratories' },
+              { $size: '$parasiteControls' }
+            ]
+          },
+          lastServiceDate: {
+            $max: {
+              $concatArrays: [
+                { $map: { input: '$mobileClinics', as: 'mc', in: '$$mc.date' } },
+                { $map: { input: '$vaccinations', as: 'v', in: '$$v.date' } },
+                { $map: { input: '$equineHealths', as: 'eh', in: '$$eh.date' } },
+                { $map: { input: '$laboratories', as: 'lab', in: '$$lab.date' } },
+                { $map: { input: '$parasiteControls', as: 'pc', in: '$$pc.date' } }
+              ]
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          totalAnimals: {
+            $sum: {
+              $map: {
+                input: '$animals',
+                as: 'animal',
+                in: '$$animal.animalCount'
+              }
+            }
+          }
+        }
+      }
+    ];
+
+    applyServicesMatch(pipeline, servicesFilter);
+    applyTotalAnimalsMatch(pipeline, totalAnimalsRange);
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'villages',
+          localField: 'village',
+          foreignField: '_id',
+          as: 'villageInfo'
+        }
+      },
+      {
+        $addFields: {
+          village: {
+            $cond: [
+              { $gt: [{ $size: '$villageInfo' }, 0] },
+              { $arrayElemAt: ['$villageInfo', 0] },
+              '$village'
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          villageInfo: 0,
+          mobileClinics: 0,
+          vaccinations: 0,
+          equineHealths: 0,
+          laboratories: 0,
+          parasiteControls: 0
+        }
+      },
+      { $sort: { createdAt: -1 } }
+    );
+
+    const records = await Client.aggregate(pipeline);
+
     const transformedRecords = records.map(record => {
+      const birthDateValue = record.birthDate || record.birthDateFromForms;
+      const formatDate = (value) => {
+        if (!value) return '';
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
+      };
+
       return {
         'Name': record.name || '',
         'National ID': record.nationalId || '',
-        'Birth Date': record.birthDate ? record.birthDate.toISOString().split('T')[0] : '',
+        'Birth Date': formatDate(birthDateValue),
         'Phone': record.phone || '',
         'Email': record.email || '',
         'Village': (() => {
-          if (record.village && typeof record.village === 'object') {
-            return record.village.nameArabic || record.village.nameEnglish || '';
-          } else if (typeof record.village === 'string') {
-            return record.village;
+          if (!record.village) return 'غير محدد';
+          if (typeof record.village === 'object') {
+            return record.village.nameArabic || record.village.nameEnglish || record.village.name || 'غير محدد';
           }
-          return 'غير محدد';
+          return record.village;
         })(),
         'Village Sector': (() => {
           if (record.village && typeof record.village === 'object') {
@@ -3088,9 +3770,9 @@ router.get('/clients/export', auth, async (req, res) => {
         })(),
         'Detailed Address': record.detailedAddress || '',
         'Status': record.status || 'Active',
-        'Total Animals': record.totalAnimals || 0,
-        'Created Date': record.createdAt ? record.createdAt.toISOString().split('T')[0] : '',
-        'Updated Date': record.updatedAt ? record.updatedAt.toISOString().split('T')[0] : ''
+        'Total Animals': typeof record.totalAnimals === 'number' ? record.totalAnimals : 0,
+        'Created Date': formatDate(record.createdAt),
+        'Updated Date': formatDate(record.updatedAt)
       };
     });
 
@@ -3138,18 +3820,19 @@ router.get('/clients/export', auth, async (req, res) => {
 
 router.get('/vaccination/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
+    const { format = 'excel' } = req.query;
     
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const filter = filterBuilder.buildVaccinationFilter(req.query);
 
     const records = await Vaccination.find(filter)
-      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress birthDate',
+        populate: {
+          path: 'village',
+          select: 'nameArabic nameEnglish arabicName englishName name value label sector serialNumber'
+        }
+      })
       .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
@@ -3165,16 +3848,12 @@ router.get('/vaccination/export', auth, async (req, res) => {
         'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
         'Phone': record.client?.phone || '',
         'Holding Code': record.holdingCode?.code || '',
-        'Location': (() => {
-          if (record.client && typeof record.client === 'object' && record.client.village) {
-            if (typeof record.client.village === 'string') {
-              return record.client.village;
-            } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
-              return record.client.village.nameArabic || record.client.village.nameEnglish;
-            }
-          }
-          return 'غير محدد';
-        })(),
+        'Location': resolveRecordLocation(record, [
+          'herdLocation',
+          'farmLocation',
+          'location',
+          'clientVillage'
+        ]),
         'N': (() => {
           if (record.coordinates) {
             if (typeof record.coordinates === 'string') {
@@ -3276,15 +3955,9 @@ router.get('/vaccination/export', auth, async (req, res) => {
 
 router.get('/parasite-control/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
+    const { format = 'excel' } = req.query;
     
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const filter = filterBuilder.buildParasiteControlFilter(req.query);
 
     const records = await ParasiteControl.find(filter)
       .populate({
@@ -3324,42 +3997,16 @@ router.get('/parasite-control/export', auth, async (req, res) => {
         'Date of Birth': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
         'Phone': record.client?.phone || '',
         'Holding Code': record.holdingCode?.code || '',
-        'Holding Code Village': record.holdingCode?.village || '',
-        'Location': (() => {
-          // Try populated client village first
-          if (record.client && typeof record.client === 'object' && record.client.village) {
-            if (typeof record.client.village === 'string') {
-              return record.client.village;
-            } else if (typeof record.client.village === 'object') {
-              // Check for different possible field names
-              const villageName = record.client.village.nameArabic || 
-                                 record.client.village.nameEnglish || 
-                                 record.client.village.name ||
-                                 record.client.village.arabicName ||
-                                 record.client.village.englishName;
-              
-              if (villageName) {
-                return villageName;
-              }
-            }
-          }
-          
-          // Try client detailedAddress as fallback
-          if (record.client?.detailedAddress) {
-            return record.client.detailedAddress;
-          }
-          
-          // Try any other location fields
-          if (record.farmLocation) {
-            return record.farmLocation;
-          }
-          
-          if (record.location) {
-            return record.location;
-          }
-          
-          return 'غير محدد';
-        })(),
+        'Holding Code Village': extractVillageName(record.holdingCode?.village) || '',
+        'Location': resolveRecordLocation(record, [
+          'herdLocation',
+          'farmLocation',
+          'location',
+          'customImportData.village',
+          'customImportData.location',
+          'owner.village',
+          'clientVillage'
+        ]),
         'E': (() => {
           if (record.coordinates) {
             if (typeof record.coordinates === 'string') {
@@ -3504,18 +4151,19 @@ router.get('/parasite-control/export', auth, async (req, res) => {
 
 router.get('/mobile-clinics/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
+    const { format = 'excel' } = req.query;
     
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const filter = filterBuilder.buildMobileClinicFilter(req.query);
 
     const records = await MobileClinic.find(filter)
-      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress birthDate',
+        populate: {
+          path: 'village',
+          select: 'nameArabic nameEnglish arabicName englishName name value label sector serialNumber'
+        }
+      })
       .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
@@ -3531,16 +4179,13 @@ router.get('/mobile-clinics/export', auth, async (req, res) => {
         'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
         'Phone': record.client?.phone || '',
         'Holding Code': record.holdingCode?.code || '',
-        'Location': (() => {
-          if (record.client && typeof record.client === 'object' && record.client.village) {
-            if (typeof record.client.village === 'string') {
-              return record.client.village;
-            } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
-              return record.client.village.nameArabic || record.client.village.nameEnglish;
-            }
-          }
-          return 'غير محدد';
-        })(),
+        'Location': resolveRecordLocation(record, [
+          'clientVillage',
+          'farmLocation',
+          'location',
+          'visitLocation',
+          'request.location'
+        ]),
         'N ': (() => {
           if (record.coordinates) {
             if (typeof record.coordinates === 'string') {
@@ -3577,14 +4222,19 @@ router.get('/mobile-clinics/export', auth, async (req, res) => {
         'Horse': animalCounts.horse || 0,
         'Cattle': animalCounts.cattle || 0,
         'Diagnosis': record.diagnosis || '',
-        'Intervention Category': record.interventionCategory || '',
+        'Intervention Category': (() => {
+          if (Array.isArray(record.interventionCategories) && record.interventionCategories.length > 0) {
+            return record.interventionCategories.join(' | ');
+          }
+          return record.interventionCategory || '';
+        })(),
         'Treatment': record.treatment || '',
         'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
         'Request Status': record.request?.situation || '',
         'Request Fulfilling Date': record.request?.fulfillingDate ? record.request.fulfillingDate.toISOString().split('T')[0] : '',
         'Treatment ': record.medicationsUsed || '',
         'Remarks': record.remarks || '',
-        'Location ': record.farmLocation || '',
+        'Location ': extractVillageName(record.farmLocation) || '',
         'Mobile': record.followUpRequired ? 'Yes' : 'No'
       };
     });
@@ -3633,18 +4283,19 @@ router.get('/mobile-clinics/export', auth, async (req, res) => {
 
 router.get('/laboratories/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
+    const { format = 'excel' } = req.query;
     
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const filter = filterBuilder.buildLaboratoryFilter(req.query);
 
     const records = await Laboratory.find(filter)
-      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress birthDate',
+        populate: {
+          path: 'village',
+          select: 'nameArabic nameEnglish arabicName englishName name value label sector serialNumber'
+        }
+      })
       .sort({ date: -1 });
 
     // Transform data for export to match table columns exactly
@@ -3669,18 +4320,11 @@ router.get('/laboratories/export', auth, async (req, res) => {
           return '';
         })(),
         'phone': record.clientPhone || record.client?.phone || '',
-        'Location': (() => {
-          // Try populated client village first
-          if (record.client && typeof record.client === 'object' && record.client.village) {
-            if (typeof record.client.village === 'string') {
-              return record.client.village;
-            } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
-              return record.client.village.nameArabic || record.client.village.nameEnglish;
-            }
-          }
-          // Fallback to farmLocation field
-          return record.farmLocation || 'غير محدد';
-        })(),
+        'Location': resolveRecordLocation(record, [
+          'farmLocation',
+          'location',
+          'clientVillage'
+        ]),
         'N': (() => {
           if (record.coordinates) {
             if (typeof record.coordinates === 'string') {
@@ -3769,18 +4413,19 @@ router.get('/laboratories/export', auth, async (req, res) => {
 
 router.get('/equine-health/export', auth, async (req, res) => {
   try {
-    const { format = 'excel', startDate, endDate } = req.query;
+    const { format = 'excel' } = req.query;
     
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const filter = filterBuilder.buildEquineHealthFilter(req.query);
 
     const records = await EquineHealth.find(filter)
-      .populate('client', 'name nationalId phone village detailedAddress birthDate')
+      .populate({
+        path: 'client',
+        select: 'name nationalId phone village detailedAddress birthDate',
+        populate: {
+          path: 'village',
+          select: 'nameArabic nameEnglish arabicName englishName name value label sector serialNumber'
+        }
+      })
       .populate('holdingCode', 'code village description isActive')
       .sort({ date: -1 });
 
@@ -3793,16 +4438,12 @@ router.get('/equine-health/export', auth, async (req, res) => {
         'ID': record.client?.nationalId || '',
         'Birth Date': record.client?.birthDate ? record.client.birthDate.toISOString().split('T')[0] : '',
         'Phone': record.client?.phone || '',
-        'Location': (() => {
-          if (record.client && typeof record.client === 'object' && record.client.village) {
-            if (typeof record.client.village === 'string') {
-              return record.client.village;
-            } else if (record.client.village.nameArabic || record.client.village.nameEnglish) {
-              return record.client.village.nameArabic || record.client.village.nameEnglish;
-            }
-          }
-          return 'غير محدد';
-        })(),
+        'Location': resolveRecordLocation(record, [
+          'farmLocation',
+          'location',
+          'clientVillage',
+          'owner.village'
+        ]),
         'N Coordinate': (() => {
           if (record.coordinates) {
             if (typeof record.coordinates === 'string') {
@@ -3840,7 +4481,12 @@ router.get('/equine-health/export', auth, async (req, res) => {
         '': '', // Empty column 1
         ' ': '', // Empty column 2
         '  ': '', // Empty column 3
-        'category': record.interventionCategory || '',
+        'category': (() => {
+          if (Array.isArray(record.interventionCategories) && record.interventionCategories.length > 0) {
+            return record.interventionCategories[0];
+          }
+          return record.interventionCategory || '';
+        })(),
         'Remarks': record.remarks || ''
       };
     });
@@ -4079,7 +4725,7 @@ router.get('/equine-health/template', auth, handleTemplate([
     'Request Status': 'Closed',
     'Request Fulfilling Date': '2024-08-24',
 
-    'category': 'Routine',
+    'category': 'Clinical Examination',
     'Remarks': 'تم الفحص بنجاح'
   }
 ], 'equine-health-template'));

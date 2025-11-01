@@ -114,8 +114,8 @@ const schemas = {
 
   // Parasite Control schemas - Flexible for import
   parasiteControlCreate: Joi.object({
-    serialNo: Joi.string().max(50).optional(),
-    date: Joi.date().optional(),
+    serialNo: Joi.string().max(50).required(),
+    date: Joi.date().required(),
     client: Joi.alternatives().try(
       Joi.string().pattern(/^[0-9a-fA-F]{24}$/), // ObjectId string
       Joi.object({
@@ -124,13 +124,13 @@ const schemas = {
         phone: Joi.string().optional(),
         village: Joi.string().optional()
       }) // Client object for create/update
-    ).optional(),
+    ).required(),
     coordinates: Joi.object({
       latitude: Joi.number().min(-90).max(90).optional(),
       longitude: Joi.number().min(-180).max(180).optional()
     }).optional(),
-    supervisor: Joi.string().max(200).optional(),
-    vehicleNo: Joi.string().max(50).optional(),
+    supervisor: Joi.string().max(200).required(),
+    vehicleNo: Joi.string().max(50).required(),
     herdCounts: Joi.object({
       sheep: Joi.object({
         total: Joi.number().min(0).default(0),
@@ -164,22 +164,32 @@ const schemas = {
       }).optional()
     }).optional(),
     insecticide: Joi.object({
-      type: Joi.string().max(200).optional(),
-      method: Joi.string().max(200).optional(),
-      volumeMl: Joi.number().min(0).optional(),
-      status: Joi.string().optional(), // Removed enum validation
-      category: Joi.string().max(100).optional()
-    }).optional(),
-    animalBarnSizeSqM: Joi.number().min(0).optional(),
-    breedingSites: Joi.string().max(1000).optional(),
-    herdHealthStatus: Joi.string().optional(), // Removed enum validation
-    complyingToInstructions: Joi.string().optional(), // Removed enum validation
+      type: Joi.string().max(200).required(),
+      method: Joi.string().valid('Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other').required(),
+      volumeMl: Joi.number().min(0).max(50000).required(),
+      status: Joi.string().valid('Sprayed', 'Not Sprayed', 'Partially Sprayed').required(),
+      category: Joi.string().max(100).required(),
+      concentration: Joi.string().max(50).optional(),
+      manufacturer: Joi.string().max(100).optional()
+    }).required(),
+    animalBarnSizeSqM: Joi.number().min(0).required(),
+    breedingSites: Joi.string().max(500).optional(),
+    herdHealthStatus: Joi.string().valid('Healthy', 'Sick', 'Sporadic cases').required(),
+    complyingToInstructions: Joi.string().valid('Comply', 'Not Comply', 'Partially Comply').required(),
     request: Joi.object({
-      date: Joi.date().optional(),
-      situation: Joi.string().optional(), // Removed enum validation
+      date: Joi.date().required(),
+      situation: Joi.string().valid('Ongoing', 'Closed').required(),
       fulfillingDate: Joi.date().optional()
-    }).optional(),
-    remarks: Joi.string().max(2000).optional()
+    }).required(),
+    remarks: Joi.string().max(1000).optional(),
+    // Additional fields for comprehensive tracking
+    totalHerdCount: Joi.number().min(0).optional(),
+    totalYoung: Joi.number().min(0).optional(),
+    totalFemale: Joi.number().min(0).optional(),
+    totalTreated: Joi.number().min(0).optional(),
+    activityType: Joi.string().max(100).optional(),
+    importSource: Joi.string().valid('manual', 'excel', 'csv', 'api').optional(),
+    importDate: Joi.date().optional()
   }),
 
   // Vaccination schemas - Flexible for import
@@ -321,7 +331,11 @@ const schemas = {
       horse: Joi.number().min(0).default(0)
     }).optional(),
     diagnosis: Joi.string().max(1000).optional(),
-    interventionCategory: Joi.string().optional(), // Removed enum validation
+    interventionCategory: Joi.string().allow('').optional(),
+    interventionCategories: Joi.alternatives().try(
+      Joi.array().items(Joi.string().allow('').max(200)).optional(),
+      Joi.string().allow('').optional()
+    ).optional(),
     treatment: Joi.string().max(2000).optional(),
     medication: Joi.object({
       name: Joi.string().max(200).optional(),
@@ -374,7 +388,11 @@ const schemas = {
       horse: Joi.number().min(0).default(0)
     }).optional(),
     diagnosis: Joi.string().min(2).max(500).optional(),
-    interventionCategory: Joi.string().valid('Clinical Examination', 'Surgical Operation', 'Ultrasonography', 'Lab Analysis', 'Farriery').optional(),
+    interventionCategory: Joi.string().allow('').optional(),
+    interventionCategories: Joi.alternatives().try(
+      Joi.array().items(Joi.string().allow('').max(200)).optional(),
+      Joi.string().allow('').optional()
+    ).optional(),
     treatment: Joi.string().min(2).max(1000).optional(),
     medication: Joi.object({
       name: Joi.string().max(100).optional(),

@@ -248,42 +248,6 @@ router.put('/:id', auth, validateVillage, async (req, res) => {
   }
 });
 
-// @route   DELETE /api/villages/:id
-// @desc    Delete village (soft delete)
-// @access  Private (Admin and Supervisors only)
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    // Check if user has admin or supervisor permissions
-    if (!['super_admin', 'section_supervisor'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'غير مصرح لك بحذف القرى'
-      });
-    }
-
-    const village = await Village.findByIdAndDelete(req.params.id);
-
-    if (!village) {
-      return res.status(404).json({
-        success: false,
-        message: 'القرية غير موجودة'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'تم حذف القرية بنجاح'
-    });
-  } catch (error) {
-    console.error('Error deleting village:', error);
-    res.status(500).json({
-      success: false,
-      message: 'خطأ في حذف القرية',
-      error: error.message
-    });
-  }
-});
-
 // @route   POST /api/villages/bulk
 // @desc    Create multiple villages
 // @access  Private (Admin and Supervisors only)
@@ -323,6 +287,193 @@ router.post('/bulk', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'خطأ في إنشاء القرى',
+      error: error.message
+    });
+  }
+});
+
+// @route   DELETE /api/villages/bulk-delete
+// @desc    Delete multiple villages
+// @access  Private (Admin only)
+router.delete('/bulk-delete', auth, async (req, res) => {
+  try {
+    // Check if user has admin permissions
+    if (!['super_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح لك بالحذف المتعدد للقرى'
+      });
+    }
+
+    const { ids } = req.body;
+    
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'يرجى إرسال قائمة صحيحة من معرفات القرى'
+      });
+    }
+
+    console.log('🗑️ Bulk deleting villages:', ids);
+
+    const results = {
+      deleted: 0,
+      failed: 0,
+      errors: []
+    };
+
+    // Check for usage in other collections
+    const Client = require('../models/Client');
+    const HoldingCode = require('../models/HoldingCode');
+
+    for (const id of ids) {
+      try {
+        // Check if village is used in clients
+        const clientCount = await Client.countDocuments({ village: id });
+        if (clientCount > 0) {
+          results.failed++;
+          results.errors.push({
+            id,
+            error: `القرية مستخدمة في ${clientCount} عميل`
+          });
+          continue;
+        }
+
+        // Check if village is used in holding codes
+        const village = await Village.findById(id);
+        if (village) {
+          const holdingCodeCount = await HoldingCode.countDocuments({ village: village.nameArabic });
+          if (holdingCodeCount > 0) {
+            results.failed++;
+            results.errors.push({
+              id,
+              error: `القرية مستخدمة في ${holdingCodeCount} رمز حيازة`
+            });
+            continue;
+          }
+        }
+
+        // Delete the village
+        const deletedVillage = await Village.findByIdAndDelete(id);
+        if (deletedVillage) {
+          results.deleted++;
+        } else {
+          results.failed++;
+          results.errors.push({
+            id,
+            error: 'القرية غير موجودة'
+          });
+        }
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          id,
+          error: error.message
+        });
+      }
+    }
+
+    const message = `تم حذف ${results.deleted} قرية بنجاح${results.failed > 0 ? `، فشل في حذف ${results.failed} قرية` : ''}`;
+
+    res.json({
+      success: results.deleted > 0,
+      message,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error bulk deleting villages:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في الحذف المتعدد للقرى',
+      error: error.message
+    });
+  }
+});
+
+// @route   DELETE /api/villages/delete-all
+// @desc    Delete all villages
+// @access  Private (Admin only)
+router.delete('/delete-all', auth, async (req, res) => {
+  try {
+    // Check if user has admin permissions
+    if (!['super_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح لك بحذف جميع القرى'
+      });
+    }
+
+    console.log('🗑️ Deleting all villages...');
+
+    // Check for usage in other collections
+    const Client = require('../models/Client');
+    const HoldingCode = require('../models/HoldingCode');
+
+    const clientCount = await Client.countDocuments({});
+    const holdingCodeCount = await HoldingCode.countDocuments({});
+
+    if (clientCount > 0 || holdingCodeCount > 0) {
+      const usageDetails = [];
+      if (clientCount > 0) usageDetails.push({ model: 'العملاء', count: clientCount });
+      if (holdingCodeCount > 0) usageDetails.push({ model: 'رموز الحيازة', count: holdingCodeCount });
+
+      return res.status(400).json({
+        success: false,
+        message: 'لا يمكن حذف جميع القرى لأنها مستخدمة في جداول أخرى',
+        usageDetails
+      });
+    }
+
+    const result = await Village.deleteMany({});
+
+    res.json({
+      success: true,
+      message: `تم حذف جميع القرى بنجاح (${result.deletedCount} قرية)`,
+      deletedCount: result.deletedCount
+    });
+
+  } catch (error) {
+    console.error('Error deleting all villages:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف جميع القرى',
+      error: error.message
+    });
+  }
+});
+
+// @route   DELETE /api/villages/:id
+// @desc    Delete village (soft delete)
+// @access  Private (Admin and Supervisors only)
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    // Check if user has admin or supervisor permissions
+    if (!['super_admin', 'section_supervisor'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح لك بحذف القرى'
+      });
+    }
+
+    const village = await Village.findByIdAndDelete(req.params.id);
+
+    if (!village) {
+      return res.status(404).json({
+        success: false,
+        message: 'القرية غير موجودة'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'تم حذف القرية بنجاح'
+    });
+  } catch (error) {
+    console.error('Error deleting village:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف القرية',
       error: error.message
     });
   }

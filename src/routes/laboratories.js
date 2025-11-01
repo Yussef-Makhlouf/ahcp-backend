@@ -415,10 +415,47 @@ router.get('/export',
   asyncHandler(async (req, res) => {
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', testStatus } = req.query;
+    const { 
+      format = 'json', 
+      startDate, 
+      endDate,
+      sampleType,
+      testResult,
+      testType
+    } = req.query;
+    
+    console.log('🔍 Laboratory Export - Received query params:', req.query);
     
     const filter = {};
-    if (testStatus) filter.testStatus = testStatus;
+    
+    // Date filter
+    if (startDate && endDate) {
+      filter.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+      console.log('📅 Laboratory Export - Date filter applied:', filter.date);
+    }
+    
+    // Sample type filter
+    if (sampleType && sampleType !== '__all__') {
+      filter.sampleType = { $in: sampleType.split(',') };
+      console.log('🧪 Laboratory Export - Sample type filter applied:', filter.sampleType);
+    }
+    
+    // Test result filter
+    if (testResult && testResult !== '__all__') {
+      filter.testResult = { $in: testResult.split(',') };
+      console.log('📊 Laboratory Export - Test result filter applied:', filter.testResult);
+    }
+    
+    // Test type filter
+    if (testType && testType !== '__all__') {
+      filter.testType = { $in: testType.split(',') };
+      console.log('🔬 Laboratory Export - Test type filter applied:', filter.testType);
+    }
+    
+    console.log('🔍 Laboratory Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
 
     const records = await Laboratory.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')

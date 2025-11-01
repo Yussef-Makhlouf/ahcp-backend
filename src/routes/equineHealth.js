@@ -9,6 +9,8 @@ const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { checkSectionAccessWithMessage } = require('../middleware/sectionAuth');
 const { handleExport, handleTemplate, handleImport, findOrCreateClient } = require('../utils/importExportHelpers');
+const filterBuilder = require('../utils/filterBuilder');
+const { normalizeEquineInterventionCategory } = require('../utils/interventionCategories');
 
 // Conditional auth middleware for development
 const conditionalAuth = (req, res, next) => {
@@ -103,56 +105,15 @@ const upload = multer({
 router.get('/',
   validateQuery(schemas.dateRangeQuery),
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 30, startDate, endDate, interventionCategory, supervisor, search } = req.query;
-    const skip = (page - 1) * limit;
+    const paginationParams = filterBuilder.buildPaginationParams(req.query);
+    const sortParams = filterBuilder.buildSortParams(req.query);
+    const filter = filterBuilder.buildEquineHealthFilter(req.query);
 
-    // Build filter
-    const filter = {};
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    if (interventionCategory) {
-      // Handle multiple intervention categories (comma-separated)
-      if (interventionCategory.includes(',')) {
-        filter.interventionCategory = { $in: interventionCategory.split(',') };
-      } else {
-        filter.interventionCategory = interventionCategory;
-      }
-    }
-    if (req.query['request.situation']) {
-      filter['request.situation'] = req.query['request.situation'];
-    }
-    if (supervisor) filter.supervisor = { $regex: supervisor, $options: 'i' };
-    if (search) {
-      filter.$or = [
-        { serialNo: { $regex: search, $options: 'i' } },
-        { supervisor: { $regex: search, $options: 'i' } },
-        { vehicleNo: { $regex: search, $options: 'i' } },
-        { diagnosis: { $regex: search, $options: 'i' } }
-      ];
-      
-      // Also search in client fields (embedded in equine health)
-      if (/^\d+$/.test(search)) {
-        // If search is numeric, also search in client nationalId and phone
-        filter.$or.push(
-          { 'client.nationalId': { $regex: search, $options: 'i' } },
-          { 'client.phone': { $regex: search, $options: 'i' } }
-        );
-      } else {
-        // If search is text, also search in client name
-        filter.$or.push({ 'client.name': { $regex: search, $options: 'i' } });
-      }
-    }
-
-    // Get records
     const records = await EquineHealth.find(filter)
       .populate('holdingCode', 'code village description isActive')
-      .skip(skip)
-      .limit(parseInt(limit))
-      .sort({ date: -1 });
+      .skip(paginationParams.skip)
+      .limit(paginationParams.limit)
+      .sort(sortParams);
 
     const total = await EquineHealth.countDocuments(filter);
 
@@ -161,10 +122,10 @@ router.get('/',
       data: {
         records,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: paginationParams.page,
+          limit: paginationParams.limit,
           total,
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / paginationParams.limit)
         }
       }
     });
@@ -305,8 +266,14 @@ router.post('/',
       });
     }
 
+    const normalizedCategory = normalizeEquineInterventionCategory(
+      req.body.interventionCategory,
+      { fallback: 'Clinical Examination' }
+    );
+
     const record = new EquineHealth({
       ...req.body,
+      interventionCategory: normalizedCategory,
       updatedBy: req.user._id
     });
 
@@ -317,6 +284,144 @@ router.post('/',
       message: 'Equine health record created successfully',
       data: { record }
     });
+  })
+);
+
+/**
+ * @swagger
+ * /api/equine-health/bulk-delete:
+ *   delete:
+ *     summary: Delete multiple equine health records
+ *     tags: [Equine Health]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of equine health IDs to delete
+ *             required:
+ *               - ids
+ *     responses:
+ *       200:
+ *         description: Records deleted successfully
+ *       400:
+ *         description: Invalid request data
+ *       500:
+ *         description: Server error
+ */
+router.delete('/bulk-delete',
+  auth,
+  authorize('super_admin', 'admin'),
+  validate(schemas.bulkDeleteSchema),
+  asyncHandler(async (req, res) => {
+    const { ids } = req.body;
+
+    console.log('🗑️ EquineHealth bulk delete request payload:', req.body);
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs array is required and must not be empty'
+      });
+    }
+
+    // Separate Mongo ObjectIds and serial numbers
+    const objectIdValues = [];
+    const serialNumbers = [];
+
+    ids.forEach((identifier) => {
+      if (!identifier && identifier !== 0) {
+        return;
+      }
+
+      const value = identifier.toString().trim();
+      if (!value) {
+        return;
+      }
+
+      if (mongoose.Types.ObjectId.isValid(value)) {
+        objectIdValues.push(value);
+      } else {
+        serialNumbers.push(value);
+      }
+    });
+
+    if (objectIdValues.length === 0 && serialNumbers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid IDs or serial numbers were provided'
+      });
+    }
+
+    const deletionCriteria = [];
+    if (objectIdValues.length > 0) {
+      deletionCriteria.push({ _id: { $in: objectIdValues } });
+    }
+    if (serialNumbers.length > 0) {
+      deletionCriteria.push({ serialNo: { $in: serialNumbers } });
+    }
+
+    try {
+      // Ensure all requested identifiers exist before deleting
+      const existingRecords = await EquineHealth.find({
+        $or: deletionCriteria
+      }).select(['_id', 'serialNo']);
+
+      console.log('🗑️ EquineHealth bulk delete lookup result:', existingRecords.map(record => ({
+        _id: record._id.toString(),
+        serialNo: record.serialNo
+      })));
+
+      const foundIdentifiers = new Set();
+      existingRecords.forEach(record => {
+        foundIdentifiers.add(record._id.toString());
+        if (record.serialNo) {
+          foundIdentifiers.add(record.serialNo.toString());
+        }
+      });
+
+      const missingIdentifiers = ids.filter((identifier) => {
+        const value = identifier?.toString().trim();
+        return !value || !foundIdentifiers.has(value);
+      });
+
+      if (missingIdentifiers.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Some records were not found',
+          missing: missingIdentifiers,
+          found: existingRecords.length,
+          requested: ids.length
+        });
+      }
+
+      const result = await EquineHealth.deleteMany({
+        $or: deletionCriteria
+      });
+
+      console.log('🗑️ EquineHealth bulk delete result:', result);
+
+      res.json({
+        success: true,
+        message: `${result.deletedCount} equine health records deleted successfully`,
+        deletedCount: result.deletedCount
+      });
+    } catch (error) {
+      console.error('Error in bulk delete equine health:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting equine health records',
+        error: error.message
+      });
+    }
   })
 );
 
@@ -429,6 +534,13 @@ router.put('/:id',
           error: 'SERIAL_NUMBER_EXISTS'
         });
       }
+    }
+
+    if (req.body.interventionCategory !== undefined) {
+      req.body.interventionCategory = normalizeEquineInterventionCategory(
+        req.body.interventionCategory,
+        { fallback: 'Clinical Examination' }
+      );
     }
 
     const record = await EquineHealth.findByIdAndUpdate(
@@ -677,82 +789,6 @@ router.get('/template', asyncHandler(async (req, res) => {
 }));
 
 // Import route moved to centralized import-export.js
-
-/**
- * @swagger
- * /api/equine-health/bulk-delete:
- *   delete:
- *     summary: Delete multiple equine health records
- *     tags: [Equine Health]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               ids:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: Array of equine health IDs to delete
- *             required:
- *               - ids
- *     responses:
- *       200:
- *         description: Records deleted successfully
- *       400:
- *         description: Invalid request data
- *       500:
- *         description: Server error
- */
-router.delete('/bulk-delete',
-  auth,
-  authorize('super_admin', 'admin'),
-  validate(schemas.bulkDeleteSchema),
-  asyncHandler(async (req, res) => {
-    const { ids } = req.body;
-
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'IDs array is required and must not be empty'
-      });
-    }
-
-    try {
-      // Check if all IDs exist
-      const existingRecords = await EquineHealth.find({ _id: { $in: ids } });
-      
-      if (existingRecords.length !== ids.length) {
-        return res.status(400).json({
-          success: false,
-          message: 'Some records not found',
-          found: existingRecords.length,
-          requested: ids.length
-        });
-      }
-
-      // Delete the records by IDs
-      const result = await EquineHealth.deleteMany({ _id: { $in: ids } });
-
-      res.json({
-        success: true,
-        message: `${result.deletedCount} equine health records deleted successfully`,
-        deletedCount: result.deletedCount
-      });
-    } catch (error) {
-      console.error('Error in bulk delete equine health:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error deleting equine health records',
-        error: error.message
-      });
-    }
-  })
-);
 
 /**
  * @swagger

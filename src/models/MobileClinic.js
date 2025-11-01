@@ -264,10 +264,23 @@ const mobileClinicSchema = new mongoose.Schema({
   },
   interventionCategory: {
     type: String,
-    required: [true, 'Intervention category is required'],
-    enum: {
-      values: ['Emergency', 'Routine', 'Preventive', 'Follow-up', 'Clinical Examination', 'Ultrasonography', 'Lab Analysis', 'Surgical Operation', 'Farriery'],
-      message: 'Intervention category must be one of: Emergency, Routine, Preventive, Follow-up, Clinical Examination, Ultrasonography, Lab Analysis, Surgical Operation, Farriery'
+    trim: true,
+    default: ''
+  },
+  interventionCategories: {
+    type: [String],
+    default: [],
+    set: function(values) {
+      if (!values && values !== 0) {
+        return [];
+      }
+
+      const list = Array.isArray(values) ? values : [values];
+      const normalized = list
+        .map(value => (value === undefined || value === null) ? '' : value.toString().trim())
+        .filter(value => value && value !== '-');
+
+      return [...new Set(normalized)];
     }
   },
   treatment: {
@@ -318,6 +331,7 @@ mobileClinicSchema.index({ date: -1 });
 mobileClinicSchema.index({ client: 1 });
 mobileClinicSchema.index({ supervisor: 1 });
 mobileClinicSchema.index({ interventionCategory: 1 });
+mobileClinicSchema.index({ interventionCategories: 1 });
 mobileClinicSchema.index({ 'request.situation': 1 });
 mobileClinicSchema.index({ followUpRequired: 1 });
 mobileClinicSchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
@@ -349,7 +363,12 @@ mobileClinicSchema.statics.findByDateRange = function(startDate, endDate) {
 
 // Static method to find records by intervention category
 mobileClinicSchema.statics.findByInterventionCategory = function(category) {
-  return this.find({ interventionCategory: category })
+  return this.find({
+    $or: [
+      { interventionCategory: category },
+      { interventionCategories: category }
+    ]
+  })
     .populate('client', 'name nationalId phone village');
 };
 
@@ -363,6 +382,23 @@ mobileClinicSchema.statics.findRequiringFollowUp = function() {
 mobileClinicSchema.statics.getStatistics = async function(filters = {}) {
   const pipeline = [
     { $match: filters },
+    {
+      $addFields: {
+        normalizedCategories: {
+          $cond: [
+            { $gt: [{ $size: { $ifNull: ['$interventionCategories', []] } }, 0] },
+            '$interventionCategories',
+            {
+              $cond: [
+                { $and: ['$interventionCategory', { $ne: ['$interventionCategory', null] }] },
+                ['$interventionCategory'],
+                []
+              ]
+            }
+          ]
+        }
+      }
+    },
     {
       $group: {
         _id: null,
@@ -379,13 +415,19 @@ mobileClinicSchema.statics.getStatistics = async function(filters = {}) {
           }
         },
         emergencyInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Emergency'] }, 1, 0] }
+          $sum: {
+            $cond: [{ $in: ['Emergency', '$normalizedCategories'] }, 1, 0]
+          }
         },
         routineInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Routine'] }, 1, 0] }
+          $sum: {
+            $cond: [{ $in: ['Routine', '$normalizedCategories'] }, 1, 0]
+          }
         },
         preventiveInterventions: {
-          $sum: { $cond: [{ $eq: ['$interventionCategory', 'Preventive'] }, 1, 0] }
+          $sum: {
+            $cond: [{ $in: ['Preventive', '$normalizedCategories'] }, 1, 0]
+          }
         },
         followUpRequired: {
           $sum: { $cond: ['$followUpRequired', 1, 0] }
@@ -416,6 +458,26 @@ mobileClinicSchema.pre('save', function(next) {
     error.name = 'ValidationError';
     return next(error);
   }
+  
+  // Normalize intervention categories
+  let categories = Array.isArray(this.interventionCategories) ? this.interventionCategories : [];
+  categories = categories
+    .map(value => (value === undefined || value === null) ? '' : value.toString().trim())
+    .filter(value => value && value !== '-');
+
+  if (this.interventionCategory && this.interventionCategory.trim()) {
+    const primaryCategory = this.interventionCategory.trim();
+    if (!categories.includes(primaryCategory)) {
+      categories.unshift(primaryCategory);
+    }
+  }
+
+  if (!categories.length && this.interventionCategory && this.interventionCategory.trim()) {
+    categories.push(this.interventionCategory.trim());
+  }
+
+  this.interventionCategories = categories;
+  this.interventionCategory = categories[0] || '';
   
   if (this.isModified() && !this.isNew) {
     this.updatedBy = this.constructor.currentUser;
