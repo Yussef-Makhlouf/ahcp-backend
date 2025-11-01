@@ -1608,6 +1608,17 @@ const parseDateField = (dateString) => {
     console.log(`⚠️ Skipping text value that is not a date: ${dateStr}`);
     return null;
   }
+
+  // Helper function to convert 2-digit year to 4-digit year
+  const expandYear = (year) => {
+    const yearNum = parseInt(year);
+    if (yearNum < 50) {
+      return 2000 + yearNum; // 00-49 -> 2000-2049
+    } else if (yearNum < 100) {
+      return 1900 + yearNum; // 50-99 -> 1950-1999
+    }
+    return yearNum; // Already 4 digits
+  };
   
   // Handle Excel serial date numbers (Excel stores dates as numbers)
   if (!isNaN(dateStr) && parseFloat(dateStr) > 0) {
@@ -1642,19 +1653,56 @@ const parseDateField = (dateString) => {
     }
   }
   
-  // Handle DD/MM/YYYY format (European format)
+  // Handle MM/DD/YY format (American 2-digit year)
+  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+    const [first, second, year] = dateStr.split('/');
+    const fullYear = expandYear(year);
+    const firstNum = parseInt(first);
+    const secondNum = parseInt(second);
+    
+    if (firstNum > 12 && secondNum <= 12) {
+      // Definitely DD/MM format
+      const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD/MM/YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else if (secondNum > 12 && firstNum <= 12) {
+      // Definitely MM/DD format
+      const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM/DD/YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else {
+      // Ambiguous - default to MM/DD (American format)
+      const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM/DD/YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    }
+  }
+
+  // Handle MM/DD/YYYY format (American 4-digit year)
   if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-    const [day, month, year] = dateStr.split('/');
+    const [month, day, year] = dateStr.split('/');
     const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue}`);
+    console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
     return dateValue;
   }
   
-  // Handle MM/DD/YYYY format (American format)
+  // Handle DD/MM/YYYY format (European 4-digit year)
   if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-    const dateValue = new Date(dateStr);
-    console.log(`🔍 Parsed MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
-    return dateValue;
+    const [day, month, year] = dateStr.split('/');
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    
+    if (dayNum > 12 && monthNum <= 12) {
+      // Definitely DD/MM format
+      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    } else {
+      // Default to MM/DD format
+      const dateValue = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    }
   }
   
   // Handle YYYY/MM/DD format (like 1985/03/15)
@@ -1665,55 +1713,133 @@ const parseDateField = (dateString) => {
     return dateValue;
   }
   
+  // Handle MM-DD-YY format (American 2-digit year with dashes)
+  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{2}$/)) {
+    const [month, day, year] = dateStr.split('-');
+    const fullYear = expandYear(year);
+    const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+    return dateValue;
+  }
+
+  // Handle DD-MM-YY format (European 2-digit year with dashes)
+  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{2}$/)) {
+    const [day, month, year] = dateStr.split('-');
+    const fullYear = expandYear(year);
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    
+    if (dayNum > 12 && monthNum <= 12) {
+      // Definitely DD-MM format
+      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD-MM-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else if (monthNum > 12 && dayNum <= 12) {
+      // Definitely MM-DD format
+      const dateValue = new Date(`${fullYear}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else {
+      // Ambiguous - default to MM-DD (American format)
+      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM-DD-YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    }
+  }
+
+  // Handle MM-DD-YYYY format (American 4-digit year with dashes)
+  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const [month, day, year] = dateStr.split('-');
+    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue}`);
+    return dateValue;
+  }
+
+  // Handle DD-MM-YYYY format (European 4-digit year with dashes)
+  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const [day, month, year] = dateStr.split('-');
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    
+    if (dayNum > 12 && monthNum <= 12) {
+      // Definitely DD-MM format
+      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    } else {
+      // Default to MM-DD format
+      const dateValue = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    }
+  }
+
   // Handle YYYY-MM-DD format (ISO format)
   if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     const dateValue = new Date(dateStr);
     console.log(`🔍 Parsed YYYY-MM-DD format: ${dateStr} -> ${dateValue}`);
     return dateValue;
   }
-  
-  // Handle YYYY-DD-MM format (alternative format)
-  if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
-    const [year, dayOrMonth, monthOrDay] = dateStr.split('-');
+
+  // Handle MM.DD.YY format (American 2-digit year with dots)
+  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{2}$/)) {
+    const [month, day, year] = dateStr.split('.');
+    const fullYear = expandYear(year);
+    const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+    return dateValue;
+  }
+
+  // Handle DD.MM.YY format (European 2-digit year with dots)
+  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{2}$/)) {
+    const [day, month, year] = dateStr.split('.');
+    const fullYear = expandYear(year);
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
     
-    // Try both interpretations and pick the valid one
-    const option1 = new Date(`${year}-${dayOrMonth.padStart(2, '0')}-${monthOrDay.padStart(2, '0')}`); // YYYY-MM-DD
-    const option2 = new Date(`${year}-${monthOrDay.padStart(2, '0')}-${dayOrMonth.padStart(2, '0')}`); // YYYY-DD-MM
-    
-    // Check which one is valid based on day/month ranges
-    const day1 = parseInt(monthOrDay);
-    const month1 = parseInt(dayOrMonth);
-    const day2 = parseInt(dayOrMonth);
-    const month2 = parseInt(monthOrDay);
-    
-    // If first interpretation has invalid day (>31) or month (>12), try second
-    if ((day1 > 31 || month1 > 12) && day2 <= 31 && month2 <= 12) {
-      console.log(`🔍 Parsed YYYY-DD-MM format: ${dateStr} -> ${option2}`);
-      return option2;
-    }
-    // If second interpretation has invalid day (>31) or month (>12), use first
-    else if ((day2 > 31 || month2 > 12) && day1 <= 31 && month1 <= 12) {
-      console.log(`🔍 Parsed YYYY-MM-DD format: ${dateStr} -> ${option1}`);
-      return option1;
-    }
-    // If both are valid, prefer YYYY-MM-DD (standard ISO format)
-    else if (!isNaN(option1.getTime())) {
-      console.log(`🔍 Parsed YYYY-MM-DD format (ambiguous, using standard): ${dateStr} -> ${option1}`);
-      return option1;
-    }
-    // Fallback to YYYY-DD-MM if YYYY-MM-DD is invalid
-    else if (!isNaN(option2.getTime())) {
-      console.log(`🔍 Parsed YYYY-DD-MM format (fallback): ${dateStr} -> ${option2}`);
-      return option2;
+    if (dayNum > 12 && monthNum <= 12) {
+      // Definitely DD.MM format
+      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else if (monthNum > 12 && dayNum <= 12) {
+      // Definitely MM.DD format
+      const dateValue = new Date(`${fullYear}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
+    } else {
+      // Ambiguous - default to DD.MM (European format for dots)
+      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return dateValue;
     }
   }
-  
-  // Handle DD-MM-YYYY format
-  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
-    const [day, month, year] = dateStr.split('-');
+
+  // Handle MM.DD.YYYY format (American 4-digit year with dots)
+  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
+    const [month, day, year] = dateStr.split('.');
     const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue}`);
+    console.log(`🔍 Converted MM.DD.YYYY format: ${dateStr} -> ${dateValue}`);
     return dateValue;
+  }
+
+  // Handle DD.MM.YYYY format (European 4-digit year with dots)
+  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
+    const [day, month, year] = dateStr.split('.');
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    
+    if (dayNum > 12 && monthNum <= 12) {
+      // Definitely DD.MM format
+      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    } else {
+      // Default to DD.MM format (European standard for dots)
+      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue}`);
+      return dateValue;
+    }
   }
   
   // Handle Arabic date format (DD/MM/YYYY with Arabic numbers)
@@ -1727,8 +1853,54 @@ const parseDateField = (dateString) => {
     console.log(`🔍 Converted Arabic date format: ${dateStr} -> ${dateValue}`);
     return dateValue;
   }
+
+  // Handle formats with dashes that weren't caught above (fallback)
+  if (dateStr.includes('-') && dateStr.match(/^\d{1,2}-\d{1,2}-\d{2,4}$/)) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [first, second, year] = parts;
+      const fullYear = year.length === 2 ? expandYear(year) : parseInt(year);
+      const firstNum = parseInt(first);
+      const secondNum = parseInt(second);
+      
+      if (firstNum > 12 && secondNum <= 12) {
+        // DD-MM format
+        const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+        console.log(`🔍 Converted DD-MM-Y* format (fallback): ${dateStr} -> ${dateValue}`);
+        return dateValue;
+      } else {
+        // MM-DD format (default)
+        const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+        console.log(`🔍 Converted MM-DD-Y* format (fallback): ${dateStr} -> ${dateValue}`);
+        return dateValue;
+      }
+    }
+  }
+
+  // Handle formats with dots that weren't caught above (fallback)
+  if (dateStr.includes('.') && dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{2,4}$/)) {
+    const parts = dateStr.split('.');
+    if (parts.length === 3) {
+      const [first, second, year] = parts;
+      const fullYear = year.length === 2 ? expandYear(year) : parseInt(year);
+      const firstNum = parseInt(first);
+      const secondNum = parseInt(second);
+      
+      if (firstNum > 12 && secondNum <= 12) {
+        // DD.MM format (European standard for dots)
+        const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+        console.log(`🔍 Converted DD.MM.Y* format (fallback): ${dateStr} -> ${dateValue}`);
+        return dateValue;
+      } else {
+        // Default to DD.MM for dots (European standard)
+        const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+        console.log(`🔍 Converted DD.MM.Y* format (fallback, European default): ${dateStr} -> ${dateValue}`);
+        return dateValue;
+      }
+    }
+  }
   
-  // Try to parse as standard date
+  // Try to parse as standard date (last resort)
   const dateValue = new Date(dateStr);
   console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
   
