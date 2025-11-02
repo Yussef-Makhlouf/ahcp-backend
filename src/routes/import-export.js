@@ -32,10 +32,7 @@ const arabicHeaders = {
   'name': 'الاسم',
   'nationalId': 'رقم الهوية',
   'phone': 'رقم الهاتف',
-  'email': 'البريد الإلكتروني',
   'village': 'القرية',
-  'detailedAddress': 'العنوان التفصيلي',
-  'status': 'الحالة',
   'totalAnimals': 'إجمالي الحيوانات',
   
   // Vaccination
@@ -111,11 +108,6 @@ const buildClientExportFilters = (query = {}) => {
     match.createdAt = dateFilter;
   }
 
-  const status = normalizeFilterValue(query.status);
-  if (status) {
-    match.status = status;
-  }
-
   const village = normalizeFilterValue(query.village);
   if (village) {
     match.village = { $regex: village, $options: 'i' };
@@ -151,7 +143,35 @@ const applyServicesMatch = (pipeline, servicesFilter) => {
   if (!servicesFilter || Object.keys(servicesFilter).length === 0) {
     return;
   }
-  pipeline.push({ $match: { servicesReceived: servicesFilter } });
+  
+  // Create comprehensive service filter to match different service name formats
+  const serviceVariants = [];
+  const originalServices = servicesFilter.$in || [servicesFilter];
+  
+  originalServices.forEach(service => {
+    serviceVariants.push(service); // Original value
+    
+    // Add common variants
+    if (service === 'mobile_clinic') {
+      serviceVariants.push('Mobile Clinic', 'mobile clinic', 'العيادة المتنقلة');
+    } else if (service === 'parasite_control') {
+      serviceVariants.push('Parasite Control', 'parasite control', 'مكافحة الطفيليات');
+    } else if (service === 'vaccination') {
+      serviceVariants.push('Vaccination', 'vaccination', 'التحصين');
+    } else if (service === 'laboratory') {
+      serviceVariants.push('Laboratory', 'laboratory', 'المختبر');
+    } else if (service === 'equine_health') {
+      serviceVariants.push('Equine Health', 'equine health', 'صحة الخيول', 'Horse Health');
+    }
+  });
+  
+  console.log('🔍 Services filter variants:', serviceVariants);
+  
+  pipeline.push({ 
+    $match: { 
+      servicesReceived: { $in: serviceVariants }
+    } 
+  });
 };
 
 const applyTotalAnimalsMatch = (pipeline, range) => {
@@ -1587,12 +1607,41 @@ const processUnifiedCustomData = (row) => {
 // EXISTING FUNCTIONS
 // ========================================
 
+/**
+ * Convert Arabic numerals to English numerals
+ * Supports both Arabic-Indic (٠-٩) and Persian (۰-۹) numerals
+ */
+const convertArabicNumeralsToEnglish = (str) => {
+  if (!str) return str;
+  
+  return str.replace(/[٠-٩۰-۹]/g, (match) => {
+    // Arabic-Indic numerals (٠-٩)
+    if (match >= '٠' && match <= '٩') {
+      return String.fromCharCode(match.charCodeAt(0) - '٠'.charCodeAt(0) + '0'.charCodeAt(0));
+    }
+    // Persian numerals (۰-۹)
+    if (match >= '۰' && match <= '۹') {
+      return String.fromCharCode(match.charCodeAt(0) - '۰'.charCodeAt(0) + '0'.charCodeAt(0));
+    }
+    return match;
+  });
+};
+
+/**
+ * Enhanced date parsing function that supports all requested formats:
+ * - MM/DD/YY, MM/DD/YYYY, DD/MM/YYYY
+ * - MM-DD-YY, DD-MM-YY, MM-DD-YYYY, DD-MM-YYYY
+ * - MM.DD.YY, DD.MM.YY, MM.DD.YYYY, DD.MM.YYYY
+ * - YYYY-MM-DD (ISO format)
+ * - Excel Serial Numbers
+ * - Arabic Numerals (automatic conversion)
+ */
 const parseDateField = (dateString) => {
   if (!dateString || dateString.toString().trim() === '') {
     return null;
   }
   
-  const dateStr = dateString.toString().trim();
+  let dateStr = dateString.toString().trim();
   console.log(`🔍 Parsing date: ${dateStr}`);
   
   // Skip text values that are clearly not dates
@@ -1609,6 +1658,10 @@ const parseDateField = (dateString) => {
     return null;
   }
 
+  // Convert Arabic numerals to English numerals for all formats
+  dateStr = convertArabicNumeralsToEnglish(dateStr);
+  console.log(`🔍 After Arabic numeral conversion: ${dateStr}`);
+
   // Helper function to convert 2-digit year to 4-digit year
   const expandYear = (year) => {
     const yearNum = parseInt(year);
@@ -1623,15 +1676,28 @@ const parseDateField = (dateString) => {
   // Handle Excel serial date numbers (Excel stores dates as numbers)
   if (!isNaN(dateStr) && parseFloat(dateStr) > 0) {
     const excelDate = parseFloat(dateStr);
+    
     // Excel date serial number (days since 1900-01-01, but Excel incorrectly treats 1900 as leap year)
-    if (excelDate > 25569) { // After 1970-01-01
-      const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-      console.log(`🔍 Converted Excel serial date: ${dateStr} -> ${jsDate}`);
-      return jsDate;
-    } else if (excelDate > 0 && excelDate < 100000) { // Likely Excel date
-      const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-      console.log(`🔍 Converted Excel date: ${dateStr} -> ${jsDate}`);
-      return jsDate;
+    // Valid Excel dates are typically between 1 (1900-01-01) and ~100000 (2173-10-14)
+    if (excelDate >= 1 && excelDate <= 100000) {
+      // Excel's epoch starts at 1900-01-01, but JavaScript Date starts at 1970-01-01
+      // Excel serial date 25569 = 1970-01-01
+      let jsDate;
+      
+      if (excelDate < 60) {
+        // Handle dates before March 1, 1900 (Excel's leap year bug)
+        // Excel incorrectly treats 1900 as a leap year
+        jsDate = new Date(1900, 0, excelDate);
+      } else {
+        // For dates after Feb 29, 1900 (which doesn't exist), subtract 1 day
+        jsDate = new Date((excelDate - 25569 - 1) * 86400 * 1000);
+      }
+      
+      // Validate the resulting date is reasonable (between 1900 and 2100)
+      if (jsDate.getFullYear() >= 1900 && jsDate.getFullYear() <= 2100) {
+        console.log(`🔍 Converted Excel serial date: ${dateStr} -> ${jsDate.toISOString().split('T')[0]}`);
+        return jsDate;
+      }
     }
   }
   
@@ -1653,54 +1719,60 @@ const parseDateField = (dateString) => {
     }
   }
   
-  // Handle MM/DD/YY format (American 2-digit year)
-  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
-    const [first, second, year] = dateStr.split('/');
-    const fullYear = expandYear(year);
+  // Smart date format detection helper
+  const smartDetectDateFormat = (first, second, separator) => {
     const firstNum = parseInt(first);
     const secondNum = parseInt(second);
     
+    // Clear indicators
     if (firstNum > 12 && secondNum <= 12) {
-      // Definitely DD/MM format
-      const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD/MM/YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
-      return dateValue;
+      return 'DD' + separator + 'MM'; // Day first
     } else if (secondNum > 12 && firstNum <= 12) {
-      // Definitely MM/DD format
-      const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM/DD/YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      return 'MM' + separator + 'DD'; // Month first
+    } else if (firstNum > 31 || secondNum > 31) {
+      return null; // Invalid date
+    } else {
+      // Ambiguous case - use separator-based heuristics
+      if (separator === '.') {
+        return 'DD.MM'; // European standard for dots
+      } else if (separator === '/') {
+        return 'MM/DD'; // American standard for slashes
+      } else if (separator === '-') {
+        return 'MM-DD'; // American standard for dashes
+      }
+    }
+    return 'MM' + separator + 'DD'; // Default fallback
+  };
+
+  // Handle MM/DD/YY and DD/MM/YY formats (2-digit year with slashes)
+  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+    const [first, second, year] = dateStr.split('/');
+    const fullYear = expandYear(year);
+    const format = smartDetectDateFormat(first, second, '/');
+    
+    if (format === 'DD/MM') {
+      const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD/MM/YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
-      // Ambiguous - default to MM/DD (American format)
       const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM/DD/YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      console.log(`🔍 Converted MM/DD/YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
 
-  // Handle MM/DD/YYYY format (American 4-digit year)
+  // Handle MM/DD/YYYY and DD/MM/YYYY formats (4-digit year with slashes)
   if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-    const [month, day, year] = dateStr.split('/');
-    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
-    return dateValue;
-  }
-  
-  // Handle DD/MM/YYYY format (European 4-digit year)
-  if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-    const [day, month, year] = dateStr.split('/');
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
+    const [first, second, year] = dateStr.split('/');
+    const format = smartDetectDateFormat(first, second, '/');
     
-    if (dayNum > 12 && monthNum <= 12) {
-      // Definitely DD/MM format
-      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue}`);
+    if (format === 'DD/MM') {
+      const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
-      // Default to MM/DD format
-      const dateValue = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue}`);
+      const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
@@ -1713,63 +1785,35 @@ const parseDateField = (dateString) => {
     return dateValue;
   }
   
-  // Handle MM-DD-YY format (American 2-digit year with dashes)
+  // Handle MM-DD-YY and DD-MM-YY formats (2-digit year with dashes)
   if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{2}$/)) {
-    const [month, day, year] = dateStr.split('-');
+    const [first, second, year] = dateStr.split('-');
     const fullYear = expandYear(year);
-    const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
-    return dateValue;
-  }
-
-  // Handle DD-MM-YY format (European 2-digit year with dashes)
-  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{2}$/)) {
-    const [day, month, year] = dateStr.split('-');
-    const fullYear = expandYear(year);
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
+    const format = smartDetectDateFormat(first, second, '-');
     
-    if (dayNum > 12 && monthNum <= 12) {
-      // Definitely DD-MM format
-      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD-MM-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
-      return dateValue;
-    } else if (monthNum > 12 && dayNum <= 12) {
-      // Definitely MM-DD format
-      const dateValue = new Date(`${fullYear}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+    if (format === 'DD-MM') {
+      const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD-MM-YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
-      // Ambiguous - default to MM-DD (American format)
-      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM-DD-YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
 
-  // Handle MM-DD-YYYY format (American 4-digit year with dashes)
+  // Handle MM-DD-YYYY and DD-MM-YYYY formats (4-digit year with dashes)
   if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
-    const [month, day, year] = dateStr.split('-');
-    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue}`);
-    return dateValue;
-  }
-
-  // Handle DD-MM-YYYY format (European 4-digit year with dashes)
-  if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
-    const [day, month, year] = dateStr.split('-');
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
+    const [first, second, year] = dateStr.split('-');
+    const format = smartDetectDateFormat(first, second, '-');
     
-    if (dayNum > 12 && monthNum <= 12) {
-      // Definitely DD-MM format
-      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue}`);
+    if (format === 'DD-MM') {
+      const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
-      // Default to MM-DD format
-      const dateValue = new Date(`${year}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue}`);
+      const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
@@ -1781,78 +1825,39 @@ const parseDateField = (dateString) => {
     return dateValue;
   }
 
-  // Handle MM.DD.YY format (American 2-digit year with dots)
+  // Handle MM.DD.YY and DD.MM.YY formats (2-digit year with dots)
   if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{2}$/)) {
-    const [month, day, year] = dateStr.split('.');
+    const [first, second, year] = dateStr.split('.');
     const fullYear = expandYear(year);
-    const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
-    return dateValue;
-  }
-
-  // Handle DD.MM.YY format (European 2-digit year with dots)
-  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{2}$/)) {
-    const [day, month, year] = dateStr.split('.');
-    const fullYear = expandYear(year);
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
+    const format = smartDetectDateFormat(first, second, '.');
     
-    if (dayNum > 12 && monthNum <= 12) {
-      // Definitely DD.MM format
-      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
-      return dateValue;
-    } else if (monthNum > 12 && dayNum <= 12) {
-      // Definitely MM.DD format
-      const dateValue = new Date(`${fullYear}-${day.padStart(2, '0')}-${month.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+    if (format === 'DD.MM') {
+      const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
-      // Ambiguous - default to DD.MM (European format for dots)
-      const dateValue = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YY format (ambiguous): ${dateStr} -> ${dateValue} (year expanded to ${fullYear})`);
+      const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
 
-  // Handle MM.DD.YYYY format (American 4-digit year with dots)
+  // Handle MM.DD.YYYY and DD.MM.YYYY formats (4-digit year with dots)
   if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
-    const [month, day, year] = dateStr.split('.');
-    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted MM.DD.YYYY format: ${dateStr} -> ${dateValue}`);
-    return dateValue;
-  }
-
-  // Handle DD.MM.YYYY format (European 4-digit year with dots)
-  if (dateStr.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/)) {
-    const [day, month, year] = dateStr.split('.');
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
+    const [first, second, year] = dateStr.split('.');
+    const format = smartDetectDateFormat(first, second, '.');
     
-    if (dayNum > 12 && monthNum <= 12) {
-      // Definitely DD.MM format
-      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue}`);
+    if (format === 'DD.MM') {
+      const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
+      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
-      // Default to DD.MM format (European standard for dots)
-      const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue}`);
+      const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
+      console.log(`🔍 Converted MM.DD.YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
   
-  // Handle Arabic date format (DD/MM/YYYY with Arabic numbers)
-  if (dateStr.match(/^[\u0660-\u0669\u06F0-\u06F9]+\/[\u0660-\u0669\u06F0-\u06F9]+\/[\u0660-\u0669\u06F0-\u06F9]+$/)) {
-    // Convert Arabic numerals to English
-    const englishDateStr = dateStr.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (match) => {
-      return String.fromCharCode(match.charCodeAt(0) - 0x0660);
-    });
-    const [day, month, year] = englishDateStr.split('/');
-    const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Converted Arabic date format: ${dateStr} -> ${dateValue}`);
-    return dateValue;
-  }
 
   // Handle formats with dashes that weren't caught above (fallback)
   if (dateStr.includes('-') && dateStr.match(/^\d{1,2}-\d{1,2}-\d{2,4}$/)) {
@@ -3254,6 +3259,7 @@ const generateSerialNo = (row, prefix) => {
   return `${prefix}-${timestamp}-${random}`;
 };
 
+
 /**
  * Process enum values with mapping
  */
@@ -3906,6 +3912,9 @@ router.get('/clients/export', auth, async (req, res) => {
     );
 
     const records = await Client.aggregate(pipeline);
+    
+    console.log(`📊 Clients Export - Found ${records.length} clients matching filter`);
+    console.log('🔍 Export pipeline:', JSON.stringify(pipeline, null, 2));
 
     const transformedRecords = records.map(record => {
       const birthDateValue = record.birthDate || record.birthDateFromForms;
@@ -3915,36 +3924,45 @@ router.get('/clients/export', auth, async (req, res) => {
         return Number.isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
       };
 
+      // Map services to Arabic names
+      const serviceNames = {
+        'mobile_clinic': 'العيادة المتنقلة',
+        'vaccination': 'التحصين',
+        'equine_health': 'صحة الخيول',
+        'laboratory': 'المختبر',
+        'parasite_control': 'مكافحة الطفيليات'
+      };
+      
+      const servicesText = (record.servicesReceived || [])
+        .map(service => serviceNames[service] || service)
+        .join(', ') || 'لا توجد خدمات';
+
+      // Get village name and code
+      const villageName = (() => {
+        if (!record.village) return 'غير محدد';
+        if (typeof record.village === 'object') {
+          return record.village.nameArabic || record.village.nameEnglish || record.village.name || 'غير محدد';
+        }
+        return record.village;
+      })();
+      
+      const villageCode = (() => {
+        if (record.village && typeof record.village === 'object') {
+          return record.village.serialNumber || '';
+        }
+        return '';
+      })();
+      
       return {
-        'Name': record.name || '',
-        'National ID': record.nationalId || '',
-        'Birth Date': formatDate(birthDateValue),
-        'Phone': record.phone || '',
-        'Email': record.email || '',
-        'Village': (() => {
-          if (!record.village) return 'غير محدد';
-          if (typeof record.village === 'object') {
-            return record.village.nameArabic || record.village.nameEnglish || record.village.name || 'غير محدد';
-          }
-          return record.village;
-        })(),
-        'Village Sector': (() => {
-          if (record.village && typeof record.village === 'object') {
-            return record.village.sector || '';
-          }
-          return '';
-        })(),
-        'Village Serial Number': (() => {
-          if (record.village && typeof record.village === 'object') {
-            return record.village.serialNumber || '';
-          }
-          return '';
-        })(),
-        'Detailed Address': record.detailedAddress || '',
-        'Status': record.status || 'Active',
-        'Total Animals': typeof record.totalAnimals === 'number' ? record.totalAnimals : 0,
-        'Created Date': formatDate(record.createdAt),
-        'Updated Date': formatDate(record.updatedAt)
+        'الرقم القومي': record.nationalId || '',
+        'الاسم': record.name || '',
+        'رقم الهاتف': record.phone || '',
+        'القرية': villageName,
+        'رمز القرية': villageCode,
+        'تاريخ الميلاد': formatDate(birthDateValue),
+        'الخدمات المستلمة': servicesText,
+        'إجمالي الزيارات': record.totalVisits || 0,
+        'آخر خدمة': formatDate(record.lastServiceDate)
       };
     });
 
@@ -3954,7 +3972,7 @@ router.get('/clients/export', auth, async (req, res) => {
       const csv = parser.parse(transformedRecords);
       
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients-records.csv');
+      res.setHeader('Content-Disposition', `attachment; filename=clients-${new Date().toISOString().split('T')[0]}.csv`);
       res.send(csv);
     } else if (format === 'excel') {
       const XLSX = require('xlsx');
@@ -3966,13 +3984,13 @@ router.get('/clients/export', auth, async (req, res) => {
       const worksheet = XLSX.utils.json_to_sheet(transformedRecords);
       
       // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients Records');
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'المربيين');
       
       // Generate Excel file buffer
       const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients-records.xlsx');
+      res.setHeader('Content-Disposition', `attachment; filename=clients-${new Date().toISOString().split('T')[0]}.xlsx`);
       res.send(excelBuffer);
     } else {
       res.json({
@@ -4712,12 +4730,9 @@ router.get('/clients/template', auth, handleTemplate([
     'National ID': '1028544243',
     'Birth Date': '7/19/1958',
     'Phone': '501834996',
-    'Email': 'client@example.com',
     'Village': 'فضلا',
     'Village Sector': 'القطاع الأول',
     'Village Serial Number': 'V001',
-    'Detailed Address': 'منطقة فضلا',
-    'Status': 'نشط',
     'Total Animals': '10',
     'Created Date': '2024-01-01',
     'Updated Date': '2024-01-01'
@@ -4909,10 +4924,7 @@ router.post('/clients/import', auth, handleImport(Client, async (row, userId, er
       name: row.name || row.client_name,
       nationalId: row.nationalId || row.client_id,
       phone: row.phone || row.client_phone,
-      email: row.email || row.client_email,
       village: row.village || row.client_village,
-      detailedAddress: row.detailedAddress || row.client_address,
-      status: row.status || 'نشط',  
       animals: [],
       availableServices: [],
       createdBy: userId

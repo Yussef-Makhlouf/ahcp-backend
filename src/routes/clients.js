@@ -612,47 +612,236 @@ router.get('/export',
   asyncHandler(async (req, res) => {
     // Add default user for export
     req.user = { _id: 'system', role: 'super_admin', name: 'System Export' };
-    const { format = 'json', status } = req.query;
+    const { 
+      format = 'json', 
+      servicesReceived,
+      startDate,
+      endDate,
+      search
+    } = req.query;
+    
+    console.log('🔍 Clients Export - Received query params:', req.query);
     
     const filter = {};
-    if (status) filter.status = status;
+    
+    // Services received filter
+    if (servicesReceived && servicesReceived !== '__all__') {
+      const services = servicesReceived.split(',');
+      console.log('🔍 Filtering by services:', services);
+      
+      // Create comprehensive service filter to match different service name formats
+      const serviceVariants = [];
+      services.forEach(service => {
+        serviceVariants.push(service); // Original value
+        
+        // Add common variants
+        if (service === 'mobile_clinic') {
+          serviceVariants.push('Mobile Clinic', 'mobile clinic', 'العيادة المتنقلة');
+        } else if (service === 'parasite_control') {
+          serviceVariants.push('Parasite Control', 'parasite control', 'مكافحة الطفيليات');
+        } else if (service === 'vaccination') {
+          serviceVariants.push('Vaccination', 'vaccination', 'التحصين');
+        } else if (service === 'laboratory') {
+          serviceVariants.push('Laboratory', 'laboratory', 'المختبر');
+        } else if (service === 'equine_health') {
+          serviceVariants.push('Equine Health', 'equine health', 'صحة الخيول', 'Horse Health');
+        }
+      });
+      
+      console.log('🔍 Service variants to search for:', serviceVariants);
+      
+      // Use $or for services fields only, don't overwrite existing $or
+      const servicesFilter = {
+        $or: [
+          { servicesReceived: { $in: serviceVariants } },
+          { availableServices: { $in: serviceVariants } },
+          { available_services: { $in: serviceVariants } }
+        ]
+      };
+      
+      // If there's already an $or condition, combine them with $and
+      if (filter.$or) {
+        filter.$and = [
+          { $or: filter.$or },
+          servicesFilter
+        ];
+        delete filter.$or;
+      } else {
+        Object.assign(filter, servicesFilter);
+      }
+    }
+    
+    // Date filter
+    if (startDate && endDate) {
+      filter.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    // Search filter
+    if (search) {
+      const searchFilter = {
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { nationalId: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } },
+          { village: { $regex: search, $options: 'i' } }
+        ]
+      };
+      
+      // If there's already an $and condition, add to it
+      if (filter.$and) {
+        filter.$and.push(searchFilter);
+      } else if (filter.$or) {
+        // If there's an $or condition, combine with $and
+        filter.$and = [
+          { $or: filter.$or },
+          searchFilter
+        ];
+        delete filter.$or;
+      } else {
+        Object.assign(filter, searchFilter);
+      }
+    }
 
-    const clients = await Client.find(filter).sort({ createdAt: -1 });
+    console.log('🔍 Clients Export - Applied filter:', JSON.stringify(filter, null, 2));
+
+    const clients = await Client.find(filter)
+      .populate('village', 'nameArabic nameEnglish name serialNumber')
+      .sort({ createdAt: -1 });
+
+    console.log(`📊 Clients Export - Found ${clients.length} clients matching filter`);
+    
+    // Add detailed logging for debugging
+    if (clients.length === 0) {
+      console.log('⚠️ No clients found. Checking if any clients exist in database...');
+      const totalClients = await Client.countDocuments({});
+      console.log(`📈 Total clients in database: ${totalClients}`);
+      
+      if (totalClients > 0 && servicesReceived) {
+        console.log('🔍 Checking what services exist in database...');
+        
+        // Check what services actually exist in the database
+        const servicesAggregation = await Client.aggregate([
+          {
+            $project: {
+              allServices: {
+                $concatArrays: [
+                  { $ifNull: ['$servicesReceived', []] },
+                  { $ifNull: ['$availableServices', []] },
+                  { $ifNull: ['$available_services', []] }
+                ]
+              }
+            }
+          },
+          { $unwind: { path: '$allServices', preserveNullAndEmptyArrays: true } },
+          { $group: { _id: '$allServices', count: { $sum: 1 } } },
+          { $sort: { count: -1 } }
+        ]);
+        
+        console.log('📊 Services found in database:', servicesAggregation);
+        console.log('🔍 Filter may be too restrictive. Consider adjusting filter criteria.');
+      }
+    } else {
+      console.log(`✅ Successfully found ${clients.length} clients for export`);
+    }
 
     // Transform data for export to match table columns exactly
     const transformedClients = clients.map(client => {
       // Handle village data (both string and object types)
       let village = 'غير محدد';
+      let villageCode = '';
       if (client.village) {
         if (typeof client.village === 'string') {
           village = client.village;
         } else if (typeof client.village === 'object' && client.village !== null) {
           village = client.village.nameArabic || client.village.nameEnglish || client.village.name || '';
+          villageCode = client.village.serialNumber || '';
         }
       }
+
+      // Handle services received
+      const services = client.servicesReceived || client.availableServices || client.available_services || [];
+      const serviceNames = {
+        'parasite_control': 'مكافحة الطفيليات',
+        'vaccination': 'التحصين',
+        'mobile_clinic': 'العيادة المتنقلة',
+        'equine_health': 'صحة الخيول',
+        'laboratory': 'المختبر',
+        'Horse Health': 'صحة الخيول',
+        'Vaccination': 'التحصين',
+        'Parasite Control': 'مكافحة الطفيليات',
+        'Mobile Clinic': 'العيادة المتنقلة',
+        'Laboratory': 'المختبر',
+        'Equine Health': 'صحة الخيول'
+      };
+      const servicesText = services.map(service => serviceNames[service] || service).join(', ') || 'لا توجد خدمات';
+
+      // Calculate total animals from animals array
+      let totalAnimals = client.totalAnimals || 0;
+      if (!totalAnimals && client.animals && Array.isArray(client.animals)) {
+        totalAnimals = client.animals.reduce((sum, animal) => {
+          return sum + (animal.animalCount || animal.animal_count || 0);
+        }, 0);
+      }
+
+      // Handle birth date priority (from forms first, then client data)
+      const birthDate = client.birthDateFromForms || client.birthDate || client.birth_date;
+      const birthDateSource = client.birthDateFromForms ? 'من النماذج' : 'من المربي';
       
       return {
-        'Name': client.name || '',
-        'National ID': client.nationalId || '',
-        'Birth Date': client.birthDate ? new Date(client.birthDate).toISOString().split('T')[0] : '',
-        'Phone': client.phone || '',
-        'Email': client.email || '',
-        'Village': village,
-        'Detailed Address': client.detailedAddress || '',
-        'Status': client.status || '',
-        'Total Animals': client.totalAnimals || 0,
-        'Created At': client.createdAt ? client.createdAt.toISOString().split('T')[0] : '',
-        'Updated At': client.updatedAt ? client.updatedAt.toISOString().split('T')[0] : ''
+        'الرقم القومي': client.nationalId || client.national_id || '',
+        'الاسم': client.name || '',
+        'رقم الهاتف': client.phone || '',
+        'القرية': village,
+        'تاريخ الميلاد': birthDate ? new Date(birthDate).toLocaleDateString('ar-SA') : '',
+        'الخدمات المستلمة': servicesText,
+        'آخر خدمة': client.lastServiceDate ? new Date(client.lastServiceDate).toLocaleDateString('ar-SA') : '',
+        'الحالة': client.status || '',
+        'البريد الإلكتروني': client.email || '',
+        'العنوان التفصيلي': client.detailedAddress || '',
+        'تاريخ الإنشاء': client.createdAt ? new Date(client.createdAt).toLocaleDateString('ar-SA') : '',
+        'تاريخ التحديث': client.updatedAt ? new Date(client.updatedAt).toLocaleDateString('ar-SA') : ''
       };
     });
 
     if (format === 'csv') {
       const { Parser } = require('json2csv');
-      const parser = new Parser();
+      
+      // Define CSV fields explicitly to handle empty data
+      const csvFields = [
+        'الرقم القومي',
+        'الاسم', 
+        'رقم الهاتف',
+        'القرية',
+        'تاريخ الميلاد',
+        'الخدمات المستلمة',
+        'آخر خدمة',
+        'الحالة',
+        'البريد الإلكتروني',
+        'العنوان التفصيلي',
+        'تاريخ الإنشاء',
+        'تاريخ التحديث'
+      ];
+      
+      const parser = new Parser({ fields: csvFields });
+      
+      // Handle empty data case
+      if (transformedClients.length === 0) {
+        console.log('⚠️ No clients found matching the filter criteria');
+        // Create empty CSV with headers only
+        const csv = parser.parse([]);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=clients-empty.csv');
+        res.send(csv);
+        return;
+      }
+      
       const csv = parser.parse(transformedClients);
       
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients.csv');
+      res.setHeader('Content-Disposition', `attachment; filename=clients-${new Date().toISOString().split('T')[0]}.csv`);
       res.send(csv);
     } else if (format === 'excel') {
       const XLSX = require('xlsx');
@@ -660,17 +849,40 @@ router.get('/export',
       // Create a new workbook
       const workbook = XLSX.utils.book_new();
       
-      // Convert data to worksheet
-      const worksheet = XLSX.utils.json_to_sheet(transformedClients);
+      // Handle empty data case
+      if (transformedClients.length === 0) {
+        console.log('⚠️ No clients found matching the filter criteria for Excel export');
+        // Create empty worksheet with headers only
+        const emptyData = [{
+          'الرقم القومي': '',
+          'الاسم': '', 
+          'رقم الهاتف': '',
+          'القرية': '',
+          'تاريخ الميلاد': '',
+          'الخدمات المستلمة': '',
+          'آخر خدمة': '',
+          'الحالة': '',
+          'البريد الإلكتروني': '',
+          'العنوان التفصيلي': '',
+          'تاريخ الإنشاء': '',
+          'تاريخ التحديث': ''
+        }];
+        const worksheet = XLSX.utils.json_to_sheet(emptyData);
+        // Remove the empty row, keep only headers
+        worksheet['!ref'] = 'A1:L1';
+      } else {
+        // Convert data to worksheet
+        var worksheet = XLSX.utils.json_to_sheet(transformedClients);
+      }
       
       // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'المربيين');
       
       // Generate Excel file buffer
       const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
+      res.setHeader('Content-Disposition', `attachment; filename=clients-${new Date().toISOString().split('T')[0]}.xlsx`);
       res.send(excelBuffer);
     } else {
       res.json({
