@@ -2016,11 +2016,13 @@ const processParasiteControlRow = async (row, userId, errors) => {
             throw new Error('نوع المبيد مطلوب ولم يتم العثور عليه في البيانات');
           })(),
           method: (() => {
-            // Try to get method from various fields
+            // Try to get method from various fields - EXTENDED list
             let method = getFieldValue(row, [
               'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
               'Application Method', 'applicationMethod', 'application_method',
-              'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
+              'Spray Method', 'sprayMethod', 'spray_method',
+              'Treatment Method', 'treatmentMethod', 'treatment_method',
+              'طريقة الرش', 'طريقة التطبيق', 'الطريقة', 'طريقة المعالجة'
             ]);
             
             // Convert null/undefined to empty string for consistent handling
@@ -2029,32 +2031,58 @@ const processParasiteControlRow = async (row, userId, errors) => {
             }
             
             if (!method || method === '' || method === 'N/A' || method === 'null' || method === 'undefined') {
-              // Fallback to category if method not found
-              const category = getFieldValue(row, [
-                'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
-                'فئة المبيد'
+              // Try to infer method from insecticide type first (most reliable)
+              const type = getFieldValue(row, [
+                'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
+                'نوع المبيد', 'المبيد المستخدم'
               ]);
               
-              // Map common categories to methods (only allowed values)
-              if (category && category !== '' && category !== 'N/A') {
-                const categoryLower = category.toLowerCase().trim();
-                if (categoryLower.includes('pour') || categoryLower.includes('صب')) method = 'Pour on';
-                else if (categoryLower.includes('spray') || categoryLower.includes('رش')) method = 'Spraying';
-                else if (categoryLower.includes('oral') && categoryLower.includes('drench')) method = 'Oral Drenching';
-                else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) method = 'Oral Drenching';
-                else method = 'Pour on'; // Default to Pour on
+              if (type && type !== '' && type !== 'N/A' && type !== 'null' && type !== 'undefined') {
+                const typeLower = type.toLowerCase().trim();
+                
+                // Check for specific method indicators in type name
+                if (typeLower.includes('pour') || typeLower.includes('صب') || typeLower.includes('ultra-pour')) {
+                  method = 'Pour on';
+                } else if (typeLower.includes('spray') || typeLower.includes('cyperdip') || typeLower.includes('cyper') || typeLower.includes('رش')) {
+                  method = 'Spraying';
+                } else if (typeLower.includes('albendazole') || typeLower.includes('oral') || typeLower.includes('drench') || typeLower.includes('فموي')) {
+                  method = 'Oral Drenching';
+                } else if (typeLower.includes('albevet')) {
+                  method = 'Oral Drenching'; // Albevet is typically oral
+                } else {
+                  // Check volume to make a guess
+                  const volumeValue = getFieldValue(row, [
+                    'Volume (ml)', 'Volume', 'Insecticide Volume (ml)', 'insecticideVolume', 'insecticide_volume',
+                    'الحجم (مل)', 'الحجم'
+                  ]);
+                  
+                  const volume = volumeValue ? parseFloat(volumeValue) : 0;
+                  
+                  if (volume > 0) {
+                    // If there's volume data, guess based on typical volumes
+                    if (volume < 500) {
+                      method = 'Pour on'; // Small volumes typically pour on
+                    } else {
+                      method = 'Spraying'; // Larger volumes typically spraying
+                    }
+                  } else {
+                    method = 'Pour on'; // Default
+                  }
+                }
               } else {
-                // If no category, try to infer from type
-                const type = getFieldValue(row, [
-                  'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
-                  'نوع المبيد', 'المبيد المستخدم'
+                // Fallback to category if method not found
+                const category = getFieldValue(row, [
+                  'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
+                  'فئة المبيد'
                 ]);
                 
-                if (type && type !== '' && type !== 'N/A') {
-                  const typeLower = type.toLowerCase().trim();
-                  if (typeLower.includes('pour') || typeLower.includes('صب')) method = 'Pour on';
-                  else if (typeLower.includes('spray') || typeLower.includes('رش')) method = 'Spraying';
-                  else if (typeLower.includes('oral') || typeLower.includes('فموي')) method = 'Oral Drenching';
+                // Map common categories to methods (only allowed values)
+                if (category && category !== '' && category !== 'N/A') {
+                  const categoryLower = category.toLowerCase().trim();
+                  if (categoryLower.includes('pour') || categoryLower.includes('صب')) method = 'Pour on';
+                  else if (categoryLower.includes('spray') || categoryLower.includes('رش')) method = 'Spraying';
+                  else if (categoryLower.includes('oral') && categoryLower.includes('drench')) method = 'Oral Drenching';
+                  else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) method = 'Oral Drenching';
                   else method = 'Pour on'; // Default to Pour on
                 } else {
                   method = 'Pour on'; // Default fallback

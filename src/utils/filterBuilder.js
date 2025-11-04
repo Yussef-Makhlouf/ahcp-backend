@@ -167,17 +167,17 @@ class FilterBuilder {
       if (searchFilter) Object.assign(filter, searchFilter);
     }
     
-    // فلاتر المبيدات
-    const insecticideMethodFilter = this.buildMultiValueFilter(query.insecticideMethod);
+    // فلاتر المبيدات - دعم كل من insecticide.method و insecticideMethod
+    const insecticideMethodFilter = this.buildMultiValueFilter(query['insecticide.method'] || query.insecticideMethod);
     if (insecticideMethodFilter) filter['insecticide.method'] = insecticideMethodFilter;
     
-    const insecticideCategoryFilter = this.buildMultiValueFilter(query.insecticideCategory);
+    const insecticideCategoryFilter = this.buildMultiValueFilter(query['insecticide.category'] || query.insecticideCategory);
     if (insecticideCategoryFilter) filter['insecticide.category'] = insecticideCategoryFilter;
     
-    const insecticideStatusFilter = this.buildMultiValueFilter(query.insecticideStatus);
+    const insecticideStatusFilter = this.buildMultiValueFilter(query['insecticide.status'] || query.insecticideStatus);
     if (insecticideStatusFilter) filter['insecticide.status'] = insecticideStatusFilter;
     
-    const insecticideTypeFilter = this.buildMultiValueFilter(query.insecticideType);
+    const insecticideTypeFilter = this.buildMultiValueFilter(query['insecticide.type'] || query.insecticideType);
     if (insecticideTypeFilter) filter['insecticide.type'] = insecticideTypeFilter;
     
     // فلتر الحالة الصحية للقطيع
