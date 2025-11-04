@@ -72,7 +72,7 @@ const initialDropdownData = [
     category: 'spray_methods',
     options: [
       { value: 'Pour on', label: 'Pour on', labelAr: 'صب على الظهر', sortOrder: 0 },
-      { value: 'Spray', label: 'Spray', labelAr: 'رش', sortOrder: 1 },
+      { value: 'Spraying', label: 'Spraying', labelAr: 'رش', sortOrder: 1 },
       { value: 'Oral Drenching', label: 'Oral Drenching', labelAr: 'جرعة فموية', sortOrder: 2 }
     ]
   },

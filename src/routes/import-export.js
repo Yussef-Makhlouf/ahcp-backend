@@ -1996,6 +1996,11 @@ const processParasiteControlRow = async (row, userId, errors) => {
               'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
             ]);
             
+            // Convert null/undefined to empty string for consistent handling
+            if (method === null || method === undefined) {
+              method = '';
+            }
+            
             if (!method || method === '' || method === 'N/A' || method === 'null' || method === 'undefined') {
               // Fallback to category if method not found
               const category = getFieldValue(row, [
@@ -2030,29 +2035,63 @@ const processParasiteControlRow = async (row, userId, errors) => {
               }
             }
             
+            // Ensure we have a method value, default to 'Pour on' if not
+            if (!method) {
+              method = 'Pour on';
+            }
+            
             // Clean and normalize method value (only allowed values)
-            if (method) {
-              method = method.toString().trim();
-              
-              // Handle common variations and typos - map to allowed values only
-              const methodLower = method.toLowerCase();
-              if (methodLower === 'pour-on' || methodLower === 'pouron' || methodLower.includes('pour on') || methodLower === 'pour on') {
-                method = 'Pour on';
-              } else if (methodLower === 'spray' || methodLower === 'spraying' || methodLower.includes('رش') || methodLower === 'spraying') {
-                method = 'Spraying';
-              } else if (methodLower.includes('oral') && methodLower.includes('drench')) {
-                method = 'Oral Drenching';
-              } else if (methodLower === 'oral' || methodLower.includes('فموي') || methodLower === 'drenching') {
-                method = 'Oral Drenching';
-              } else if (methodLower === 'other' || methodLower === 'dipping' || methodLower === 'injection' || methodLower === 'dip' || methodLower === 'inject') {
-                // Map old unsupported methods to closest match
-                method = 'Pour on'; // Default for unsupported methods
-              }
+            method = method.toString().trim().replace(/\s+/g, ' '); // Replace multiple spaces with single space
+            
+            // Handle common variations and typos - map to allowed values only
+            const methodLower = method.toLowerCase().replace(/[^\w\s\u0600-\u06FF]/g, ''); // Remove special chars except Arabic
+            
+            // Exact matches first
+            if (methodLower === 'pour on' || methodLower === 'pouron' || methodLower === 'pour-on') {
+              method = 'Pour on';
+            } else if (methodLower === 'spraying' || methodLower === 'spray') {
+              method = 'Spraying';
+            } else if (methodLower === 'oral drenching' || methodLower === 'oraldrenching') {
+              method = 'Oral Drenching';
+            }
+            // Partial matches
+            else if (methodLower.includes('pour') || methodLower.includes('صب')) {
+              method = 'Pour on';
+            } else if (methodLower.includes('spray') || methodLower.includes('رش')) {
+              method = 'Spraying';
+            } else if (methodLower.includes('oral') || methodLower.includes('drench') || methodLower.includes('فموي')) {
+              method = 'Oral Drenching';
+            } 
+            // Legacy/unsupported methods
+            else if (methodLower === 'other' || methodLower === 'dipping' || methodLower === 'injection' || 
+                     methodLower === 'dip' || methodLower === 'inject' || methodLower === 'oral') {
+              method = 'Pour on'; // Default for unsupported methods
+            } else {
+              // For any unrecognized method, default to Pour on
+              method = 'Pour on';
             }
             
             // Validate method against allowed values (updated list)
             const validMethods = ['Pour on', 'Spraying', 'Oral Drenching'];
-            return validMethods.includes(method) ? method : 'Pour on';
+            
+            // Log for debugging if method is not valid
+            if (!validMethods.includes(method)) {
+              logger.warn(`Invalid method found in row: "${method}". Converting to "Pour on". Original method value:`, {
+                originalMethod: getFieldValue(row, [
+                  'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
+                  'Application Method', 'applicationMethod', 'application_method',
+                  'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
+                ]),
+                processedMethod: method,
+                rowData: row
+              });
+            }
+            
+            // Final validation - ensure we always return a valid method
+            const finalMethod = validMethods.includes(method) ? method : 'Pour on';
+            
+            // Double check that finalMethod is not null/undefined
+            return finalMethod || 'Pour on';
           })(),
           volumeMl: (() => {
             const volumeValue = getFieldValue(row, [
