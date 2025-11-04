@@ -165,7 +165,7 @@ const schemas = {
     }).optional(),
     insecticide: Joi.object({
       type: Joi.string().max(200).required(),
-      method: Joi.string().valid('Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other').required(),
+      method: Joi.string().valid('Pour on', 'Spraying', 'Oral Drenching').required(),
       volumeMl: Joi.number().min(0).max(50000).required(),
       status: Joi.string().valid('Sprayed', 'Not Sprayed', 'Partially Sprayed').required(),
       category: Joi.string().max(100).required(),
@@ -457,9 +457,9 @@ const schemas = {
     })).optional(),
     insecticide: Joi.object({
       type: Joi.string().max(100).optional(),
-      method: Joi.string().max(100).optional(),
+      method: Joi.string().valid('Pour on', 'Spraying', 'Oral Drenching').optional(),
       volumeMl: Joi.number().min(0).optional(),
-      status: Joi.string().valid('Sprayed', 'Not Sprayed').optional(),
+      status: Joi.string().valid('Sprayed', 'Not Sprayed', 'Partially Sprayed').optional(),
       category: Joi.string().max(50).optional()
     }).optional(),
     animalBarnSizeSqM: Joi.number().min(0).optional(),

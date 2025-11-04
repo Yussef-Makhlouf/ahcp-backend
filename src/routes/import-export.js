@@ -2003,15 +2003,14 @@ const processParasiteControlRow = async (row, userId, errors) => {
                 'فئة المبيد'
               ]);
               
-              // Map common categories to methods
+              // Map common categories to methods (only allowed values)
               if (category && category !== '' && category !== 'N/A') {
                 const categoryLower = category.toLowerCase().trim();
                 if (categoryLower.includes('pour') || categoryLower.includes('صب')) method = 'Pour on';
                 else if (categoryLower.includes('spray') || categoryLower.includes('رش')) method = 'Spraying';
-                else if (categoryLower.includes('dip') || categoryLower.includes('غمس')) method = 'Dipping';
-                else if (categoryLower.includes('inject') || categoryLower.includes('حقن')) method = 'Injection';
-                else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) method = 'Oral';
-                else method = 'Other';
+                else if (categoryLower.includes('oral') && categoryLower.includes('drench')) method = 'Oral Drenching';
+                else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) method = 'Oral Drenching';
+                else method = 'Pour on'; // Default to Pour on
               } else {
                 // If no category, try to infer from type
                 const type = getFieldValue(row, [
@@ -2023,35 +2022,37 @@ const processParasiteControlRow = async (row, userId, errors) => {
                   const typeLower = type.toLowerCase().trim();
                   if (typeLower.includes('pour') || typeLower.includes('صب')) method = 'Pour on';
                   else if (typeLower.includes('spray') || typeLower.includes('رش')) method = 'Spraying';
-                  else method = 'Other';
+                  else if (typeLower.includes('oral') || typeLower.includes('فموي')) method = 'Oral Drenching';
+                  else method = 'Pour on'; // Default to Pour on
                 } else {
-                  method = 'Other'; // Default fallback
+                  method = 'Pour on'; // Default fallback
                 }
               }
             }
             
-            // Clean and normalize method value
+            // Clean and normalize method value (only allowed values)
             if (method) {
               method = method.toString().trim();
               
-              // Handle common variations and typos
+              // Handle common variations and typos - map to allowed values only
               const methodLower = method.toLowerCase();
-              if (methodLower === 'pour-on' || methodLower === 'pouron' || methodLower.includes('pour on')) {
+              if (methodLower === 'pour-on' || methodLower === 'pouron' || methodLower.includes('pour on') || methodLower === 'pour on') {
                 method = 'Pour on';
-              } else if (methodLower === 'spray' || methodLower === 'spraying' || methodLower.includes('رش')) {
+              } else if (methodLower === 'spray' || methodLower === 'spraying' || methodLower.includes('رش') || methodLower === 'spraying') {
                 method = 'Spraying';
-              } else if (methodLower === 'dip' || methodLower === 'dipping' || methodLower.includes('غمس')) {
-                method = 'Dipping';
-              } else if (methodLower === 'inject' || methodLower === 'injection' || methodLower.includes('حقن')) {
-                method = 'Injection';
-              } else if (methodLower === 'oral' || methodLower.includes('فموي')) {
-                method = 'Oral';
+              } else if (methodLower.includes('oral') && methodLower.includes('drench')) {
+                method = 'Oral Drenching';
+              } else if (methodLower === 'oral' || methodLower.includes('فموي') || methodLower === 'drenching') {
+                method = 'Oral Drenching';
+              } else if (methodLower === 'other' || methodLower === 'dipping' || methodLower === 'injection' || methodLower === 'dip' || methodLower === 'inject') {
+                // Map old unsupported methods to closest match
+                method = 'Pour on'; // Default for unsupported methods
               }
             }
             
-            // Validate method against allowed values
-            const validMethods = ['Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other'];
-            return validMethods.includes(method) ? method : 'Other';
+            // Validate method against allowed values (updated list)
+            const validMethods = ['Pour on', 'Spraying', 'Oral Drenching'];
+            return validMethods.includes(method) ? method : 'Pour on';
           })(),
           volumeMl: (() => {
             const volumeValue = getFieldValue(row, [
@@ -2141,7 +2142,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
               }
             }
             
-            // Fallback to method-based category
+            // Fallback to method-based category (updated for new methods)
             const method = getFieldValue(row, [
               'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
               'Application Method', 'applicationMethod', 'application_method',
@@ -2155,14 +2156,12 @@ const processParasiteControlRow = async (row, userId, errors) => {
                 return 'Pour-on';
               } else if (methodLower === 'spraying' || methodLower === 'spray') {
                 return 'Spraying';
-              } else if (methodLower === 'oral') {
-                return 'Oral';
-              } else if (methodLower === 'dipping') {
-                return 'Dipping';
-              } else if (methodLower === 'injection') {
-                return 'Injection';
+              } else if (methodLower.includes('oral') && methodLower.includes('drench')) {
+                return 'Oral Drenching';
+              } else if (methodLower === 'oral' || methodLower.includes('oral')) {
+                return 'Oral Drenching';
               } else {
-                return 'General';
+                return 'Pour-on'; // Default to Pour-on for unsupported methods
               }
             }
             

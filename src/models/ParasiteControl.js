@@ -88,8 +88,8 @@ const insecticideSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Method cannot exceed 100 characters'],
     enum: {
-      values: ['Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other'],
-      message: 'Method must be one of: Pour on, Spraying, Dipping, Injection, Oral, Other'
+      values: ['Pour on', 'Spraying', 'Oral Drenching'],
+      message: 'Method must be one of: Pour on, Spraying, Oral Drenching'
     },
     default: 'Pour on'
   },
