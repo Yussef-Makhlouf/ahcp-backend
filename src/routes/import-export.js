@@ -6,6 +6,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 
+const logger = require('../utils/logger');
 // Import middleware
 const { auth } = require('../middleware/auth');
 
@@ -165,7 +166,7 @@ const applyServicesMatch = (pipeline, servicesFilter) => {
     }
   });
   
-  console.log('🔍 Services filter variants:', serviceVariants);
+  logger.info('Services filter variants:', { data: serviceVariants });
   
   pipeline.push({ 
     $match: { 
@@ -240,7 +241,6 @@ const parseFileData = async (fileBuffer, fileName) => {
       }
       
       const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      console.log(`📊 CSV Headers:`, headers);
       
       for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim()) {
@@ -249,7 +249,6 @@ const parseFileData = async (fileBuffer, fileName) => {
           headers.forEach((header, index) => {
             row[header] = values[index] || '';
           });
-          console.log(`📊 Row ${i}:`, Object.keys(row), Object.values(row));
           results.push(row);
         }
       }
@@ -269,21 +268,17 @@ const parseFileData = async (fileBuffer, fileName) => {
         throw new Error('Excel file is empty');
       }
       
-      console.log(`📊 Excel Headers:`, Object.keys(jsonData[0] || {}));
-      
       // Convert Excel data to same format as CSV
       jsonData.forEach((row, index) => {
-        console.log(`📊 Excel Row ${index + 1}:`, Object.keys(row), Object.values(row));
         results.push(row);
       });
     } else {
       throw new Error('Unsupported file format. Please use CSV or Excel files.');
     }
     
-    console.log(`📊 Successfully parsed ${results.length} rows from ${fileName}`);
     return results;
   } catch (error) {
-    console.error('Error parsing file:', error);
+    logger.error('Error parsing file:', { error: error });
     throw new Error(`Failed to parse file: ${error.message}`);
   }
 };
@@ -300,19 +295,12 @@ const validateImportData = (data, Model) => {
     return errors;
   }
   
-  console.log(`🔍 Total rows to validate: ${data.length}`);
-  console.log(`🔍 First row keys:`, data[0] ? Object.keys(data[0]) : 'No data');
-  
   // For import, we will be more lenient and let the processing functions handle validation
   // This allows for better error messages and fallback values
-  console.log(`✅ Validation passed for ${Model.modelName} - will validate during processing`);
   
   return errors; // Return empty errors array to allow processing
   
   data.forEach((row, index) => {
-    console.log(`🔍 Validating row ${index + 1}:`, Object.keys(row));
-    console.log(`🔍 Row data sample:`, Object.entries(row).slice(0, 3)); // Show first 3 fields
-    console.log(`🔍 Full row data:`, row); // Show all data for debugging
     
     requiredFields.forEach(field => {
       // Check multiple possible field names including Arabic equivalents
@@ -337,28 +325,23 @@ const validateImportData = (data, Model) => {
         ...(field === 'Date' ? ['Date', 'date', 'DATE', 'تاريخ', 'التاريخ'] : [])
       ];
       
-      console.log(`🔍 Checking field '${field}' with variants:`, fieldVariants);
       
       const hasField = fieldVariants.some(variant => {
         const value = row[variant];
         const hasValue = value && value.toString().trim() !== '';
-        console.log(`  - Variant '${variant}': ${value} (hasValue: ${hasValue})`);
         return hasValue;
       });
       
       // Additional check: look for any field that might contain the required data
       if (!hasField && (field === 'Name' || field === 'Date')) {
-        console.log(`🔍 Searching for ${field} in all row keys...`);
         const allKeys = Object.keys(row);
         const foundKey = allKeys.find(key => {
           const value = row[key];
           const hasValue = value && value.toString().trim() !== '';
-          console.log(`  - Checking key '${key}': ${value} (hasValue: ${hasValue})`);
           return hasValue;
         });
         
         if (foundKey) {
-          console.log(`✅ Found ${field} data in key '${foundKey}'`);
           // Don't add error if we found the data
           return;
         }
@@ -373,14 +356,12 @@ const validateImportData = (data, Model) => {
             // Check if it looks like a name (contains Arabic characters or is not a number)
             if (valueStr.match(/[\u0600-\u06FF]/) || // Arabic characters
                 (isNaN(valueStr) && valueStr.length > 2 && !valueStr.match(/^\d+$/))) {
-              console.log(`🔍 Found name-like data in key '${key}': ${valueStr}`);
               return true;
             }
             return false;
           });
           
           if (nameLikeKeys.length > 0) {
-            console.log(`✅ Found name-like data in keys: ${nameLikeKeys.join(', ')}`);
             return; // Don't add error
           }
         }
@@ -388,45 +369,37 @@ const validateImportData = (data, Model) => {
       
       // Special handling for Date field - check if we found it but it's not in the first loop
       if (field === 'Date' && !hasField) {
-        console.log(`🔍 Special Date check - looking for any date-like field...`);
         const allKeys = Object.keys(row);
         const dateLikeKeys = allKeys.filter(key => {
           const value = row[key];
           if (!value || value.toString().trim() === '') return false;
           
           const valueStr = value.toString().trim();
-          console.log(`🔍 Checking key '${key}' for date: ${valueStr}`);
           // Check if it looks like a date (D-Mon format or other date formats)
           if (valueStr.match(/^\d{1,2}-[A-Za-z]{3}$/)) {
-            console.log(`🔍 Found D-Mon date in key '${key}': ${valueStr}`);
             return true;
           }
           if (valueStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-            console.log(`🔍 Found DD/MM/YYYY date in key '${key}': ${valueStr}`);
             return true;
           }
           if (valueStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            console.log(`🔍 Found YYYY-MM-DD date in key '${key}': ${valueStr}`);
             return true;
           }
           // Don't treat pure numbers as dates unless they're in specific date formats
           if (valueStr.match(/^\d{1,2}-\d{1,2}-\d{4}$/) || 
               valueStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/) ||
               valueStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-            console.log(`🔍 Found valid date format in key '${key}': ${valueStr}`);
             return true;
           }
           return false;
         });
         
         if (dateLikeKeys.length > 0) {
-          console.log(`✅ Found date-like data in keys: ${dateLikeKeys.join(', ')}`);
           return; // Don't add error
         }
       }
       
       if (!hasField) {
-        console.log(`❌ Field '${field}' not found in row ${index + 1}`);
         // Only add error for truly required fields (Date and Name)
         if (field === 'Date' || field === 'Name') {
           // Check if we already have an error for this field in this row
@@ -442,7 +415,6 @@ const validateImportData = (data, Model) => {
           }
         }
       } else {
-        console.log(`✅ Field '${field}' found in row ${index + 1}`);
       }
     });
     
@@ -462,7 +434,6 @@ const validateImportData = (data, Model) => {
     dateFields.forEach(dateField => {
       if (row[dateField] && !hasValidDate) {
         const dateString = row[dateField].toString().trim();
-        console.log(`🔍 Date validation for ${dateField}: ${dateString}`);
         
         // Handle D-Mon format (1-Sep, 2-Sep, etc.)
         let dateValue;
@@ -485,7 +456,6 @@ const validateImportData = (data, Model) => {
           dateValue = new Date(dateString);
         }
         
-        console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
         if (!isNaN(dateValue.getTime())) {
           hasValidDate = true;
           foundDateField = dateField;
@@ -495,7 +465,6 @@ const validateImportData = (data, Model) => {
     
     // Only add date error if we specifically require a date field and none found
     // Since dates are now optional, we don't add errors for missing dates
-    console.log(`🔍 Date check result: hasValidDate=${hasValidDate}, foundField=${foundDateField}`);
     
     // Validate JSON fields
     if (row.medicationsUsed && typeof row.medicationsUsed === 'string') {
@@ -520,7 +489,6 @@ const getRequiredFields = (Model) => {
   
   // Return empty array for all models to allow processing functions to handle validation
   // This provides better error messages and allows for fallback values
-  console.log(`📋 Model ${modelName}: Using lenient validation - will validate during processing`);
   return [];
 };
 
@@ -538,9 +506,9 @@ const validateFieldMapping = (records, fields) => {
   const clientFields = records[0].client ? Object.keys(records[0].client) : [];
   const allAvailableFields = [...availableFields, ...clientFields];
   
-  console.log('📊 Available fields in main record:', availableFields);
-  console.log('📊 Available fields in client:', clientFields);
-  console.log('📊 All available fields:', allAvailableFields);
+  logger.info('Available fields in main record:', { data: availableFields });
+  logger.info('Available fields in client:', { data: clientFields });
+  logger.info('All available fields:', { data: allAvailableFields });
   
   const missingFields = fields.filter(field => !allAvailableFields.includes(field));
   
@@ -713,10 +681,10 @@ const generateExcel = (data, headers) => {
     return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   }
 
-  console.log('📊 generateExcel called with:', {
+  logger.info('generateExcel called with:', { data: {
     dataLength: data ? data.length : 0,
     headers: headers
-  });
+  } });
 
   // Process data to flatten nested objects and arrays
   const processedData = data.map((row, rowIndex) => {
@@ -728,7 +696,6 @@ const generateExcel = (data, headers) => {
       // Check if field exists in client object
       if (value === undefined && row.client && row.client[header] !== undefined) {
         value = row.client[header];
-        console.log(`📊 Found field ${header} in client data:`, value);
       }
       
       // Handle date fields formatting for Excel
@@ -736,112 +703,74 @@ const generateExcel = (data, headers) => {
         if (value instanceof Date) {
           // Format date for Excel (YYYY-MM-DD)
           value = value.toISOString().split('T')[0];
-          console.log(`📊 Formatted date ${header}: ${value}`);
         } else if (value && typeof value === 'string') {
           // Try to parse and format date string
           const dateValue = new Date(value);
           if (!isNaN(dateValue.getTime())) {
             value = dateValue.toISOString().split('T')[0];
-            console.log(`📊 Parsed and formatted date ${header}: ${value}`);
           }
         }
       }
       
       // Handle animal count fields from nested objects
       if (value === undefined || value === '') {
-        console.log(`🔍 Looking for ${header} in row data:`, {
-          hasHerdCounts: !!row.herdCounts,
-          hasAnimalCounts: !!row.animalCounts,
-          hasSpeciesCounts: !!row.speciesCounts,
-          herdCounts: row.herdCounts,
-          animalCounts: row.animalCounts,
-          speciesCounts: row.speciesCounts
-        });
-        
         if (header === 'sheep' && row.herdCounts && row.herdCounts.sheep) {
           value = row.herdCounts.sheep.total || 0;
-          console.log(`✅ Found sheep in herdCounts: ${value}`);
         } else if (header === 'sheepFemale' && row.herdCounts && row.herdCounts.sheep) {
           value = row.herdCounts.sheep.female || 0;
-          console.log(`✅ Found sheepFemale in herdCounts: ${value}`);
         } else if (header === 'sheepVaccinated' && row.herdCounts && row.herdCounts.sheep) {
           value = row.herdCounts.sheep.vaccinated || 0;
-          console.log(`✅ Found sheepVaccinated in herdCounts: ${value}`);
         } else if (header === 'goats' && row.herdCounts && row.herdCounts.goats) {
           value = row.herdCounts.goats.total || 0;
-          console.log(`✅ Found goats in herdCounts: ${value}`);
         } else if (header === 'goatsFemale' && row.herdCounts && row.herdCounts.goats) {
           value = row.herdCounts.goats.female || 0;
-          console.log(`✅ Found goatsFemale in herdCounts: ${value}`);
         } else if (header === 'goatsVaccinated' && row.herdCounts && row.herdCounts.goats) {
           value = row.herdCounts.goats.vaccinated || 0;
-          console.log(`✅ Found goatsVaccinated in herdCounts: ${value}`);
         } else if (header === 'camel' && row.herdCounts && row.herdCounts.camel) {
           value = row.herdCounts.camel.total || 0;
-          console.log(`✅ Found camel in herdCounts: ${value}`);
         } else if (header === 'camelFemale' && row.herdCounts && row.herdCounts.camel) {
           value = row.herdCounts.camel.female || 0;
-          console.log(`✅ Found camelFemale in herdCounts: ${value}`);
         } else if (header === 'camelVaccinated' && row.herdCounts && row.herdCounts.camel) {
           value = row.herdCounts.camel.vaccinated || 0;
-          console.log(`✅ Found camelVaccinated in herdCounts: ${value}`);
         } else if (header === 'cattle' && row.herdCounts && row.herdCounts.cattle) {
           value = row.herdCounts.cattle.total || 0;
-          console.log(`✅ Found cattle in herdCounts: ${value}`);
         } else if (header === 'cattleFemale' && row.herdCounts && row.herdCounts.cattle) {
           value = row.herdCounts.cattle.female || 0;
-          console.log(`✅ Found cattleFemale in herdCounts: ${value}`);
         } else if (header === 'cattleVaccinated' && row.herdCounts && row.herdCounts.cattle) {
           value = row.herdCounts.cattle.vaccinated || 0;
-          console.log(`✅ Found cattleVaccinated in herdCounts: ${value}`);
         } else if (header === 'herdNumber' && row.herdCounts) {
           value = (row.herdCounts.sheep?.total || 0) + (row.herdCounts.goats?.total || 0) + (row.herdCounts.camel?.total || 0) + (row.herdCounts.cattle?.total || 0);
-          console.log(`✅ Calculated herdNumber: ${value}`);
         } else if (header === 'herdFemales' && row.herdCounts) {
           value = (row.herdCounts.sheep?.female || 0) + (row.herdCounts.goats?.female || 0) + (row.herdCounts.camel?.female || 0) + (row.herdCounts.cattle?.female || 0);
-          console.log(`✅ Calculated herdFemales: ${value}`);
         } else if (header === 'totalVaccinated' && row.herdCounts) {
           value = (row.herdCounts.sheep?.vaccinated || 0) + (row.herdCounts.goats?.vaccinated || 0) + (row.herdCounts.camel?.vaccinated || 0) + (row.herdCounts.cattle?.vaccinated || 0);
-          console.log(`✅ Calculated totalVaccinated: ${value}`);
         }
         // Handle animalCounts for Mobile Clinic
         else if (header === 'sheep' && row.animalCounts && row.animalCounts.sheep) {
           value = row.animalCounts.sheep || 0;
-          console.log(`✅ Found sheep in animalCounts: ${value}`);
         } else if (header === 'goats' && row.animalCounts && row.animalCounts.goats) {
           value = row.animalCounts.goats || 0;
-          console.log(`✅ Found goats in animalCounts: ${value}`);
         } else if (header === 'camel' && row.animalCounts && row.animalCounts.camel) {
           value = row.animalCounts.camel || 0;
-          console.log(`✅ Found camel in animalCounts: ${value}`);
         } else if (header === 'cattle' && row.animalCounts && row.animalCounts.cattle) {
           value = row.animalCounts.cattle || 0;
-          console.log(`✅ Found cattle in animalCounts: ${value}`);
         } else if (header === 'horse' && row.animalCounts && row.animalCounts.horse) {
           value = row.animalCounts.horse || 0;
-          console.log(`✅ Found horse in animalCounts: ${value}`);
         }
         // Handle speciesCounts for Laboratory
         else if (header === 'sheep' && row.speciesCounts && row.speciesCounts.sheep) {
           value = row.speciesCounts.sheep || 0;
-          console.log(`✅ Found sheep in speciesCounts: ${value}`);
         } else if (header === 'goats' && row.speciesCounts && row.speciesCounts.goats) {
           value = row.speciesCounts.goats || 0;
-          console.log(`✅ Found goats in speciesCounts: ${value}`);
         } else if (header === 'camel' && row.speciesCounts && row.speciesCounts.camel) {
           value = row.speciesCounts.camel || 0;
-          console.log(`✅ Found camel in speciesCounts: ${value}`);
         } else if (header === 'cattle' && row.speciesCounts && row.speciesCounts.cattle) {
           value = row.speciesCounts.cattle || 0;
-          console.log(`✅ Found cattle in speciesCounts: ${value}`);
         } else if (header === 'horse' && row.speciesCounts && row.speciesCounts.horse) {
           value = row.speciesCounts.horse || 0;
-          console.log(`✅ Found horse in speciesCounts: ${value}`);
         } else if (header === 'otherSpecies' && row.speciesCounts && row.speciesCounts.other) {
           value = row.speciesCounts.other || '';
-          console.log(`✅ Found otherSpecies in speciesCounts: ${value}`);
         } else {
-          console.log(`❌ Field ${header} not found in any nested object`);
         }
       }
       
@@ -884,17 +813,14 @@ const generateExcel = (data, headers) => {
       
       // Use English header as key (same as template headers)
       processedRow[header] = value;
-      
-      if (rowIndex === 0) {
-        console.log(`📊 Field ${header}: ${value} (type: ${typeof value})`);
-      }
+
     });
     
     return processedRow;
   });
 
-  console.log('📊 Processed data:', processedData[0]);
-  console.log('📊 Processed data keys:', Object.keys(processedData[0]));
+  logger.info('Processed data:', { data: processedData[0] });
+  logger.info('Processed data keys:', { data: Object.keys(processedData[0]) });
 
   // Create worksheet with processed data
   const worksheet = XLSX.utils.json_to_sheet(processedData);
@@ -934,8 +860,6 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
         };
       }
       
-      console.log(`📊 Starting export for ${filename} with filter:`, queryFilter);
-      console.log(`📊 Requested fields:`, fields);
       
       // Optimized query with lean() for better performance
       let query = Model.find(queryFilter)
@@ -947,7 +871,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
       try {
         const sampleDoc = await Model.findOne(queryFilter).lean();
         if (sampleDoc && sampleDoc.client) {
-          console.log('📊 Client field found, adding populate');
+          logger.info('Client field found adding populate');
           query = Model.find(queryFilter)
             .populate('client', 'name nationalId birthDate phone email village detailedAddress status totalAnimals')
             .sort({ createdAt: -1 })
@@ -956,37 +880,35 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
         }
       } catch (populateError) {
         // Continue without populate if it fails
-        console.warn('Could not populate client field:', populateError.message);
+        logger.warn('Could not populate client field:', { data: populateError.message });
       }
       
-      console.log(`📊 Exporting ${filename} with format: ${format}`);
       const records = await query;
-      console.log(`📊 Found ${records.length} records to export`);
       
       // Debug: Log first record structure if records exist
       if (records.length > 0) {
-        console.log('📊 First record structure:', Object.keys(records[0]));
-        console.log('📊 First record data:', JSON.stringify(records[0], null, 2));
+        logger.info('First record structure:', { data: Object.keys(records[0]) });
+        logger.info('First record data:', { data: JSON.stringify(records[0], null, 2) });
         
         if (records[0].client) {
-          console.log('📊 Client data structure:', Object.keys(records[0].client));
-          console.log('📊 Client data:', JSON.stringify(records[0].client, null, 2));
+          logger.info('Client data structure:', { data: Object.keys(records[0].client) });
+          logger.info('Client data:', { data: JSON.stringify(records[0].client, null, 2) });
         }
         
         // Check field mapping using validation function
         const validation = validateFieldMapping(records, fields);
-        console.log('📊 Field mapping validation:', validation);
+        logger.info('Field mapping validation:', { data: validation });
         
         if (!validation.isValid) {
-          console.log('⚠️ Field mapping issues:', validation.message);
+          logger.info('Field mapping issues:', { data: validation.message });
         } else {
-          console.log('✅ All requested fields are available');
+          logger.info('All requested fields are available');
         }
       }
 
       // If no records found, still create a file with headers
       if (records.length === 0) {
-        console.log('⚠️ No records found, creating empty file with headers');
+        logger.info('No records found creating empty file with headers');
         if (format === 'csv') {
           const csvContent = generateCSV([], fields);
           res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1015,7 +937,7 @@ const handleExport = (Model, filter = {}, fields = [], filename = 'export') => {
         res.send(excelBuffer);
       }
     } catch (error) {
-      console.error('Export error:', error);
+      logger.error('Export error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error exporting data: ' + error.message
@@ -1035,7 +957,7 @@ const handleTemplate = (templateData, filename = 'template') => {
       res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
       res.send(csvContent);
     } catch (error) {
-      console.error('Template error:', error);
+      logger.error('Template error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error generating template: ' + error.message
@@ -1051,7 +973,7 @@ const handleImport = (Model, processRowFunction) => {
   return async (req, res) => {
     uploadMiddleware(req, res, async (err) => {
       if (err) {
-        console.error('Upload middleware error:', err);
+        logger.error('Upload middleware error:', { error: err });
         return res.status(400).json({
           success: false,
           message: err.message
@@ -1059,18 +981,17 @@ const handleImport = (Model, processRowFunction) => {
       }
       
       if (!req.file) {
-        console.error('No file uploaded');
+        logger.error('No file uploaded');
         return res.status(400).json({
           success: false,
           message: 'No file uploaded'
         });
       }
       
-      console.log(`📥 Processing import for ${req.file.originalname}`);
       
       // Check if user is authenticated
       if (!req.user) {
-        console.error('User not authenticated');
+        logger.error('User not authenticated');
         return res.status(401).json({
           success: false,
           message: 'User not authenticated'
@@ -1092,11 +1013,9 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
     // Set timeout for imports
     res.setTimeout(60000); // 1 minute timeout for serverless
     
-    console.log(`📥 Processing import for ${file.originalname}`);
     
     // Parse file from memory buffer (CSV or Excel)
     const fileData = await parseFileData(file.buffer, file.originalname);
-    console.log(`📊 Parsed ${fileData.length} rows from file`);
     
     if (!fileData || fileData.length === 0) {
       return res.status(400).json({
@@ -1115,7 +1034,6 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
       });
     }
     
-    console.log(`✅ Pre-validation passed, proceeding with processing`);
     
     // Add row numbers to results
     fileData.forEach((data, index) => {
@@ -1161,7 +1079,6 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
         }
       });
       
-      console.log(`📊 Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(results.length / batchSize)}`);
     }
     
     res.json({
@@ -1174,7 +1091,7 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
     });
     
   } catch (error) {
-    console.error('❌ Import processing error:', error);
+    logger.error('Import processing error:', { error: error });
     
     // Handle different types of errors
     let errorMessage = 'Error processing file: ' + error.message;
@@ -1201,11 +1118,9 @@ const processImport = async (req, res, file, user, Model, processRowFunction) =>
     // Set timeout for imports
     res.setTimeout(120000); // 2 minutes
     
-    console.log(`📥 Processing import for ${file.originalname}`);
     
     // Parse file (CSV or Excel)
     const fileData = await parseFileData(file.path, file.originalname);
-    console.log(`📊 Parsed ${fileData.length} rows from file`);
     
     // Add row numbers to results
     fileData.forEach((data, index) => {
@@ -1251,7 +1166,6 @@ const processImport = async (req, res, file, user, Model, processRowFunction) =>
         }
       });
       
-      console.log(`📊 Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(results.length / batchSize)}`);
     }
     
     // Clean up uploaded file
@@ -1267,7 +1181,7 @@ const processImport = async (req, res, file, user, Model, processRowFunction) =>
     });
     
   } catch (error) {
-    console.error('❌ Import processing error:', error);
+    logger.error('Import processing error:', { error: error });
     
     // Clean up uploaded file on error
     if (file && fs.existsSync(file.path)) {
@@ -1294,15 +1208,6 @@ const processImport = async (req, res, file, user, Model, processRowFunction) =>
 const findOrCreateClient = async (row, userId) => {
   let client;
   
-  console.log(`🔍 Looking for client in row:`, {
-    clientNationalId: row.clientNationalId,
-    clientId: row.clientId,
-    clientName: row.clientName,
-    client_name: row.client_name,
-    Name: row.Name,
-    ID: row.ID
-  });
-  
   // Check multiple possible field names for client data
   const clientName = row.clientName || row.client_name || row.Name || row.name;
   const clientId = row.clientNationalId || row.clientId || row.ID || row.id;
@@ -1310,21 +1215,11 @@ const findOrCreateClient = async (row, userId) => {
   const clientVillage = row.clientVillage || row.client_village || row.Location || row.location;
   const clientAddress = row.clientAddress || row.client_address || row.Location || row.location;
   
-  console.log(`🔍 Extracted client data:`, {
-    clientName,
-    clientId,
-    clientPhone,
-    clientVillage,
-    clientAddress
-  });
-  
   if (clientId) {
     client = await Client.findOne({ nationalId: clientId });
-    console.log(`🔍 Found existing client by ID:`, client ? 'Yes' : 'No');
   }
   
   if (!client && clientName) {
-    console.log(`🔍 Creating new client with name: ${clientName}`);
     const nationalId = clientId || `TEMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     try {
@@ -1335,7 +1230,6 @@ const findOrCreateClient = async (row, userId) => {
       });
       
       if (existingClientByNamePhone) {
-        console.log(`✅ Found existing client by name and phone: ${existingClientByNamePhone.name}`);
         client = existingClientByNamePhone;
       } else {
         client = new Client({
@@ -1353,16 +1247,13 @@ const findOrCreateClient = async (row, userId) => {
           importDate: new Date()
         });
         await client.save();
-        console.log(`✅ Successfully created new client: ${client.name} (${client.nationalId})`);
       }
     } catch (error) {
-      console.error(`❌ Error creating client:`, error);
       throw new Error(`Failed to create client: ${error.message}`);
     }
   }
   
   if (!client) {
-    console.log(`❌ No client found or created`);
     throw new Error('Client not found and could not be created - missing required client information');
   }
   
@@ -1379,7 +1270,7 @@ const parseJsonField = (value, defaultValue = []) => {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : defaultValue;
   } catch (error) {
-    console.warn('Failed to parse JSON field:', error.message);
+    logger.warn('Failed to parse JSON field:', { data: error.message });
     return defaultValue;
   }
 };
@@ -1482,15 +1373,12 @@ const processUnifiedDates = (row) => {
   let dateValue = null;
   
   if (dateField) {
-    console.log(`🔍 Found date field: ${dateField.field} = ${dateField.value}`);
     dateValue = parseDateField(dateField.value);
     
     if (!dateValue || isNaN(dateValue.getTime())) {
-      console.warn(`⚠️ Invalid date format: ${dateField.value}, using current date`);
       dateValue = new Date(); // Use current date as fallback
     }
   } else {
-    console.log(`🔍 No date field found, using current date`);
     dateValue = new Date(); // Use current date as fallback
   }
   
@@ -1642,7 +1530,6 @@ const parseDateField = (dateString) => {
   }
   
   let dateStr = dateString.toString().trim();
-  console.log(`🔍 Parsing date: ${dateStr}`);
   
   // Skip text values that are clearly not dates
   const textValues = [
@@ -1654,13 +1541,11 @@ const parseDateField = (dateString) => {
   ];
   
   if (textValues.some(text => dateStr.toLowerCase().includes(text.toLowerCase()))) {
-    console.log(`⚠️ Skipping text value that is not a date: ${dateStr}`);
     return null;
   }
 
   // Convert Arabic numerals to English numerals for all formats
   dateStr = convertArabicNumeralsToEnglish(dateStr);
-  console.log(`🔍 After Arabic numeral conversion: ${dateStr}`);
 
   // Helper function to convert 2-digit year to 4-digit year
   const expandYear = (year) => {
@@ -1695,7 +1580,6 @@ const parseDateField = (dateString) => {
       
       // Validate the resulting date is reasonable (between 1900 and 2100)
       if (jsDate.getFullYear() >= 1900 && jsDate.getFullYear() <= 2100) {
-        console.log(`🔍 Converted Excel serial date: ${dateStr} -> ${jsDate.toISOString().split('T')[0]}`);
         return jsDate;
       }
     }
@@ -1714,7 +1598,6 @@ const parseDateField = (dateString) => {
     if (monthNum) {
       const fullDate = `${currentYear}-${monthNum}-${day.padStart(2, '0')}`;
       const dateValue = new Date(fullDate);
-      console.log(`🔍 Converted D-Mon format: ${dateStr} -> ${dateValue}`);
       return dateValue;
     }
   }
@@ -1752,11 +1635,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD/MM') {
       const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD/MM/YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
       const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM/DD/YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
@@ -1768,11 +1649,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD/MM') {
       const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD/MM/YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
       const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM/DD/YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
@@ -1781,7 +1660,6 @@ const parseDateField = (dateString) => {
   if (dateStr.match(/^\d{4}\/\d{1,2}\/\d{1,2}$/)) {
     const [year, month, day] = dateStr.split('/');
     const dateValue = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-    console.log(`🔍 Parsed YYYY/MM/DD format: ${dateStr} -> ${dateValue}`);
     return dateValue;
   }
   
@@ -1793,11 +1671,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD-MM') {
       const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD-MM-YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
       const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM-DD-YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
@@ -1809,11 +1685,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD-MM') {
       const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD-MM-YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
       const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM-DD-YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
@@ -1821,7 +1695,6 @@ const parseDateField = (dateString) => {
   // Handle YYYY-MM-DD format (ISO format)
   if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     const dateValue = new Date(dateStr);
-    console.log(`🔍 Parsed YYYY-MM-DD format: ${dateStr} -> ${dateValue}`);
     return dateValue;
   }
 
@@ -1833,11 +1706,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD.MM') {
       const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     } else {
       const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM.DD.YY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]} (year expanded to ${fullYear})`);
       return dateValue;
     }
   }
@@ -1849,11 +1720,9 @@ const parseDateField = (dateString) => {
     
     if (format === 'DD.MM') {
       const dateValue = new Date(`${year}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-      console.log(`🔍 Converted DD.MM.YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     } else {
       const dateValue = new Date(`${year}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-      console.log(`🔍 Converted MM.DD.YYYY format: ${dateStr} -> ${dateValue.toISOString().split('T')[0]}`);
       return dateValue;
     }
   }
@@ -1871,12 +1740,10 @@ const parseDateField = (dateString) => {
       if (firstNum > 12 && secondNum <= 12) {
         // DD-MM format
         const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-        console.log(`🔍 Converted DD-MM-Y* format (fallback): ${dateStr} -> ${dateValue}`);
         return dateValue;
       } else {
         // MM-DD format (default)
         const dateValue = new Date(`${fullYear}-${first.padStart(2, '0')}-${second.padStart(2, '0')}`);
-        console.log(`🔍 Converted MM-DD-Y* format (fallback): ${dateStr} -> ${dateValue}`);
         return dateValue;
       }
     }
@@ -1894,12 +1761,10 @@ const parseDateField = (dateString) => {
       if (firstNum > 12 && secondNum <= 12) {
         // DD.MM format (European standard for dots)
         const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-        console.log(`🔍 Converted DD.MM.Y* format (fallback): ${dateStr} -> ${dateValue}`);
         return dateValue;
       } else {
         // Default to DD.MM for dots (European standard)
         const dateValue = new Date(`${fullYear}-${second.padStart(2, '0')}-${first.padStart(2, '0')}`);
-        console.log(`🔍 Converted DD.MM.Y* format (fallback, European default): ${dateStr} -> ${dateValue}`);
         return dateValue;
       }
     }
@@ -1907,11 +1772,9 @@ const parseDateField = (dateString) => {
   
   // Try to parse as standard date (last resort)
   const dateValue = new Date(dateStr);
-  console.log(`🔍 Parsed date: ${dateValue} (valid: ${!isNaN(dateValue.getTime())})`);
   
   // Return null if the date is invalid
   if (isNaN(dateValue.getTime())) {
-    console.warn(`⚠️ Could not parse date: ${dateStr}`);
     return null;
   }
   
@@ -2081,7 +1944,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
               category: parsed.category || 'N/A'
             };
           } catch (error) {
-            console.log('⚠️ Failed to parse insecticide JSON, using individual fields');
+            logger.info('Failed to parse insecticide JSON using individual fields');
           }
         }
         
@@ -2217,7 +2080,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
               return parts.length > 0 ? parts.join(' - ') : 'N/A';
             }
           } catch (error) {
-            console.log('⚠️ Failed to parse breedingSites JSON, using as string');
+            logger.info('Failed to parse breedingSites JSON using as string');
             return breedingSitesJson;
           }
         }
@@ -2424,7 +2287,6 @@ const getFieldValue = (row, fieldNames) => {
     if (rowKeysLower[lowerName] !== undefined && 
         rowKeysLower[lowerName] !== null && 
         rowKeysLower[lowerName] !== '') {
-      console.log(`📌 Found field via case-insensitive match: ${name} -> ${rowKeysLower[lowerName]}`);
       return rowKeysLower[lowerName];
     }
   }
@@ -2632,7 +2494,7 @@ const resolveRecordLocation = (record, fallbackPaths = []) => {
 const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, userId) => {
   try {
     if (!holdingCodeValue || !village) {
-      console.log('⚠️ No holding code or village provided, skipping holding code creation');
+      logger.info('No holding code or village provided skipping holding code creation');
       return null;
     }
 
@@ -2646,7 +2508,6 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
     });
 
     if (holdingCode) {
-      console.log(`✅ Found existing holding code: ${holdingCode.code} for village: ${holdingCode.village}`);
       return holdingCode._id;
     }
 
@@ -2657,7 +2518,6 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
     });
 
     if (holdingCode) {
-      console.log(`✅ Found existing holding code by village: ${holdingCode.code} for village: ${holdingCode.village}`);
       return holdingCode._id;
     }
 
@@ -2669,13 +2529,10 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
     });
 
     if (existingCodeForDifferentVillage) {
-      console.log(`⚠️ Code ${codeValue} already exists for village ${existingCodeForDifferentVillage.village}, cannot create for ${villageValue}`);
-      console.log(`🔄 Using existing holding code: ${existingCodeForDifferentVillage.code} for village: ${existingCodeForDifferentVillage.village}`);
       return existingCodeForDifferentVillage._id;
     }
 
     // If no holding code exists, create a new one
-    console.log(`🔄 Creating new holding code: ${codeValue} for village: ${villageValue}`);
     
     const newHoldingCode = new HoldingCode({
       code: codeValue,
@@ -2686,15 +2543,14 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
     });
 
     await newHoldingCode.save();
-    console.log(`✅ Created new holding code: ${newHoldingCode.code} (ID: ${newHoldingCode._id})`);
     return newHoldingCode._id;
 
   } catch (error) {
-    console.error('❌ Error in findOrCreateHoldingCodeImportExport:', error);
+    logger.error('Error in findOrCreateHoldingCodeImportExport:', { error: error });
     
     // If it's a duplicate error, try to find the existing one
     if (error.code === 11000 || error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
-      console.log('🔄 Duplicate detected, trying to find existing holding code...');
+      logger.info('Duplicate detected trying to find existing holding code');
       
       // Try to find by code first
       let existingCode = await HoldingCode.findOne({ 
@@ -2703,7 +2559,6 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
       });
       
       if (existingCode) {
-        console.log(`✅ Found existing holding code after duplicate error: ${existingCode.code}`);
         return existingCode._id;
       }
       
@@ -2714,21 +2569,20 @@ const findOrCreateHoldingCodeImportExport = async (holdingCodeValue, village, us
       });
       
       if (existingCode) {
-        console.log(`✅ Found existing holding code by village after duplicate error: ${existingCode.code}`);
         return existingCode._id;
       }
     }
     
     // If all fails, return null and continue without holding code
-    console.warn(`⚠️ Could not create or find holding code ${holdingCodeValue} for village ${village}, continuing without it`);
     return null;
   }
 };
 
 /**
  * Find or create village by name
+ * Now accepts optional row parameter to extract serialNumber if provided
  */
-const findOrCreateVillage = async (villageName, userId) => {
+const findOrCreateVillage = async (villageName, userId, row = null) => {
   try {
     if (!villageName || villageName.trim() === '') {
       return null;
@@ -2743,25 +2597,51 @@ const findOrCreateVillage = async (villageName, userId) => {
     });
 
     if (village) {
-      console.log(`✅ Found existing village: ${village.nameArabic} (${village.nameEnglish})`);
       return village._id;
     }
 
     // If not found, create a new village
-    console.log(`🔄 Creating new village: ${villageName}`);
+    
+    // Extract serial number from row if provided, otherwise auto-generate
+    let serialNumber;
+    if (row) {
+      serialNumber = getFieldValue(row, [
+        'Village Serial Number', 'villageSerialNumber', 'village_serial_number',
+        'Village Serial', 'villageSerial', 'village_serial',
+        'الرقم التسلسلي للقرية', 'رقم القرية التسلسلي'
+      ]);
+    }
+    
+    // If no serial number provided, auto-generate one
+    if (!serialNumber) {
+      serialNumber = `AUTO${Date.now().toString().slice(-6)}`;
+    }
+    
+    // Extract sector from row if provided
+    let sector = 'Unknown Sector';
+    if (row) {
+      const rowSector = getFieldValue(row, [
+        'Village Sector', 'villageSector', 'village_sector',
+        'Sector', 'sector',
+        'قطاع القرية', 'القطاع'
+      ]);
+      if (rowSector) {
+        sector = rowSector;
+      }
+    }
+    
     const newVillage = new Village({
-      serialNumber: `AUTO${Date.now().toString().slice(-6)}`, // Auto-generated serial
-      sector: 'Unknown Sector', // Default sector
+      serialNumber: serialNumber, // Use provided serial number or auto-generated
+      sector: sector,
       nameArabic: villageName.trim(),
       nameEnglish: villageName.trim(), // Use same name for English
       createdBy: userId
     });
 
     await newVillage.save();
-    console.log(`✅ Created new village: ${newVillage.nameArabic} with ID: ${newVillage._id}`);
     return newVillage._id;
   } catch (error) {
-    console.error('Error finding/creating village:', error);
+    logger.error('Error findingcreating village:', { error: error });
     return null;
   }
 };
@@ -2790,7 +2670,6 @@ const processHoldingCodeReference = async (row, userId = null) => {
     
     // Use smart holding code creation if we have userId and village
     if (userId && village) {
-      console.log(`🔄 Using smart holding code processing for: ${holdingCodeValue} in village: ${village}`);
       return await findOrCreateHoldingCodeImportExport(holdingCodeValue, village, userId);
     }
     
@@ -2801,14 +2680,12 @@ const processHoldingCodeReference = async (row, userId = null) => {
     });
     
     if (holdingCode) {
-      console.log(`✅ Found holding code: ${holdingCodeValue} -> ${holdingCode._id}`);
       return holdingCode._id;
     } else {
-      console.log(`⚠️ Holding code not found: ${holdingCodeValue}`);
       return null;
     }
   } catch (error) {
-    console.error('Error processing holding code reference:', error);
+    logger.error('Error processing holding code reference:', { error: error });
     return null;
   }
 };
@@ -2859,14 +2736,12 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
     // Process village intelligently
     let villageId = null;
     if (clientVillage && userId) {
-      console.log(`🔄 Processing village: ${clientVillage}`);
-      villageId = await findOrCreateVillage(clientVillage, userId);
+      villageId = await findOrCreateVillage(clientVillage, userId, row);
     }
     
     // Process holding code intelligently
     let holdingCodeId = null;
     if (holdingCodeValue && clientVillage && userId) {
-      console.log(`🔄 Processing holding code for client: ${holdingCodeValue} in village: ${clientVillage}`);
       holdingCodeId = await findOrCreateHoldingCodeImportExport(holdingCodeValue, clientVillage, userId);
     }
     
@@ -2917,14 +2792,11 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
         
         await newClient.save();
         client = newClient;
-        console.log(`✅ Created new client: ${client.name} with holding code: ${holdingCodeId || 'none'}`);
       } catch (saveError) {
         // If duplicate key error, try to find existing client again
         if (saveError.code === 11000 && saveError.keyPattern && saveError.keyPattern.nationalId) {
-          console.log(`🔄 Duplicate nationalId detected, finding existing client: ${clientId}`);
           client = await Client.findOne({ nationalId: clientId });
           if (client) {
-            console.log(`✅ Found existing client: ${client.name}`);
           } else {
             throw new Error(`Client with nationalId ${clientId} exists but could not be retrieved`);
           }
@@ -2939,9 +2811,7 @@ const processUnifiedClientEnhanced = async (row, userId, options = {}) => {
       try {
         client.holdingCode = holdingCodeId;
         await client.save();
-        console.log(`✅ Updated existing client ${client.name} with holding code: ${holdingCodeId}`);
       } catch (updateError) {
-        console.warn(`⚠️ Could not update client ${client.name} with holding code: ${updateError.message}`);
       }
     }
     
@@ -3033,7 +2903,6 @@ const processUnifiedDatesEnhanced = (row) => {
           
           // Ensure fulfilling date is not before request date
           if (parsed < (requestDate || mainDate)) {
-            console.log(`⚠️ Fulfilling date ${parsed.toISOString()} is before request date ${(requestDate || mainDate).toISOString()}, using request date instead`);
             return requestDate || mainDate;
           }
           return parsed;
@@ -3241,7 +3110,8 @@ const processSpeciesCounts = (row) => {
 };
 
 /**
- * Generate serial number
+ * Generate serial number - Returns the original serial number as-is
+ * If no serial number is provided, generates a unique one
  */
 const generateSerialNo = (row, prefix) => {
   const serialNo = getFieldValue(row, [
@@ -3249,11 +3119,12 @@ const generateSerialNo = (row, prefix) => {
     'الرقم التسلسلي', 'رقم تسلسلي'
   ]);
   
-  if (serialNo && serialNo.length <= 20) {
-    const timestamp = Date.now().toString().slice(-6);
-    return `${serialNo}-${timestamp}`;
+  // Return the original serial number as-is if it exists
+  if (serialNo) {
+    return serialNo;
   }
   
+  // Only generate a new serial number if none was provided
   const timestamp = Date.now().toString().slice(-8);
   const random = Math.random().toString(36).substr(2, 4);
   return `${prefix}-${timestamp}-${random}`;
@@ -3414,7 +3285,7 @@ const processRequest = (row, dates) => {
         fulfillingDate: parsed.fulfillingDate ? new Date(parsed.fulfillingDate) : dates.fulfillingDate
       };
     } catch (error) {
-      console.log('⚠️ Failed to parse request JSON, using individual fields');
+      logger.info('Failed to parse request JSON using individual fields');
     }
   }
   
@@ -3434,7 +3305,6 @@ const processRequest = (row, dates) => {
   let fulfillingDate = dates.fulfillingDate;
   if (situation === 'Closed' && !fulfillingDate) {
     fulfillingDate = dates.requestDate;
-    console.log(`ℹ️ Request is Closed but no fulfilling date provided, using request date: ${fulfillingDate}`);
   }
 
   return {
@@ -3476,31 +3346,60 @@ const processCustomImportData = (row) => {
  */
 const processLaboratoryRow = async (row, userId, errors) => {
   try {
-    console.log('🚀 Processing laboratory row with unified helpers');
+    logger.info('Processing laboratory row with unified helpers');
     
-    // Get client data as object (Laboratory stores client data directly)
-    const clientData = await processUnifiedClientEnhanced(row, userId, { returnAsObject: true });
+    // First, create or find client in Clients table (this ensures client exists in database)
+    const client = await processUnifiedClientEnhanced(row, userId, { createIfNotFound: true });
     const dates = processUnifiedDatesEnhanced(row);
     const coordinates = processUnifiedCoordinatesEnhanced(row);
     const speciesCounts = processSpeciesCounts(row);
     
+    // Get client data for Laboratory record (embedded fields)
+    const clientData = {
+      name: client?.name || getFieldValue(row, ['Name', 'name', 'clientName', 'Client Name', 'الاسم']) || 'غير محدد',
+      nationalId: client?.nationalId || getFieldValue(row, ['ID', 'id', 'clientId', 'Client ID', 'nationalId', 'رقم الهوية']) || '',
+      phone: client?.phone || getFieldValue(row, ['Phone', 'phone', 'clientPhone', 'Client Phone', 'رقم الهاتف']) || 'N/A',
+      village: client?.village ? (typeof client.village === 'object' ? client.village.nameArabic || client.village.nameEnglish : client.village) : '',
+      detailedAddress: client?.detailedAddress || getFieldValue(row, ['Address', 'address', 'Detailed Address', 'العنوان']) || '',
+      birthDate: client?.birthDate || parseBirthDate(row)
+    };
+    
     // For Laboratory, we allow any client data since validation is now flexible
     // No strict validation - accept whatever data is provided
-    console.log('✅ Laboratory accepts flexible client data for import');
+    logger.info('Laboratory accepts flexible client data for import');
     
-    console.log(`✅ Laboratory client data processed: Name="${clientData.name}", ID="${clientData.nationalId}", Phone="${clientData.phone}"`);
+    
+    // Get serial number as-is (preserve original value exactly as provided)
+    const serialNoValue = getFieldValue(row, [
+      'Serial No', 'serialNo', 'serial_no', 'Serial Number',
+      'الرقم التسلسلي', 'رقم تسلسلي'
+    ]);
+    
+    // Preserve the original serial number as-is (even if it's "1" or "2")
+    // Only convert to number if it's a valid number, otherwise keep as-is and generate new
+    let serialNo;
+    if (serialNoValue) {
+      const parsedValue = parseInt(serialNoValue);
+      // If it's a valid number (including single digits like 1, 2, etc.), use it as-is
+      if (!isNaN(parsedValue)) {
+        serialNo = parsedValue; // Preserve even if it's "1" or "2"
+      } else {
+        // If not a valid number but has value, try to use it as string representation
+        serialNo = Date.now() % 1000000;
+      }
+    } else {
+      serialNo = Date.now() % 1000000;
+    }
     
     // Create laboratory record
     const laboratory = new Laboratory({
-      serialNo: parseInt(getFieldValue(row, [
-        'Serial No', 'serialNo', 'serial_no', 'Serial Number',
-        'الرقم التسلسلي', 'رقم تسلسلي'
-      ])) || Date.now() % 1000000, // Generate unique number if not provided
+      serialNo: serialNo,
       sampleCode: getFieldValue(row, [
         'sampleCode', 'Sample Code', 'code', 'sample_code',
         'رمز العينة', 'رمز'
       ]) || generateSerialNo(row, 'LAB'),
       date: dates.mainDate,
+      client: client?._id || null, // Add client reference if available
       clientName: clientData.name || 'غير محدد',
       clientId: clientData.nationalId,
       clientBirthDate: clientData.birthDate,
@@ -3523,6 +3422,10 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'sampleNumber', 'Sample Number', 'Samples Number', 'sample_number',
         'رقم العينة', 'عدد العينات'
       ]) || 'N/A',
+      testType: getFieldValue(row, [
+        'testType', 'Test Type', 'test_type',
+        'نوع الفحص', 'الفحص'
+      ]) || '',
       positiveCases: parseInt(getFieldValue(row, [
         'positiveCases', 'Positive Cases', 'positive_cases', 'positive cases',
         'الحالات الإيجابية', 'إيجابي'
@@ -3542,6 +3445,18 @@ const processLaboratoryRow = async (row, userId, errors) => {
     });
 
     await laboratory.save();
+    
+    // Update client's availableServices if client exists
+    if (client && client._id) {
+      try {
+        if (!client.availableServices.includes('laboratory')) {
+          client.availableServices.push('laboratory');
+          await client.save();
+        }
+      } catch (error) {
+      }
+    }
+    
     return laboratory;
   } catch (error) {
     throw new Error(`Error processing laboratory row: ${error.message}`);
@@ -3554,10 +3469,38 @@ const processLaboratoryRow = async (row, userId, errors) => {
  */
 const processEquineHealthRow = async (row, userId, errors) => {
   try {
-    // Get client data as object (EquineHealth stores client data directly)
-    const clientData = await processUnifiedClientEnhanced(row, userId, { returnAsObject: true });
+    // First, create or find client in Clients table (this ensures client exists in database)
+    const client = await processUnifiedClientEnhanced(row, userId, { createIfNotFound: true });
     const dates = processUnifiedDatesEnhanced(row);
     const coordinates = processUnifiedCoordinatesEnhanced(row);
+    
+    // Get client data for EquineHealth record (embedded fields)
+    // Extract village name properly
+    let villageName = '';
+    if (client?.village) {
+      if (typeof client.village === 'object' && client.village !== null) {
+        villageName = client.village.nameArabic || client.village.nameEnglish || client.village.name || '';
+      } else if (typeof client.village === 'string') {
+        villageName = client.village;
+      }
+    }
+    
+    // If village not found from client, try to get from row data
+    if (!villageName) {
+      villageName = getFieldValue(row, [
+        'Location', 'location', 'Village', 'village', 'clientVillage',
+        'Farm Location', 'farmLocation', 'القرية', 'الموقع', 'موقع المزرعة'
+      ]) || '';
+    }
+    
+    const clientData = {
+      name: client?.name || getFieldValue(row, ['Name', 'name', 'clientName', 'Client Name', 'الاسم']) || 'غير محدد',
+      nationalId: client?.nationalId || getFieldValue(row, ['ID', 'id', 'clientId', 'Client ID', 'nationalId', 'رقم الهوية']) || '',
+      phone: client?.phone || getFieldValue(row, ['Phone', 'phone', 'clientPhone', 'Client Phone', 'رقم الهاتف']) || '',
+      village: villageName || 'غير محدد',
+      detailedAddress: client?.detailedAddress || getFieldValue(row, ['Address', 'address', 'Detailed Address', 'العنوان']) || '',
+      birthDate: client?.birthDate || parseBirthDate(row)
+    };
     
     // Get diagnosis and treatment
     const diagnosis = getFieldValue(row, [
@@ -3571,16 +3514,15 @@ const processEquineHealthRow = async (row, userId, errors) => {
     const finalDiagnosis = diagnosis || 'غير محدد';
     const finalTreatment = treatment || 'غير محدد';
     
-    console.log(`ℹ️ EquineHealth fields: Diagnosis="${finalDiagnosis}", Treatment="${finalTreatment}"`);
     
     // For EquineHealth, we allow "غير محدد" as a valid name since it stores client data directly
     if (!clientData.nationalId || !clientData.phone) {
       throw new Error(`Missing required client data: ID=${clientData.nationalId}, Phone=${clientData.phone}`);
     }
     
-    console.log(`✅ EquineHealth client data processed: Name="${clientData.name}", ID="${clientData.nationalId}", Phone="${clientData.phone}"`);
     
     // Create equine health record
+    // Note: EquineHealth uses embedded client data (not ObjectId reference)
     const equineHealth = new EquineHealth({
       serialNo: generateSerialNo(row, 'EH'),
       date: dates.mainDate,
@@ -3588,7 +3530,7 @@ const processEquineHealthRow = async (row, userId, errors) => {
         name: clientData.name || 'غير محدد',
         nationalId: clientData.nationalId,
         phone: clientData.phone,
-        village: clientData.village || 'غير محدد',
+        village: clientData.village && clientData.village !== '' ? clientData.village : 'غير محدد',
         detailedAddress: clientData.detailedAddress || clientData.village || 'غير محدد',
         birthDate: clientData.birthDate
       },
@@ -3643,7 +3585,7 @@ const processEquineHealthRow = async (row, userId, errors) => {
               }];
             }
           } catch (error) {
-            console.log('⚠️ Failed to parse horseDetails JSON, using individual fields');
+            logger.info('Failed to parse horseDetails JSON using individual fields');
           }
         }
         
@@ -3698,7 +3640,7 @@ const processEquineHealthRow = async (row, userId, errors) => {
               duration: parsed.duration || 'N/A'
             };
           } catch (error) {
-            console.log('⚠️ Failed to parse medication JSON, using individual fields');
+            logger.info('Failed to parse medication JSON using individual fields');
           }
         }
         
@@ -3750,6 +3692,18 @@ const processEquineHealthRow = async (row, userId, errors) => {
     });
 
     await equineHealth.save();
+    
+    // Update client's availableServices if client exists
+    if (client && client._id) {
+      try {
+        if (!client.availableServices.includes('equine_health')) {
+          client.availableServices.push('equine_health');
+          await client.save();
+        }
+      } catch (error) {
+      }
+    }
+    
     return equineHealth;
   } catch (error) {
     throw new Error(`Error processing equine health row: ${error.message}`);
@@ -3913,8 +3867,8 @@ router.get('/clients/export', auth, async (req, res) => {
 
     const records = await Client.aggregate(pipeline);
     
-    console.log(`📊 Clients Export - Found ${records.length} clients matching filter`);
-    console.log('🔍 Export pipeline:', JSON.stringify(pipeline, null, 2));
+    logger.info('Clients Export - Found clients matching filter', { count: records.length });
+    logger.info('Export pipeline', { data: JSON.stringify(pipeline, null, 2) });
 
     const transformedRecords = records.map(record => {
       const birthDateValue = record.birthDate || record.birthDateFromForms;
@@ -3999,7 +3953,7 @@ router.get('/clients/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting clients records:', error);
+    logger.error('Error exporting clients records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting clients records',
@@ -4024,7 +3978,7 @@ router.get('/vaccination/export', auth, async (req, res) => {
         }
       })
       .populate('holdingCode', 'code village description isActive')
-      .sort({ date: -1 });
+      .sort({ serialNo: 1 }); // Sort by serialNo ascending
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
@@ -4134,7 +4088,7 @@ router.get('/vaccination/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting vaccination records:', error);
+    logger.error('Error exporting vaccination records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting vaccination records',
@@ -4159,7 +4113,7 @@ router.get('/parasite-control/export', auth, async (req, res) => {
         }
       })
       .populate('holdingCode', 'code village description isActive')
-      .sort({ date: -1 });
+      .sort({ serialNo: 1 }); // Sort by serialNo ascending
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
@@ -4330,7 +4284,7 @@ router.get('/parasite-control/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting parasite control records:', error);
+    logger.error('Error exporting parasite control records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting parasite control records',
@@ -4355,7 +4309,7 @@ router.get('/mobile-clinics/export', auth, async (req, res) => {
         }
       })
       .populate('holdingCode', 'code village description isActive')
-      .sort({ date: -1 });
+      .sort({ serialNo: 1 }); // Sort by serialNo ascending
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
@@ -4462,7 +4416,7 @@ router.get('/mobile-clinics/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting mobile clinics records:', error);
+    logger.error('Error exporting mobile clinics records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting mobile clinics records',
@@ -4486,7 +4440,7 @@ router.get('/laboratories/export', auth, async (req, res) => {
           select: 'nameArabic nameEnglish arabicName englishName name value label sector serialNumber'
         }
       })
-      .sort({ date: -1 });
+      .sort({ serialNo: 1 }); // Sort by serialNo ascending
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
@@ -4553,6 +4507,7 @@ router.get('/laboratories/export', auth, async (req, res) => {
         '': '', // Empty column as per header
         'Sample Type': record.sampleType || '',
         'Samples Number': record.sampleNumber || '',
+        'Test Type': record.testType || '',
         'positive cases': record.positiveCases || 0,
         'Negative Cases': record.negativeCases || 0,
         'Remarks': record.remarks || ''
@@ -4592,7 +4547,7 @@ router.get('/laboratories/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting laboratories records:', error);
+    logger.error('Error exporting laboratories records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting laboratories records',
@@ -4617,7 +4572,7 @@ router.get('/equine-health/export', auth, async (req, res) => {
         }
       })
       .populate('holdingCode', 'code village description isActive')
-      .sort({ date: -1 });
+      .sort({ serialNo: 1 }); // Sort by serialNo ascending
 
     // Transform data for export to match table columns exactly
     const transformedRecords = records.map(record => {
@@ -4714,7 +4669,7 @@ router.get('/equine-health/export', auth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error exporting equine health records:', error);
+    logger.error('Error exporting equine health records:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error exporting equine health records',
@@ -4888,6 +4843,7 @@ router.get('/laboratories/template', auth, handleTemplate([
     '': '',
     'Sample Type': 'Blood',
     'Samples Number': 'S001',
+    'Test Type': 'Brucella ICT',
     'positive cases': '0',
     'Negative Cases': '3',
     'Remarks': 'All tests negative'
@@ -4944,8 +4900,15 @@ router.post('/laboratories/import', auth, handleImport(Laboratory, processLabora
 router.post('/equine-health/import', auth, handleImport(EquineHealth, processEquineHealthRow));
 
 // Enhanced import routes with better error handling
-router.post('/laboratories/import-enhanced', auth, handleImport(Laboratory, processLaboratoryRow));
-router.post('/equine-health/import-enhanced', auth, handleImport(EquineHealth, processEquineHealthRow));
+router.post('/laboratories/import-enhanced', auth, (req, res, next) => {
+  logger.info('Enhanced laboratories import route called');
+  handleImport(Laboratory, processLaboratoryRow)(req, res, next);
+});
+
+router.post('/equine-health/import-enhanced', auth, (req, res, next) => {
+  logger.info('Enhanced equine health import route called');
+  handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
+});
 
 // Inventory routes (placeholder - will be implemented when inventory model is available)
 router.get('/inventory/export', auth, (req, res) => {
@@ -4969,40 +4932,29 @@ router.post('/inventory/import', auth, (req, res) => {
   });
 });
 
-// Enhanced import routes with improved validation
-router.post('/laboratories/import-enhanced', auth, (req, res, next) => {
-  console.log('🎯 Enhanced laboratories import route called');
-  handleImport(Laboratory, processLaboratoryRow)(req, res, next);
-});
-
-router.post('/equine-health/import-enhanced', auth, (req, res, next) => {
-  console.log('🎯 Enhanced equine health import route called');
-  handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
-});
-
 // Dromo import routes
 router.post('/laboratories/import-dromo', auth, (req, res, next) => {
-  console.log('🎯 Dromo laboratories import route called');
+  logger.info('Dromo laboratories import route called');
   handleImport(Laboratory, processLaboratoryRow)(req, res, next);
 });
 
 router.post('/vaccination/import-dromo', auth, (req, res, next) => {
-  console.log('🎯 Dromo vaccination import route called');
+  logger.info('Dromo vaccination import route called');
   handleImport(Vaccination, processVaccinationRow)(req, res, next);
 });
 
 router.post('/parasite-control/import-dromo', auth, (req, res, next) => {
-  console.log('🎯 Dromo parasite control import route called');
+  logger.info('Dromo parasite control import route called');
   handleImport(ParasiteControl, processParasiteControlRow)(req, res, next);
 });
 
 router.post('/mobile-clinics/import-dromo', auth, (req, res, next) => {
-  console.log('🎯 Dromo mobile clinics import route called');
+  logger.info('Dromo mobile clinics import route called');
   handleImport(MobileClinic, processMobileClinicRow)(req, res, next);
 });
 
 router.post('/equine-health/import-dromo', auth, (req, res, next) => {
-  console.log('🎯 Dromo equine health import route called');
+  logger.info('Dromo equine health import route called');
   handleImport(EquineHealth, processEquineHealthRow)(req, res, next);
 });
 

@@ -90,7 +90,7 @@ npm start
 
 بعد تشغيل الخادم، يمكنك الوصول إلى توثيق API على:
 ```
-http://localhost:3001/api-docs
+https://ahcp-backend.vercel.app/api-docs
 ```
 
 ## 🏗️ هيكل المشروع
@@ -298,8 +298,8 @@ npm start
 
 للدعم والاستفسارات:
 - البريد الإلكتروني: support@ahcp.com
-- التوثيق: http://localhost:3001/api-docs
-- الصحة: http://localhost:3001/health
+- التوثيق: https://ahcp-backend.vercel.app/api-docs
+- الصحة: http://https://ahcp-backend.vercel.app/health
 
 ## 🔄 التحديثات المستقبلية
 

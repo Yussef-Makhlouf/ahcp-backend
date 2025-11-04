@@ -7,16 +7,19 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+const logger = require('./src/utils/logger');
+
 // Load environment variables
 require('dotenv').config({ path: './production.env' });
 require('dotenv').config();
 
 // Check critical environment variables
-console.log('🔍 Environment check:');
-console.log('📊 NODE_ENV:', process.env.NODE_ENV);
-console.log('🔑 JWT_SECRET:', process.env.JWT_SECRET ? 'Set' : 'Not set');
-console.log('🗄️ MONGODB_URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
-console.log('🌐 CORS_ORIGIN:', process.env.CORS_ORIGIN);
+logger.info('Environment check', {
+  NODE_ENV: process.env.NODE_ENV,
+  JWT_SECRET: process.env.JWT_SECRET ? 'Set' : 'Not set',
+  MONGODB_URI: process.env.MONGODB_URI ? 'Set' : 'Not set',
+  CORS_ORIGIN: process.env.CORS_ORIGIN,
+});
 
 // Import routes with error handling
 let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
@@ -28,9 +31,9 @@ let dromoImportRoutes, dropdownListsRoutes;
 let errorHandler, notFound, authMiddleware;
 
 try {
-  console.log('🔄 Loading routes...');
+  logger.info('Loading routes...');
   authRoutes = require('./src/routes/auth');
-  console.log('✅ Auth routes loaded');
+  logger.info('Auth routes loaded');
   usersRoutes = require('./src/routes/users');
   sectionsRoutes = require('./src/routes/sections');
   seedRoutes = require('./src/routes/seed');
@@ -47,16 +50,18 @@ try {
   importExportRoutes = require('./src/routes/import-export');
   dromoImportRoutes = require('./src/routes/dromo-import');
   dropdownListsRoutes = require('./src/routes/dropdownLists');
-  console.log('✅ Dromo import routes loaded');
+  logger.info('Dromo import routes loaded');
 
   // Import middleware
   errorHandler = require('./src/middleware/errorHandler').errorHandler;
   notFound = require('./src/middleware/notFound');
   authMiddleware = require('./src/middleware/auth').auth;
-  console.log('✅ All routes and middleware loaded successfully');
+  logger.info('All routes and middleware loaded successfully');
 } catch (error) {
-  console.error('❌ Error loading routes or middleware:', error.message);
-  console.error('❌ Stack trace:', error.stack);
+  logger.error('Error loading routes or middleware', {
+    message: error.message,
+    stack: error.stack,
+  });
 }
 
 const app = express();
@@ -80,7 +85,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS configuration
+// CORS configuration - Enhanced security for production
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || '*',
   credentials: false,
@@ -113,7 +118,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Production mode
-console.log('🔒 Production Mode: Full authentication enabled');
+logger.info('Production Mode: Full authentication enabled');
 
 // Compression middleware
 app.use(compression());
@@ -215,10 +220,10 @@ app.get('/test', (req, res) => {
 
 // API routes - only add if routes are loaded successfully
 if (authRoutes) {
-  console.log('✅ Adding auth routes to /api/auth');
+  logger.info('Adding auth routes to /api/auth');
   app.use('/api/auth', authRoutes);
 } else {
-  console.error('❌ Auth routes not loaded - this will cause 500 errors');
+  logger.error('Auth routes not loaded - this will cause 500 errors');
   // Add a fallback route for auth
   app.use('/api/auth', (req, res) => {
     res.status(500).json({
@@ -239,68 +244,69 @@ if (usersRoutes && selectedAuth) app.use('/api/users', selectedAuth, usersRoutes
 
 // Routes with mixed authentication (some endpoints protected, some not)
 if (parasiteControlRoutes) {
-  console.log('✅ Loading parasite-control routes with authentication');
+  logger.info('Loading parasite-control routes with authentication');
   app.use('/api/parasite-control', selectedAuth, parasiteControlRoutes);
 }
 if (vaccinationRoutes) {
-  console.log('✅ Loading vaccination routes with authentication');
+  logger.info('Loading vaccination routes with authentication');
   app.use('/api/vaccination', selectedAuth, vaccinationRoutes);
 }
 if (mobileClinicsRoutes) {
-  console.log('✅ Loading mobile-clinics routes with authentication');
+  logger.info('Loading mobile-clinics routes with authentication');
   app.use('/api/mobile-clinics', selectedAuth, mobileClinicsRoutes);
 }
 if (equineHealthRoutes) {
-  console.log('✅ Loading equine-health routes with authentication');
+  logger.info('Loading equine-health routes with authentication');
   app.use('/api/equine-health', selectedAuth, equineHealthRoutes);
 }
 if (laboratoriesRoutes) {
-  console.log('✅ Loading laboratories routes with authentication');
+  logger.info('Loading laboratories routes with authentication');
   app.use('/api/laboratories', selectedAuth, laboratoriesRoutes);
 }
 if (clientsRoutes) {
-  console.log('✅ Loading clients routes with authentication');
+  logger.info('Loading clients routes with authentication');
   app.use('/api/clients', selectedAuth, clientsRoutes);
 }
 if (reportsRoutes) {
-  console.log('✅ Loading reports routes with authentication');
+  logger.info('Loading reports routes with authentication');
   app.use('/api/reports', selectedAuth, reportsRoutes);
 }
 if (uploadRoutes) {
-  console.log('✅ Loading upload routes with authentication');
+  logger.info('Loading upload routes with authentication');
   app.use('/api/upload', selectedAuth, uploadRoutes);
 }
 if (villagesRoutes && selectedAuth) {
-  console.log('✅ Loading villages routes with authentication');
+  logger.info('Loading villages routes with authentication');
   app.use('/api/villages', selectedAuth, villagesRoutes);
 }
 if (holdingCodesRoutes) {
-  console.log('✅ Loading holding-codes routes with authentication');
+  logger.info('Loading holding-codes routes with authentication');
   app.use('/api/holding-codes', selectedAuth, holdingCodesRoutes);
 }
 if (dropdownListsRoutes) {
-  console.log('✅ Loading dropdown-lists routes with authentication');
+  logger.info('Loading dropdown-lists routes with authentication');
   app.use('/api/dropdown-lists', selectedAuth, dropdownListsRoutes);
 }
 
 // Import/Export routes
 if (importExportRoutes) {
-  console.log('✅ Loading import-export routes with authentication');
+  logger.info('Loading import-export routes with authentication');
   app.use('/api/import-export', selectedAuth, importExportRoutes);
 }
 
 // Dedicated Dromo Import routes (no auth required)
 if (dromoImportRoutes) {
-  console.log('✅ Loading dedicated Dromo import routes (no auth)');
+  logger.info('Loading dedicated Dromo import routes (no auth)');
   app.use('/import-export', dromoImportRoutes);
 }
 
 
 // Test webhook endpoint
 app.post('/import-export/test-webhook', (req, res) => {
-  console.log('🧪 Test webhook called');
-  console.log('🧪 Headers:', req.headers);
-  console.log('🧪 Body:', req.body);
+  logger.info('Test webhook called', {
+    headers: req.headers,
+    body: req.body,
+  });
   res.json({
     success: true,
     message: 'Test webhook working',
@@ -356,24 +362,24 @@ app.get('/', (req, res) => {
 
 // Error handling middleware - only add if they exist
 if (notFound) {
-  console.log('✅ Adding notFound middleware');
+  logger.info('Adding notFound middleware');
   app.use(notFound);
 } else {
-  console.error('❌ notFound middleware not loaded');
+  logger.error('notFound middleware not loaded');
 }
 
 if (errorHandler) {
-  console.log('✅ Adding errorHandler middleware');
+  logger.info('Adding errorHandler middleware');
   app.use(errorHandler);
 } else {
-  console.error('❌ errorHandler middleware not loaded');
+  logger.error('errorHandler middleware not loaded');
 }
 
 // Database connection with better error handling
 const connectDB = async () => {
   try {
     if (!process.env.MONGODB_URI) {
-      console.error('❌ MONGODB_URI environment variable is not set');
+      logger.error('MONGODB_URI environment variable is not set');
       return;
     }
     
@@ -381,10 +387,14 @@ const connectDB = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log('✅ Connected to MongoDB successfully');
-    console.log(`📊 Database: ${mongoose.connection.name}`);
+    logger.info('Connected to MongoDB successfully', {
+      database: mongoose.connection.name,
+    });
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error.message);
+    logger.error('MongoDB connection error', {
+      message: error.message,
+      stack: error.stack,
+    });
     // Don't exit the process in serverless environment
   }
 };
@@ -394,25 +404,25 @@ connectDB();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
+  logger.info('SIGTERM received. Shutting down gracefully...');
   try {
     await mongoose.connection.close();
-    console.log('MongoDB connection closed.');
+    logger.info('MongoDB connection closed.');
     process.exit(0);
   } catch (error) {
-    console.error('Error closing MongoDB connection:', error);
+    logger.error('Error closing MongoDB connection', { error: error.message });
     process.exit(1);
   }
 });
 
 process.on('SIGINT', async () => {
-  console.log('SIGINT received. Shutting down gracefully...');
+  logger.info('SIGINT received. Shutting down gracefully...');
   try {
     await mongoose.connection.close();
-    console.log('MongoDB connection closed.');
+    logger.info('MongoDB connection closed.');
     process.exit(0);
   } catch (error) {
-    console.error('Error closing MongoDB connection:', error);
+    logger.error('Error closing MongoDB connection', { error: error.message });
     process.exit(1);
   }
 });
@@ -420,22 +430,29 @@ process.on('SIGINT', async () => {
 // Start server only if not in Vercel environment
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
-    console.log(`🚀 AHCP Backend Server running on port ${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
-    console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+    logger.info(`AHCP Backend Server running on port ${PORT}`, {
+      environment: process.env.NODE_ENV || 'development',
+      apiDocs: `http://localhost:${PORT}/api-docs`,
+      healthCheck: `http://localhost:${PORT}/health`,
+    });
   });
 } else {
-  console.log('🌐 Running on Vercel environment');
+  logger.info('Running on Vercel environment');
 }
 
 // Add global error handler for unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled Rejection', {
+    promise: String(promise),
+    reason: String(reason),
+  });
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
+  logger.error('Uncaught Exception', {
+    message: error.message,
+    stack: error.stack,
+  });
 });
 
 module.exports = app;

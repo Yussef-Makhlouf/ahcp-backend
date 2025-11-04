@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../utils/logger');
 const router = express.Router();
 const Village = require('../models/Village');
 const { auth } = require('../middleware/auth');
@@ -50,7 +51,7 @@ router.get('/', auth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching villages:', error);
+    logger.error('Error fetching villages:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في جلب القرى',
@@ -87,7 +88,7 @@ router.get('/search', auth, async (req, res) => {
       data: villages
     });
   } catch (error) {
-    console.error('Error searching villages:', error);
+    logger.error('Error searching villages:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في البحث عن القرى',
@@ -108,7 +109,7 @@ router.get('/sectors', auth, async (req, res) => {
       data: sectors.sort()
     });
   } catch (error) {
-    console.error('Error fetching sectors:', error);
+    logger.error('Error fetching sectors:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في جلب القطاعات',
@@ -138,7 +139,7 @@ router.get('/:id', auth, async (req, res) => {
       data: village
     });
   } catch (error) {
-    console.error('Error fetching village:', error);
+    logger.error('Error fetching village:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في جلب القرية',
@@ -176,7 +177,7 @@ router.post('/', auth, validateVillage, async (req, res) => {
       message: 'تم إنشاء القرية بنجاح'
     });
   } catch (error) {
-    console.error('Error creating village:', error);
+    logger.error('Error creating village:', { error: error });
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -231,7 +232,7 @@ router.put('/:id', auth, validateVillage, async (req, res) => {
       message: 'تم تحديث القرية بنجاح'
     });
   } catch (error) {
-    console.error('Error updating village:', error);
+    logger.error('Error updating village:', { error: error });
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -283,7 +284,7 @@ router.post('/bulk', auth, async (req, res) => {
       message: `تم إنشاء ${createdVillages.length} قرية بنجاح`
     });
   } catch (error) {
-    console.error('Error creating bulk villages:', error);
+    logger.error('Error creating bulk villages:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في إنشاء القرى',
@@ -314,7 +315,7 @@ router.delete('/bulk-delete', auth, async (req, res) => {
       });
     }
 
-    console.log('🗑️ Bulk deleting villages:', ids);
+    logger.info('Bulk deleting villages:', { data: ids });
 
     const results = {
       deleted: 0,
@@ -382,7 +383,7 @@ router.delete('/bulk-delete', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error bulk deleting villages:', error);
+    logger.error('Error bulk deleting villages:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في الحذف المتعدد للقرى',
@@ -404,7 +405,7 @@ router.delete('/delete-all', auth, async (req, res) => {
       });
     }
 
-    console.log('🗑️ Deleting all villages...');
+    logger.info('Deleting all villages');
 
     // Check for usage in other collections
     const Client = require('../models/Client');
@@ -434,7 +435,7 @@ router.delete('/delete-all', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error deleting all villages:', error);
+    logger.error('Error deleting all villages:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في حذف جميع القرى',
@@ -470,7 +471,7 @@ router.delete('/:id', auth, async (req, res) => {
       message: 'تم حذف القرية بنجاح'
     });
   } catch (error) {
-    console.error('Error deleting village:', error);
+    logger.error('Error deleting village:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في حذف القرية',

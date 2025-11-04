@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 
+const logger = require('../utils/logger');
 // Import models
 const User = require('../models/User');
 const Client = require('../models/Client');
@@ -20,7 +21,7 @@ const router = express.Router();
 const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
   try {
     if (!holdingCodeValue || !village) {
-      console.log('⚠️ No holding code or village provided, skipping holding code creation');
+      logger.info('No holding code or village provided skipping holding code creation');
       return null;
     }
 
@@ -78,11 +79,11 @@ const findOrCreateHoldingCode = async (holdingCodeValue, village, userId) => {
     return newHoldingCode._id;
 
   } catch (error) {
-    console.error('❌ Error in findOrCreateHoldingCode:', error);
+    logger.error('Error in findOrCreateHoldingCode:', { error: error });
     
     // If it's a duplicate error, try to find the existing one
     if (error.code === 11000 || error.code === 'DUPLICATE_HOLDING_CODE' || error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
-      console.log('🔄 Duplicate detected, trying to find existing holding code...');
+      logger.info('Duplicate detected trying to find existing holding code');
       
       // Try to find by code first
       let existingCode = await HoldingCode.findOne({ 
@@ -198,7 +199,7 @@ const createSimpleClient = async (clientData, userId) => {
     
     return client;
   } catch (error) {
-    console.error('❌ Error creating client:', error);
+    logger.error('Error creating client:', { error: error });
     throw new Error(`Error creating client: ${error.message}`);
   }
 };
@@ -375,11 +376,11 @@ const mapDromoToVaccination = (row) => {
  */
 const processVaccinationRow = async (row, userId) => {
   try {
-    console.log('🔄 Processing vaccination row:', JSON.stringify(row, null, 2));
+    logger.info('Processing vaccination row:', { data: JSON.stringify(row, null, 2) });
     
     // Map flat Dromo data to database structure
     const mappedData = mapDromoToVaccination(row);
-    console.log('🔄 Mapped data:', JSON.stringify(mappedData, null, 2));
+    logger.info('Mapped data:', { data: JSON.stringify(mappedData, null, 2) });
     
     // Create or find client using mapped client data
     const client = await createSimpleClient(mappedData.clientData, userId);
@@ -409,7 +410,7 @@ const processVaccinationRow = async (row, userId) => {
     console.log(`✅ Created vaccination record: ${vaccination.serialNo}`);
     return vaccination;
   } catch (error) {
-    console.error('❌ Error in processVaccinationRow:', error);
+    logger.error('Error in processVaccinationRow:', { error: error });
     throw new Error(`Error processing vaccination row: ${error.message}`);
   }
 };
@@ -419,7 +420,7 @@ const processVaccinationRow = async (row, userId) => {
  */
 const processParasiteControlRow = async (row, userId) => {
   try {
-    console.log('🔄 Processing parasite control row:', JSON.stringify(row, null, 2));
+    logger.info('Processing parasite control row:', { data: JSON.stringify(row, null, 2) });
     
     const client = await createSimpleClient(row, userId);
     const mainDate = parseSimpleDate(row.date) || new Date();
@@ -484,7 +485,7 @@ const processParasiteControlRow = async (row, userId) => {
     console.log(`✅ Created parasite control record: ${parasiteControl.serialNo}`);
     return parasiteControl;
   } catch (error) {
-    console.error('❌ Error in processParasiteControlRow:', error);
+    logger.error('Error in processParasiteControlRow:', { error: error });
     throw new Error(`Error processing parasite control row: ${error.message}`);
   }
 };
@@ -494,7 +495,7 @@ const processParasiteControlRow = async (row, userId) => {
  */
 const processMobileClinicRow = async (row, userId) => {
   try {
-    console.log('🔄 Processing mobile clinic row:', JSON.stringify(row, null, 2));
+    logger.info('Processing mobile clinic row:', { data: JSON.stringify(row, null, 2) });
     
     const client = await createSimpleClient(row, userId);
     const mainDate = parseSimpleDate(row.date) || new Date();
@@ -545,7 +546,7 @@ const processMobileClinicRow = async (row, userId) => {
     console.log(`✅ Created mobile clinic record: ${mobileClinic.serialNo}`);
     return mobileClinic;
   } catch (error) {
-    console.error('❌ Error in processMobileClinicRow:', error);
+    logger.error('Error in processMobileClinicRow:', { error: error });
     throw new Error(`Error processing mobile clinic row: ${error.message}`);
   }
 };
@@ -555,11 +556,11 @@ const processMobileClinicRow = async (row, userId) => {
  */
 const processLaboratoryRow = async (row, userId) => {
   try {
-    console.log('🔄 Processing laboratory row:', JSON.stringify(row, null, 2));
+    logger.info('Processing laboratory row:', { data: JSON.stringify(row, null, 2) });
     
     // Map flat Dromo data to database structure
     const mappedData = mapDromoToLaboratory(row);
-    console.log('🔄 Mapped laboratory data:', JSON.stringify(mappedData, null, 2));
+    logger.info('Mapped laboratory data:', { data: JSON.stringify(mappedData, null, 2) });
     
     // Create or find client
     const client = await createSimpleClient(mappedData.clientData, userId);
@@ -592,7 +593,7 @@ const processLaboratoryRow = async (row, userId) => {
     console.log(`✅ Created laboratory record: ${laboratory.sampleCode} for client: ${client.name}`);
     return laboratory;
   } catch (error) {
-    console.error('❌ Error in processLaboratoryRow:', error);
+    logger.error('Error in processLaboratoryRow:', { error: error });
     throw new Error(`Error processing laboratory row: ${error.message}`);
   }
 };
@@ -602,7 +603,7 @@ const processLaboratoryRow = async (row, userId) => {
  */
 const processEquineHealthRow = async (row, userId) => {
   try {
-    console.log('🔄 Processing equine health row:', JSON.stringify(row, null, 2));
+    logger.info('Processing equine health row:', { data: JSON.stringify(row, null, 2) });
     
     const client = await createSimpleClient(row, userId);
     const mainDate = parseSimpleDate(row.date) || new Date();
@@ -667,7 +668,7 @@ const processEquineHealthRow = async (row, userId) => {
     console.log(`✅ Created equine health record: ${equineHealth.serialNo}`);
     return equineHealth;
   } catch (error) {
-    console.error('❌ Error in processEquineHealthRow:', error);
+    logger.error('Error in processEquineHealthRow:', { error: error });
     throw new Error(`Error processing equine health row: ${error.message}`);
   }
 };
@@ -679,14 +680,14 @@ const handleDromoImport = (Model, processRowFunction) => {
   return async (req, res) => {
     try {
       console.log(`🎯 Dromo import called for: ${Model.modelName}`);
-      console.log('📊 Request body:', JSON.stringify(req.body, null, 2));
+      logger.info('Request body:', { data: JSON.stringify(req.body, null, 2) });
       
       // Always use admin user for webhook imports
       const adminUser = await User.findOne({ role: 'super_admin' });
       const userId = adminUser ? adminUser._id : null;
       
       if (!userId) {
-        console.error('❌ No admin user found');
+        logger.error('No admin user found');
         return res.status(500).json({
           success: false,
           message: 'No admin user found for import',
@@ -701,7 +702,7 @@ const handleDromoImport = (Model, processRowFunction) => {
       const { data = [] } = req.body;
       
       if (!data || data.length === 0) {
-        console.log('⚠️ No data provided in request');
+        logger.info('No data provided in request');
         return res.json({
           success: true,
           message: 'تم استيراد 0 سجل بنجاح',
@@ -758,7 +759,7 @@ const handleDromoImport = (Model, processRowFunction) => {
       res.json(response);
       
     } catch (error) {
-      console.error('❌ Dromo import error:', error);
+      logger.error('Dromo import error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في معالجة الاستيراد',

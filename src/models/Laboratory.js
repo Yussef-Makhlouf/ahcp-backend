@@ -240,6 +240,12 @@ const laboratorySchema = new mongoose.Schema({
     maxlength: [50, 'Collector code cannot exceed 50 characters'],
     default: 'N/A' // Default value for missing data
   },
+  testType: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: [200, 'Test type cannot exceed 200 characters']
+  },
   positiveCases: { 
     type: Number, 
     required: false, // Made optional for import flexibility

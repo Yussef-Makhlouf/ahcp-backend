@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+const logger = require('../utils/logger');
 /**
  * Global error handling middleware
  */
@@ -8,7 +9,7 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
 
   // Log error
-  console.error('Error:', err);
+  logger.error('Error:', { error: err });
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {

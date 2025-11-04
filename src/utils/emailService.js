@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-
+const logger = require('./logger');
 // Create transporter
 const createTransporter = () => {
   // For development, use a test account or Gmail
@@ -181,10 +181,10 @@ const sendEmail = async (to, template, data) => {
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log('📧 Email sent successfully:', result.messageId);
+    logger.info('Email sent successfully:', { data: result.messageId });
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error('❌ Email sending failed:', error);
+    logger.error('Email sending failed:', { error: error });
     return { success: false, error: error.message };
   }
 };

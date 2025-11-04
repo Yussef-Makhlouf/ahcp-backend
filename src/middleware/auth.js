@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const logger = require('../utils/logger');
 /**
  * Authentication middleware to verify JWT tokens
  */
@@ -62,7 +63,7 @@ const auth = async (req, res, next) => {
       });
     }
 
-    console.error('Auth middleware error:', error);
+    logger.error('Auth middleware error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Server error during authentication.',
@@ -76,15 +77,15 @@ const auth = async (req, res, next) => {
  */
 const authorize = (...roles) => {
   return (req, res, next) => {
-    console.log('🔐 Authorization check:', {
+    logger.info('Authorization check:', { data: {
       requiredRoles: roles,
       userExists: !!req.user,
       userRole: req.user?.role,
       userId: req.user?._id
-    });
+    } });
 
     if (!req.user) {
-      console.log('❌ Authorization failed: No user');
+      logger.info('Authorization failed: No user');
       return res.status(401).json({
         success: false,
         message: 'Authentication required.',
@@ -94,7 +95,7 @@ const authorize = (...roles) => {
 
     // Super admin has access to everything
     if (req.user.role === 'super_admin') {
-      console.log('✅ Authorization passed: Super admin');
+      logger.info('Authorization passed: Super admin');
       return next();
     }
 
@@ -108,14 +109,14 @@ const authorize = (...roles) => {
     const hasAccess = normalizedRoles.includes(userRole) || 
                      (userRole === 'section_supervisor' && roles.includes('supervisor'));
 
-    console.log('🔍 Authorization details:', {
+    logger.info('Authorization details:', { data: {
       userRole,
       normalizedRoles,
       hasAccess
-    });
+    } });
 
     if (!hasAccess) {
-      console.log('❌ Authorization failed: Insufficient permissions');
+      logger.info('Authorization failed: Insufficient permissions');
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient permissions.',
@@ -125,7 +126,7 @@ const authorize = (...roles) => {
       });
     }
 
-    console.log('✅ Authorization passed');
+    logger.info('Authorization passed');
     next();
   };
 };
@@ -221,7 +222,7 @@ const updateLastLogin = async (req, res, next) => {
         lastLogin: new Date()
       });
     } catch (error) {
-      console.error('Error updating last login:', error);
+      logger.error('Error updating last login:', { error: error });
       // Don't fail the request if this fails
     }
   }

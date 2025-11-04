@@ -3,6 +3,7 @@ const Section = require('../models/Section');
 const User = require('../models/User');
 const { asyncHandler } = require('../middleware/errorHandler');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // الأقسام الأساسية
@@ -104,7 +105,7 @@ router.post('/sections', asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error creating sections:', error);
+    logger.error('Error creating sections:', { error: error });
     res.status(500).json({
       success: false,
       message: 'خطأ في إنشاء الأقسام',

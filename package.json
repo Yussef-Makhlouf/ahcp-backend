@@ -10,6 +10,8 @@
     "test": "jest",
     "seed": "node seed.js",
     "seed:sections": "node src/scripts/seed-sections.js",
+    "add-indexes": "node src/scripts/add-indexes.js",
+    "replace-console": "node src/scripts/replace-console-logs.js",
     "vercel-build": "npm install",
     "railway-build": "npm install",
     "railway-db-setup": "node railway-db-setup.js"
@@ -47,6 +49,7 @@
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^4.6.3",
     "uuid": "^9.0.0",
+    "winston": "^3.11.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

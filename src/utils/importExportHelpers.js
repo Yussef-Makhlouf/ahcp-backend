@@ -2,7 +2,7 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const XLSX = require('xlsx');
 const Client = require('../models/Client');
-
+const logger = require('./logger');
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -31,7 +31,7 @@ const handleTemplate = (templateData, filename = 'template') => {
       res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
       res.send(csvContent);
     } catch (error) {
-      console.error('Template error:', error);
+      logger.error('Template error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error generating template: ' + error.message
@@ -44,7 +44,7 @@ const handleTemplate = (templateData, filename = 'template') => {
 const handleImport = (Model, processRowFunction) => {
   const uploadMiddleware = upload.single('file');
   
-  return async (req, res) => {
+  return async (req, res, next) => {
     uploadMiddleware(req, res, async (err) => {
       if (err) {
         return res.status(400).json({
@@ -108,7 +108,8 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
     // Process each row
     for (const row of rows) {
       try {
-        const result = await processRowFunction(row, user._id, Client, Model, errors);
+        // processRowFunction expects: (row, userId, errors)
+        const result = await processRowFunction(row, user._id, errors);
         if (result) {
           results.push(result);
         }
@@ -131,7 +132,7 @@ const processImportFromMemory = async (req, res, file, user, Model, processRowFu
     });
     
   } catch (error) {
-    console.error('Import processing error:', error);
+    logger.error('Import processing error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error processing import: ' + error.message
@@ -233,7 +234,7 @@ const handleExport = (Model, filename = 'export') => {
       res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
       res.send(csvContent);
     } catch (error) {
-      console.error('Export error:', error);
+      logger.error('Export error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error generating export: ' + error.message

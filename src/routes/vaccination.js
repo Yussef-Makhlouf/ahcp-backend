@@ -9,6 +9,7 @@ const { handleTemplate, handleImport, findOrCreateClient } = require('../utils/i
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 /**
@@ -66,15 +67,15 @@ router.get('/',
   asyncHandler(async (req, res) => {
     const startTime = Date.now();
     
-    console.log('🔍 Vaccination Backend - Received query params:', req.query);
+    logger.info('Vaccination Backend - Received query params:', { data: req.query });
     
     // Build advanced filter using FilterBuilder
     const filter = filterBuilder.buildVaccinationFilter(req.query);
     const paginationParams = filterBuilder.buildPaginationParams(req.query);
     const sortParams = filterBuilder.buildSortParams(req.query);
 
-    console.log('📋 Built vaccination filter object:', JSON.stringify(filter, null, 2));
-    console.log('📄 Pagination params:', paginationParams);
+    logger.info('Built vaccination filter object:', { data: JSON.stringify(filter, null, 2) });
+    logger.info('Pagination params:', { data: paginationParams });
 
     // Execute query with performance tracking
     const queryStartTime = Date.now();
@@ -100,7 +101,7 @@ router.get('/',
         Vaccination.countDocuments(filter)
       ]);
     } catch (populateError) {
-      console.error('🚨 Vaccination populate error, falling back to basic query:', populateError);
+      logger.error('Vaccination populate error falling back to basic query:', { error: populateError });
       // Fallback with basic populate if there's an issue
       [records, total] = await Promise.all([
         Vaccination.find(filter)
@@ -142,20 +143,20 @@ router.get('/',
       try {
         const explanation = await queryLogger.explainQuery(Vaccination, filter);
         if (explanation) {
-          console.log('🔍 Vaccination Query Performance Analysis:', {
+          logger.info('Vaccination Query Performance Analysis:', { data: {
             indexesUsed: explanation.indexesUsed,
             documentsExamined: explanation.documentsExamined,
             keysExamined: explanation.keysExamined,
             efficiency: explanation.keysExamined > 0 ? 
               (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
-          });
+          }});  
         }
       } catch (explainError) {
-        console.warn('⚠️ Could not explain vaccination query:', explainError.message);
+        logger.warn('Could not explain vaccination query:', { data: explainError.message });
       }
     }
 
-    console.log(`📊 Vaccination query results: Found ${records.length} records out of ${total} total matching filter`);
+    logger.info(`Vaccination query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
@@ -240,7 +241,7 @@ router.get('/statistics',
         data: statistics
       });
     } catch (error) {
-      console.error('Error getting vaccination statistics:', error);
+      logger.error('Error getting vaccination statistics:', { error: error });
       
       // Return basic count if aggregation fails
       const basicStats = {
@@ -366,7 +367,7 @@ router.get('/detailed-statistics',
         data: detailedStats
       });
     } catch (error) {
-      console.error('Error getting detailed vaccination statistics:', error);
+      logger.error('Error getting detailed vaccination statistics:', { error: error });
       
       // Return default values if aggregation fails
       const defaultStats = {
@@ -434,7 +435,7 @@ router.get('/export',
       'request.situation': requestSituation
     } = req.query;
     
-    console.log('🔍 Vaccination Export - Received query params:', req.query);
+    logger.info('Vaccination Export - Received query params:', { data: req.query });
     
     const filter = {};
     
@@ -444,34 +445,34 @@ router.get('/export',
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
-      console.log('📅 Vaccination Export - Date filter applied:', filter.date);
+      logger.info('Vaccination Export - Date filter applied:', { data: filter.date });
     }
     
     // Vaccine type filter
     if (vaccineType && vaccineType !== '__all__') {
       filter.vaccineType = { $in: vaccineType.split(',') };
-      console.log('💉 Vaccination Export - Vaccine type filter applied:', filter.vaccineType);
+      logger.info('Vaccination Export - Vaccine type filter applied:', { data: filter.vaccineType });
     }
     
     // Vaccine category filter
     if (vaccineCategory && vaccineCategory !== '__all__') {
       filter.vaccineCategory = { $in: vaccineCategory.split(',') };
-      console.log('🏷️ Vaccination Export - Vaccine category filter applied:', filter.vaccineCategory);
+      logger.info('Vaccination Export - Vaccine category filter applied:', { data: filter.vaccineCategory });
     }
     
     // Herd health status filter
     if (herdHealthStatus && herdHealthStatus !== '__all__') {
       filter.herdHealthStatus = { $in: herdHealthStatus.split(',') };
-      console.log('🐑 Vaccination Export - Herd health filter applied:', filter.herdHealthStatus);
+      logger.info('Vaccination Export - Herd health filter applied:', { data: filter.herdHealthStatus });
     }
     
     // Request situation filter
     if (requestSituation && requestSituation !== '__all__') {
       filter['request.situation'] = { $in: requestSituation.split(',') };
-      console.log('📋 Vaccination Export - Request situation filter applied:', filter['request.situation']);
+      logger.info('Vaccination Export - Request situation filter applied:', { data: filter['request.situation'] });
     }
     
-    console.log('🔍 Vaccination Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
+    logger.info('Vaccination Export - Final MongoDB filter object:', { data: JSON.stringify(filter, null, 2) });
 
     const records = await Vaccination.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
@@ -848,10 +849,10 @@ router.post('/',
         }
       }
     }
-    console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
-    console.log('🔍 Holding code type:', typeof req.body.holdingCode);
+    logger.info('Holding code processing:', { data: { holdingCode: req.body.holdingCode, holdingCodeId: holdingCodeId } });
+    logger.info('Holding code type:', { data: typeof req.body.holdingCode });
     const mongoose = require('mongoose');
-    console.log('🔍 Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
+    logger.info('Holding code is valid ObjectId:', { data: mongoose.Types.ObjectId.isValid(req.body.holdingCode) });
 
     const record = new Vaccination({
       ...req.body,
@@ -1110,7 +1111,7 @@ router.put('/:id',
         }
       }
     }
-    console.log('🔍 Holding code processing (update):', req.body.holdingCode, '→', holdingCodeId);
+    logger.info('Holding code processing update:', { data: { holdingCode: req.body.holdingCode, holdingCodeId: holdingCodeId } });
 
     // Update record
     Object.assign(record, {
@@ -1237,7 +1238,7 @@ router.delete('/bulk-delete',
 
       res.json(response);
     } catch (error) {
-      console.error('Bulk delete error:', error);
+      logger.error('Bulk delete error:', { error: error });
       return res.status(500).json({
         success: false,
         message: 'Error deleting vaccination records',

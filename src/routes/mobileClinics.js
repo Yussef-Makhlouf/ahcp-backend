@@ -9,6 +9,7 @@ const { findOrCreateClient, parseFileData } = require('../utils/importExportHelp
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 const INTERVENTION_CATEGORY_NORMALIZATION_MAP = {
@@ -183,15 +184,15 @@ router.get('/',
   asyncHandler(async (req, res) => {
     const startTime = Date.now();
     
-    console.log('🔍 MobileClinic Backend - Received query params:', req.query);
+    logger.info('MobileClinic Backend - Received query params:', { data: req.query });
     
     // Build advanced filter using FilterBuilder
     const filter = filterBuilder.buildMobileClinicFilter(req.query);
     const paginationParams = filterBuilder.buildPaginationParams(req.query);
     const sortParams = filterBuilder.buildSortParams(req.query);
 
-    console.log('📋 Built mobile clinic filter object:', JSON.stringify(filter, null, 2));
-    console.log('📄 Pagination params:', paginationParams);
+    logger.info('Built mobile clinic filter object:', { data: JSON.stringify(filter, null, 2) });
+    logger.info('Pagination params:', { data: paginationParams });
 
     // Execute query with performance tracking
     const queryStartTime = Date.now();
@@ -217,7 +218,7 @@ router.get('/',
         MobileClinic.countDocuments(filter)
       ]);
     } catch (populateError) {
-      console.error('🚨 MobileClinic populate error, falling back to basic query:', populateError);
+      logger.error('MobileClinic populate error falling back to basic query:', { error: populateError });
       // Fallback with basic populate if there's an issue
       [records, total] = await Promise.all([
         MobileClinic.find(filter)
@@ -261,20 +262,20 @@ router.get('/',
       try {
         const explanation = await queryLogger.explainQuery(MobileClinic, filter);
         if (explanation) {
-          console.log('🔍 MobileClinic Query Performance Analysis:', {
+          logger.info('MobileClinic Query Performance Analysis:', { data: {
             indexesUsed: explanation.indexesUsed,
             documentsExamined: explanation.documentsExamined,
             keysExamined: explanation.keysExamined,
             efficiency: explanation.keysExamined > 0 ? 
               (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
-          });
+          }});
         }
       } catch (explainError) {
-        console.warn('⚠️ Could not explain mobile clinic query:', explainError.message);
+        logger.warn('Could not explain mobile clinic query:', { data: explainError.message });
       }
     }
 
-    console.log(`📊 MobileClinic query results: Found ${records.length} records out of ${total} total matching filter`);
+    logger.info(`MobileClinic query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
@@ -393,13 +394,13 @@ router.post('/',
   validate(schemas.mobileClinicCreate),
   asyncHandler(async (req, res) => {
     try {
-      console.log('📝 Creating mobile clinic record with data:', JSON.stringify(req.body, null, 2));
-      console.log('🔍 Validation passed, proceeding with creation...');
-      console.log('👤 Client data check:');
-      console.log('  - req.body.client:', req.body.client);
-      console.log('  - req.body.clientName:', req.body.clientName);
-      console.log('  - req.body.clientId:', req.body.clientId);
-      console.log('  - req.body.interventionCategory:', req.body.interventionCategory);
+      logger.info('Creating mobile clinic record with data:', { data: JSON.stringify(req.body, null, 2) });
+      logger.info('Validation passed proceeding with creation');
+      logger.info('Client data check:');
+      logger.info('- reqbodyclient:', { data: req.body.client });
+      logger.info('- reqbodyclientName:', { data: req.body.clientName });
+      logger.info('- reqbodyclientId:', { data: req.body.clientId });
+      logger.info('- reqbodyinterventionCategory:', { data: req.body.interventionCategory });
 
       // Handle client data - support both flat structure and client reference
       let clientData = null;
@@ -418,7 +419,7 @@ router.post('/',
             detailedAddress: req.body.clientDetailedAddress || ''
           });
         } catch (clientError) {
-          console.log('⚠️ Client creation failed, using flat structure:', clientError.message);
+          logger.info('Client creation failed using flat structure:', { data: clientError.message });
           // Continue with flat structure if client creation fails
         }
       }
@@ -514,20 +515,25 @@ router.post('/',
           }
         }
       }
-      console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
+      logger.info('Holding code processing:', { data: { holdingCode: req.body.holdingCode, holdingCodeId: holdingCodeId } });
       
       // Add holding code to mobile clinic data
       mobileClinicData.holdingCode = holdingCodeId;
 
-      console.log('✅ Client data processed:', {
+      const hasFlatFields = !!(mobileClinicData.clientName && mobileClinicData.clientId && mobileClinicData.clientPhone && mobileClinicData.clientBirthDate && mobileClinicData.clientVillage && mobileClinicData.clientDetailedAddress);
+      logger.info('Client data processed:', { data: {
         hasClientReference: !!mobileClinicData.client,
-        hasFlatFields: !!(mobileClinicData.clientName && mobileClinicData.clientId),
+        hasFlatFields: hasFlatFields,
         clientReference: mobileClinicData.client,
         flatClientName: mobileClinicData.clientName,
-        flatClientId: mobileClinicData.clientId
-      });
+        flatClientId: mobileClinicData.clientId,
+        flatClientPhone: mobileClinicData.clientPhone,
+        flatClientBirthDate: mobileClinicData.clientBirthDate,
+        flatClientVillage: mobileClinicData.clientVillage,
+        flatClientDetailedAddress: mobileClinicData.clientDetailedAddress
+      }});
 
-      console.log('💾 Saving mobile clinic data:', mobileClinicData);
+      logger.info('Saving mobile clinic data:', { data: mobileClinicData });
 
       // Create the mobile clinic record
       const mobileClinic = new MobileClinic(mobileClinicData);
@@ -538,7 +544,7 @@ router.post('/',
 
       ensureInterventionCategoryShape(savedRecord);
 
-      console.log('✅ Mobile clinic record created successfully:', savedRecord._id);
+      logger.info('Mobile clinic record created successfully:', { data: savedRecord._id });
 
       res.status(201).json({
         success: true,
@@ -547,7 +553,7 @@ router.post('/',
       });
 
     } catch (error) {
-      console.error('❌ Error creating mobile clinic record:', error);
+      logger.error('Error creating mobile clinic record:', { error: error });
       
       // Handle validation errors
       if (error.name === 'ValidationError') {
@@ -668,7 +674,7 @@ router.get('/statistics',
         ]);
         totalAnimalsExamined = animalStats.length > 0 ? animalStats[0].totalAnimals : 0;
       } catch (aggregationError) {
-        console.warn('Animal stats aggregation failed, using fallback:', aggregationError.message);
+        logger.warn('Animal stats aggregation failed using fallback:', { data: aggregationError.message });
         // Fallback: get basic count without aggregation
         totalAnimalsExamined = 0;
       }
@@ -705,7 +711,7 @@ router.get('/statistics',
         data: statistics
       });
     } catch (error) {
-      console.error('Error getting mobile clinic statistics:', error);
+      logger.error('Error getting mobile clinic statistics:', { error: error });
       
       // Return basic statistics if complex queries fail
       try {
@@ -809,7 +815,7 @@ router.get('/export',
       followUpRequired
     } = req.query;
     
-    console.log('🔍 Mobile Clinic Export - Received query params:', req.query);
+    logger.info('Mobile Clinic Export - Received query params:', { data: req.query });
     
     const filter = {};
     
@@ -819,29 +825,29 @@ router.get('/export',
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
-      console.log('📅 Mobile Clinic Export - Date filter applied:', filter.date);
+      logger.info('Mobile Clinic Export - Date filter applied:', { data: filter.date });
     }
     
     // Diagnosis filter
     if (diagnosis && diagnosis !== '__all__') {
       filter.diagnosis = { $in: diagnosis.split(',') };
-      console.log('🩺 Mobile Clinic Export - Diagnosis filter applied:', filter.diagnosis);
+      logger.info('Mobile Clinic Export - Diagnosis filter applied:', { data: filter.diagnosis });
     }
     
     // Intervention category filter
     if (interventionCategory && interventionCategory !== '__all__') {
       filter.interventionCategory = { $in: interventionCategory.split(',') };
-      console.log('🏥 Mobile Clinic Export - Intervention category filter applied:', filter.interventionCategory);
+      logger.info('Mobile Clinic Export - Intervention category filter applied:', { data: filter.interventionCategory });
     }
     
     // Follow up required filter
     if (followUpRequired && followUpRequired !== '__all__') {
       const followUpValues = followUpRequired.split(',').map(val => val === 'true');
       filter.followUpRequired = { $in: followUpValues };
-      console.log('📋 Mobile Clinic Export - Follow up filter applied:', filter.followUpRequired);
+      logger.info('Mobile Clinic Export - Follow up filter applied:', { data: filter.followUpRequired });
     }
     
-    console.log('🔍 Mobile Clinic Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
+    logger.info('Mobile Clinic Export - Final MongoDB filter object:', { data: JSON.stringify(filter, null, 2) });
 
     const records = await MobileClinic.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
@@ -1087,7 +1093,7 @@ router.delete('/bulk-delete',
         deletedCount: result.deletedCount
       });
     } catch (error) {
-      console.error('Error in bulk delete mobile clinics:', error);
+      logger.error('Error in bulk delete mobile clinics:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error deleting mobile clinic records',
@@ -1157,7 +1163,7 @@ router.delete('/delete-all',
         }
       });
     } catch (error) {
-      console.error('Error in delete all mobile clinics:', error);
+      logger.error('Error in delete all mobile clinics:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error deleting all mobile clinic records',
@@ -1212,7 +1218,7 @@ router.get('/:id',
         data: record
       });
     } catch (error) {
-      console.error('Error getting mobile clinic record:', error);
+      logger.error('Error getting mobile clinic record:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error retrieving mobile clinic record',
@@ -1322,8 +1328,8 @@ router.put('/:id',
   validate(schemas.mobileClinicUpdate),
   asyncHandler(async (req, res) => {
     try {
-      console.log('📝 Updating mobile clinic record:', req.params.id);
-      console.log('📝 Update data:', JSON.stringify(req.body, null, 2));
+      logger.info('Updating mobile clinic record:', { data: req.params.id });
+      logger.info('Update data:', { data: JSON.stringify(req.body, null, 2) });
 
       // Check if record exists
       const existingRecord = await MobileClinic.findById(req.params.id);
@@ -1351,7 +1357,7 @@ router.put('/:id',
             detailedAddress: req.body.clientDetailedAddress || ''
           });
         } catch (clientError) {
-          console.log('⚠️ Client creation failed, using flat structure:', clientError.message);
+          logger.info('Client creation failed using flat structure:', { data: clientError.message });
           // Continue with flat structure if client creation fails
         }
       }
@@ -1435,7 +1441,7 @@ router.put('/:id',
           }
         }
       }
-      console.log('🔍 Holding code processing (update):', req.body.holdingCode, '→', holdingCodeId);
+      logger.info('Holding code processing update:', { data: { holdingCode: req.body.holdingCode, holdingCodeId: holdingCodeId } });
       
       // Add holding code to update data
       updateData.holdingCode = holdingCodeId;
@@ -1453,7 +1459,7 @@ router.put('/:id',
         updateData.clientDetailedAddress = req.body.clientDetailedAddress;
       }
 
-      console.log('💾 Updating mobile clinic with data:', updateData);
+      logger.info('Updating mobile clinic with data:', { data: updateData });
 
       // Update the record
       const updatedRecord = await MobileClinic.findByIdAndUpdate(
@@ -1463,7 +1469,7 @@ router.put('/:id',
       ).populate('client', 'name nationalId phone village detailedAddress birthDate')
        .populate('holdingCode', 'code village description isActive');
 
-      console.log('✅ Mobile clinic record updated successfully:', updatedRecord._id);
+      logger.info('Mobile clinic record updated successfully:', { data: updatedRecord._id });
 
       ensureInterventionCategoryShape(updatedRecord);
 
@@ -1474,7 +1480,7 @@ router.put('/:id',
       });
 
     } catch (error) {
-      console.error('❌ Error updating mobile clinic record:', error);
+      logger.error('Error updating mobile clinic record:', { error: error });
       
       // Handle validation errors
       if (error.name === 'ValidationError') {
@@ -1564,7 +1570,7 @@ router.delete('/:id',
         message: 'Mobile clinic record deleted successfully'
       });
     } catch (error) {
-      console.error('Error deleting mobile clinic record:', error);
+      logger.error('Error deleting mobile clinic record:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error deleting mobile clinic record',

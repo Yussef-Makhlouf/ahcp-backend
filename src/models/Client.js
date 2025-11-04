@@ -224,6 +224,12 @@ const clientSchema = new mongoose.Schema({
     type: String,
     maxlength: [1000, 'Notes cannot exceed 1000 characters']
   },
+  serialNumber: {
+    type: String,
+    trim: true,
+    maxlength: [50, 'Serial number cannot exceed 50 characters'],
+    sparse: true // Allow multiple documents with null serialNumber
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -246,6 +252,7 @@ clientSchema.index({ village: 1 });
 clientSchema.index({ status: 1 });
 clientSchema.index({ phone: 1 });
 clientSchema.index({ holdingCode: 1 });
+clientSchema.index({ serialNumber: 1 });
 clientSchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
 
 // Virtual for total animals count

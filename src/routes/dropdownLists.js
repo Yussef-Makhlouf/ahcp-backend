@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../utils/logger');
 const router = express.Router();
 const DropdownList = require('../models/DropdownList');
 const { auth } = require('../middleware/auth');
@@ -93,7 +94,7 @@ router.get('/', auth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get dropdown lists error:', error);
+    logger.error('Get dropdown lists error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dropdown lists',
@@ -108,13 +109,11 @@ router.get('/', auth, async (req, res) => {
  *   get:
  *     summary: Get all available categories
  *     tags: [DropdownLists]
- *     security:
- *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: List of categories
  */
-router.get('/categories', auth, async (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
     let categories = await DropdownList.getCategories();
     
@@ -162,7 +161,7 @@ router.get('/categories', auth, async (req, res) => {
       data: categoryInfo
     });
   } catch (error) {
-    console.error('Get categories error:', error);
+    logger.error('Get categories error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch categories',
@@ -177,8 +176,6 @@ router.get('/categories', auth, async (req, res) => {
  *   get:
  *     summary: Get options by category
  *     tags: [DropdownLists]
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: category
@@ -186,11 +183,16 @@ router.get('/categories', auth, async (req, res) => {
  *         schema:
  *           type: string
  *         description: Category name
+ *       - in: query
+ *         name: includeInactive
+ *         schema:
+ *           type: boolean
+ *         description: Include inactive options
  *     responses:
  *       200:
  *         description: Options for the category
  */
-router.get('/by-category/:category', auth, [
+router.get('/by-category/:category', [
   param('category').notEmpty().withMessage('Category is required')
 ], async (req, res) => {
   try {
@@ -218,7 +220,7 @@ router.get('/by-category/:category', auth, [
       }
     });
   } catch (error) {
-    console.error('Get options by category error:', error);
+    logger.error('Get options by category error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch options',
@@ -283,7 +285,7 @@ router.get('/:id', auth, [
       }
     });
   } catch (error) {
-    console.error('Get dropdown option error:', error);
+    logger.error('Get dropdown option error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dropdown option',
@@ -376,7 +378,7 @@ router.post('/', auth, [
       data: option
     });
   } catch (error) {
-    console.error('Create dropdown option error:', error);
+    logger.error('Create dropdown option error:', { error: error });
     
     if (error.code === 'DUPLICATE_VALUE') {
       return res.status(409).json({
@@ -469,7 +471,7 @@ router.put('/:id', auth, [
       data: option
     });
   } catch (error) {
-    console.error('Update dropdown option error:', error);
+    logger.error('Update dropdown option error:', { error: error });
     
     if (error.code === 'DUPLICATE_VALUE') {
       return res.status(409).json({
@@ -564,7 +566,7 @@ router.delete('/:id', auth, [
       usage: usageInfo
     });
   } catch (error) {
-    console.error('Delete dropdown option error:', error);
+    logger.error('Delete dropdown option error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to delete dropdown option',
@@ -646,7 +648,7 @@ router.post('/bulk-create', auth, [
       data: createdOptions
     });
   } catch (error) {
-    console.error('Bulk create dropdown options error:', error);
+    logger.error('Bulk create dropdown options error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Failed to create dropdown options',

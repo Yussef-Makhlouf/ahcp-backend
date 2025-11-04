@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-
+const logger = require('./logger');
 class QueryLogger {
   constructor() {
     this.logs = [];
@@ -65,7 +65,7 @@ class QueryLogger {
         keysExamined: explanation.executionStats.totalKeysExamined
       };
     } catch (error) {
-      console.error('❌ Error explaining query:', error);
+      logger.error('Error explaining query:', { error: error });
       return null;
     }
   }

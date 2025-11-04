@@ -12,6 +12,7 @@ const { handleExport, handleTemplate, handleImport, findOrCreateClient } = requi
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -103,15 +104,15 @@ router.get('/',
   asyncHandler(async (req, res) => {
     const startTime = Date.now();
     
-    console.log('🔍 Laboratory Backend - Received query params:', req.query);
+    logger.info('Laboratory Backend - Received query params:', { data: req.query });
     
     // Build advanced filter using FilterBuilder
     const filter = filterBuilder.buildLaboratoryFilter(req.query);
     const paginationParams = filterBuilder.buildPaginationParams(req.query);
     const sortParams = filterBuilder.buildSortParams(req.query);
 
-    console.log('📋 Built laboratory filter object:', JSON.stringify(filter, null, 2));
-    console.log('📄 Pagination params:', paginationParams);
+    logger.info('Built laboratory filter object:', { data: JSON.stringify(filter, null, 2) });
+    logger.info('Pagination params:', { data: paginationParams });
 
     // Execute query with performance tracking
     const queryStartTime = Date.now();
@@ -136,7 +137,7 @@ router.get('/',
         Laboratory.countDocuments(filter)
       ]);
     } catch (populateError) {
-      console.error('🚨 Laboratory populate error, falling back to basic query:', populateError);
+      logger.error('Laboratory populate error falling back to basic query:', { error: populateError });
       // Fallback with basic populate if there's an issue
       [records, total] = await Promise.all([
         Laboratory.find(filter)
@@ -177,16 +178,16 @@ router.get('/',
       try {
         const explanation = await queryLogger.explainQuery(Laboratory, filter);
         if (explanation) {
-          console.log('🔍 Laboratory Query Performance Analysis:', {
+          logger.info('Laboratory Query Performance Analysis:', { data: {
             indexesUsed: explanation.indexesUsed,
             documentsExamined: explanation.documentsExamined,
             keysExamined: explanation.keysExamined,
             efficiency: explanation.keysExamined > 0 ? 
               (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
-          });
+          }});
         }
       } catch (explainError) {
-        console.warn('⚠️ Could not explain laboratory query:', explainError.message);
+        logger.warn('Could not explain laboratory query:', { data: explainError.message });
       }
     }
 
@@ -320,7 +321,7 @@ router.get('/statistics',
         data: statistics
       });
     } catch (error) {
-      console.error('Error getting laboratory statistics:', error);
+      logger.error('Error getting laboratory statistics:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error retrieving statistics',
@@ -424,7 +425,7 @@ router.get('/export',
       testType
     } = req.query;
     
-    console.log('🔍 Laboratory Export - Received query params:', req.query);
+    logger.info('Laboratory Export - Received query params:', { data: req.query });
     
     const filter = {};
     
@@ -434,28 +435,28 @@ router.get('/export',
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
-      console.log('📅 Laboratory Export - Date filter applied:', filter.date);
+      logger.info('Laboratory Export - Date filter applied:', { data: filter.date });
     }
     
     // Sample type filter
     if (sampleType && sampleType !== '__all__') {
       filter.sampleType = { $in: sampleType.split(',') };
-      console.log('🧪 Laboratory Export - Sample type filter applied:', filter.sampleType);
+      logger.info('Laboratory Export - Sample type filter applied:', { data: filter.sampleType });
     }
     
     // Test result filter
     if (testResult && testResult !== '__all__') {
       filter.testResult = { $in: testResult.split(',') };
-      console.log('📊 Laboratory Export - Test result filter applied:', filter.testResult);
+      logger.info('Laboratory Export - Test result filter applied:', { data: filter.testResult });
     }
     
     // Test type filter
     if (testType && testType !== '__all__') {
       filter.testType = { $in: testType.split(',') };
-      console.log('🔬 Laboratory Export - Test type filter applied:', filter.testType);
+      logger.info('Laboratory Export - Test type filter applied:', { data: filter.testType });
     }
     
-    console.log('🔍 Laboratory Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
+    logger.info('Laboratory Export - Final MongoDB filter object:', { data: JSON.stringify(filter, null, 2) });
 
     const records = await Laboratory.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
@@ -530,6 +531,7 @@ router.get('/export',
         'Sample Collector': record.collector || '',
         'Sample Type': record.sampleType || '',
         'Sample Number': record.sampleNumber || '',
+        'Test Type': record.testType || '',
         'Positive Cases': record.positiveCases || 0,
         'Negative Cases': record.negativeCases || 0,
         'Holding Code': record.holdingCode?.code || '',
@@ -657,7 +659,20 @@ router.post('/',
     });
 
     await record.save();
-    await record;
+    await record.populate('client', 'name nationalId phone village detailedAddress');
+
+    // Update client's availableServices if client exists
+    if (record.client && typeof record.client === 'object' && record.client._id) {
+      const Client = require('../models/Client');
+      const client = await Client.findById(record.client._id);
+      if (client) {
+        if (!client.availableServices.includes('laboratory')) {
+          client.availableServices.push('laboratory');
+          await client.save();
+          console.log(`✅ Added 'laboratory' service to client ${client._id}`);
+        }
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -725,11 +740,43 @@ router.put('/:id',
       }
     }
 
+    // Store old client ID before update
+    const oldClientId = record.client;
+
     // Update record
     Object.assign(record, req.body);
     record.updatedBy = req.user._id;
     await record.save();
-    await record;
+    await record.populate('client', 'name nationalId phone village detailedAddress');
+
+    // Update client's availableServices
+    const Client = require('../models/Client');
+    
+    // Remove service from old client if client changed
+    if (oldClientId && oldClientId.toString() !== record.client?._id?.toString()) {
+      const oldClient = await Client.findById(oldClientId);
+      if (oldClient) {
+        const labCount = await Laboratory.countDocuments({ client: oldClientId });
+        if (labCount === 0) {
+          // No more laboratory records for this client, remove service
+          oldClient.availableServices = oldClient.availableServices.filter(s => s !== 'laboratory');
+          await oldClient.save();
+          console.log(`✅ Removed 'laboratory' service from old client ${oldClientId}`);
+        }
+      }
+    }
+
+    // Add service to new client if client exists
+    if (record.client && typeof record.client === 'object' && record.client._id) {
+      const newClient = await Client.findById(record.client._id);
+      if (newClient) {
+        if (!newClient.availableServices.includes('laboratory')) {
+          newClient.availableServices.push('laboratory');
+          await newClient.save();
+          console.log(`✅ Added 'laboratory' service to new client ${record.client._id}`);
+        }
+      }
+    }
 
     res.json({
       success: true,
@@ -898,14 +945,25 @@ router.delete('/bulk-delete',
         for (const clientId of clientIds) {
           try {
             // Check if client is referenced in other services
-            const [labCount, vaccinationCount, parasiteCount, mobileCount] = await Promise.all([
+            const [labCount, vaccinationCount, parasiteCount, mobileCount, equineCount] = await Promise.all([
               Laboratory.countDocuments({ client: clientId }),
               require('../models/Vaccination').countDocuments({ client: clientId }),
               require('../models/ParasiteControl').countDocuments({ client: clientId }),
-              require('../models/MobileClinic').countDocuments({ client: clientId })
+              require('../models/MobileClinic').countDocuments({ client: clientId }),
+              require('../models/EquineHealth').countDocuments({ client: clientId })
             ]);
             
-            const totalReferences = labCount + vaccinationCount + parasiteCount + mobileCount;
+            // Remove laboratory service from client if no more laboratory records
+            if (labCount === 0) {
+              const client = await Client.findById(clientId);
+              if (client) {
+                client.availableServices = client.availableServices.filter(s => s !== 'laboratory');
+                await client.save();
+                console.log(`✅ Removed 'laboratory' service from client ${clientId}`);
+              }
+            }
+            
+            const totalReferences = labCount + vaccinationCount + parasiteCount + mobileCount + equineCount;
             
             if (totalReferences === 0) {
               // Client is not referenced anywhere, safe to delete
@@ -940,7 +998,7 @@ router.delete('/bulk-delete',
 
       res.json(response);
     } catch (error) {
-      console.error('Bulk delete error:', error);
+      logger.error('Bulk delete error:', { error: error });
       return res.status(500).json({
         success: false,
         message: 'Error deleting laboratory records',
@@ -1005,21 +1063,32 @@ router.delete('/:id',
       // Delete the laboratory record
       await Laboratory.findByIdAndDelete(id);
       
-      // Smart client cleanup if client reference exists
+      // Update client's availableServices and smart cleanup if client reference exists
       let clientDeleted = false;
       if (clientId) {
         const Client = require('../models/Client');
         
         try {
           // Check if client is referenced in other services
-          const [labCount, vaccinationCount, parasiteCount, mobileCount] = await Promise.all([
+          const [labCount, vaccinationCount, parasiteCount, mobileCount, equineCount] = await Promise.all([
             Laboratory.countDocuments({ client: clientId }),
             require('../models/Vaccination').countDocuments({ client: clientId }),
             require('../models/ParasiteControl').countDocuments({ client: clientId }),
-            require('../models/MobileClinic').countDocuments({ client: clientId })
+            require('../models/MobileClinic').countDocuments({ client: clientId }),
+            require('../models/EquineHealth').countDocuments({ client: clientId })
           ]);
           
-          const totalReferences = labCount + vaccinationCount + parasiteCount + mobileCount;
+          // Remove laboratory service from client if no more laboratory records
+          if (labCount === 0) {
+            const client = await Client.findById(clientId);
+            if (client) {
+              client.availableServices = client.availableServices.filter(s => s !== 'laboratory');
+              await client.save();
+              console.log(`✅ Removed 'laboratory' service from client ${clientId}`);
+            }
+          }
+          
+          const totalReferences = labCount + vaccinationCount + parasiteCount + mobileCount + equineCount;
           
           if (totalReferences === 0) {
             // Client is not referenced anywhere, safe to delete
@@ -1040,7 +1109,7 @@ router.delete('/:id',
         clientDeleted: clientDeleted
       });
     } catch (error) {
-      console.error('Delete error:', error);
+      logger.error('Delete error:', { error: error });
       return res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -1102,9 +1171,9 @@ router.delete('/delete-all',
   // authorize('super_admin', 'admin'), // Temporarily disabled for testing
   asyncHandler(async (req, res) => {
     try {
-      console.log('🗑️ Starting delete all laboratory records operation');
-      console.log('👤 User role:', req.user?.role);
-      console.log('👤 User ID:', req.user?._id);
+      logger.info('Starting delete all laboratory records operation');
+      logger.info('User role:', { data: req.user?.role });
+      logger.info('User ID:', { data: req.user?._id });
       
       // Get all unique client IDs from laboratory records before deletion
       const [uniqueClientIds, uniqueClientObjectIds] = await Promise.all([
@@ -1152,10 +1221,10 @@ router.delete('/delete-all',
         }
       });
     } catch (error) {
-      console.error('❌ Error in delete-all operation:', error);
-      console.error('❌ Error stack:', error.stack);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error name:', error.name);
+      logger.error('Error in delete-all operation:', { error: error });
+      logger.error('Error stack:', { error: error.stack });
+      logger.error('Error message:', { error: error.message });
+      logger.error('Error name:', { error: error.name });
       
       // Return detailed error information
       return res.status(500).json({

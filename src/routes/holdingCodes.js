@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../utils/logger');
 const router = express.Router();
 const HoldingCode = require('../models/HoldingCode');
 const Client = require('../models/Client');
@@ -47,14 +48,14 @@ router.get('/', auth, async (req, res) => {
   try {
     const { village, active, page = 1, limit = 10, search } = req.query;
     
-    console.log('🔍 GET /holding-codes - Query params:', { village, active, page, limit, search });
+    logger.info('GET holding-codes - Query params:', { data: { village, active, page, limit, search } });
     
     // Build filter object
     const filter = {};
     if (village) filter.village = village;
     if (active !== undefined) filter.isActive = active === 'true';
     
-    console.log('📋 Filter object:', filter);
+    logger.info('Filter object:', { data: filter });
     
     // Add search functionality
     if (search) {
@@ -80,8 +81,8 @@ router.get('/', auth, async (req, res) => {
       .skip(skip)
       .limit(limitNum);
     
-    console.log('✅ Found holding codes:', holdingCodes.length);
-    console.log('📋 Holding codes data:', holdingCodes.map(hc => ({ code: hc.code, village: hc.village })));
+    logger.info('Found holding codes:', { data: holdingCodes.length });
+    logger.info('Holding codes data:', { data: holdingCodes.map(hc => ({ code: hc.code, village: hc.village })) });
     
     // Calculate pagination info
     const totalPages = Math.ceil(totalCount / limitNum);
@@ -97,7 +98,7 @@ router.get('/', auth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get holding codes error:', error);
+    logger.error('Get holding codes error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error fetching holding codes',
@@ -158,7 +159,7 @@ router.get('/stats', auth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get holding codes stats error:', error);
+    logger.error('Get holding codes stats error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error fetching holding codes statistics',
@@ -208,7 +209,7 @@ router.get('/:id', auth, async (req, res) => {
       data: holdingCode
     });
   } catch (error) {
-    console.error('Get holding code error:', error);
+    logger.error('Get holding code error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error fetching holding code',
@@ -228,7 +229,7 @@ router.get('/by-village/:village', auth, async (req, res) => {
       data: holdingCodes
     });
   } catch (error) {
-    console.error('Get village holding codes error:', error);
+    logger.error('Get village holding codes error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error fetching village holding codes',
@@ -299,7 +300,7 @@ router.post('/', auth, authorize('admin', 'supervisor'), async (req, res) => {
       message: 'Holding code created successfully'
     });
   } catch (error) {
-    console.error('Create holding code error:', error);
+    logger.error('Create holding code error:', { error: error });
     
     if (error.code === 'DUPLICATE_VILLAGE_HOLDING_CODE') {
       return res.status(400).json({
@@ -388,7 +389,7 @@ router.put('/:id', auth, authorize('admin', 'supervisor'), async (req, res) => {
       message: 'Holding code updated successfully'
     });
   } catch (error) {
-    console.error('Update holding code error:', error);
+    logger.error('Update holding code error:', { error: error });
     
     if (error.code === 'DUPLICATE_HOLDING_CODE') {
       return res.status(400).json({
@@ -469,7 +470,7 @@ router.delete('/bulk-delete', auth, authorize('super_admin'), async (req, res) =
       });
     }
     
-    console.log('🗑️ Bulk delete request for holding codes:', ids);
+    logger.info('Bulk delete request for holding codes:', { data: ids });
     
     const results = {
       deleted: 0,
@@ -533,7 +534,7 @@ router.delete('/bulk-delete', auth, authorize('super_admin'), async (req, res) =
       }
     }
     
-    console.log('✅ Bulk delete results:', results);
+    logger.info('Bulk delete results:', { data: results });
     
     res.json({
       success: true,
@@ -541,7 +542,7 @@ router.delete('/bulk-delete', auth, authorize('super_admin'), async (req, res) =
       results
     });
   } catch (error) {
-    console.error('Bulk delete holding codes error:', error);
+    logger.error('Bulk delete holding codes error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error during bulk delete operation',
@@ -575,7 +576,7 @@ router.delete('/bulk-delete', auth, authorize('super_admin'), async (req, res) =
  */
 router.delete('/delete-all', auth, authorize('super_admin'), async (req, res) => {
   try {
-    console.log('🗑️ Delete all holding codes request');
+    logger.info('Delete all holding codes request');
     
     // Check if any holding codes are being used
     const models = [
@@ -610,7 +611,7 @@ router.delete('/delete-all', auth, authorize('super_admin'), async (req, res) =>
     
     const result = await HoldingCode.deleteMany({});
     
-    console.log('✅ Deleted all holding codes:', result.deletedCount);
+    logger.info('Deleted all holding codes:', { data: result.deletedCount });
     
     res.json({
       success: true,
@@ -618,7 +619,7 @@ router.delete('/delete-all', auth, authorize('super_admin'), async (req, res) =>
       deletedCount: result.deletedCount
     });
   } catch (error) {
-    console.error('Delete all holding codes error:', error);
+    logger.error('Delete all holding codes error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error deleting all holding codes',
@@ -683,7 +684,7 @@ router.delete('/:id', auth, authorize('super_admin'), async (req, res) => {
       message: 'Holding code deleted successfully'
     });
   } catch (error) {
-    console.error('Delete holding code error:', error);
+    logger.error('Delete holding code error:', { error: error });
     res.status(500).json({
       success: false,
       message: 'Error deleting holding code',

@@ -6,6 +6,7 @@ const sharp = require('sharp');
 const { auth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Ensure upload directory exists (skip in serverless environment)
@@ -14,7 +15,7 @@ if (!fs.existsSync(uploadDir) && process.env.VERCEL !== '1') {
   try {
     fs.mkdirSync(uploadDir, { recursive: true });
   } catch (error) {
-    console.warn('Could not create upload directory:', error.message);
+    logger.warn('Could not create upload directory:', { data: error.message });
   }
 }
 
@@ -35,7 +36,7 @@ const storage = multer.diskStorage({
       try {
         fs.mkdirSync(fullPath, { recursive: true });
       } catch (error) {
-        console.warn('Could not create subdirectory:', error.message);
+        logger.warn('Could not create subdirectory:', { data: error.message });
         cb(null, '/tmp'); // Fallback to /tmp
         return;
       }
@@ -162,7 +163,7 @@ router.post('/:type',
             format: metadata.format
           };
         } catch (error) {
-          console.error('Error processing image:', error);
+          logger.error('Error processing image:', { error: error });
         }
       }
 

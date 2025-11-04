@@ -131,7 +131,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3001',
+        url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://https://ahcp-backend.vercel.app',
         description: 'Production server'
       }
     ],

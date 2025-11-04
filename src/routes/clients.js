@@ -8,6 +8,7 @@ const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { handleTemplate, handleImport } = require('../utils/importExportHelpers');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -202,8 +203,19 @@ router.get('/',
           {
             $lookup: {
               from: 'equinehealths',
-              localField: '_id',
-              foreignField: 'client',
+              let: { clientId: '$_id', nationalId: '$nationalId' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $or: [
+                        { $eq: ['$client', '$$clientId'] },
+                        { $eq: ['$client.nationalId', '$$nationalId'] }
+                      ]
+                    }
+                  }
+                }
+              ],
               as: 'equineHealths'
             }
           },
@@ -227,12 +239,13 @@ router.get('/',
             $addFields: {
               // Aggregate services received
               servicesReceived: {
-                $concatArrays: [
+                $setUnion: [
                   { $map: { input: '$mobileClinics', as: 'mc', in: 'mobile_clinic' } },
                   { $map: { input: '$vaccinations', as: 'v', in: 'vaccination' } },
                   { $map: { input: '$equineHealths', as: 'eh', in: 'equine_health' } },
                   { $map: { input: '$laboratories', as: 'l', in: 'laboratory' } },
-                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } }
+                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } },
+                  { $ifNull: ['$availableServices', []] }
                 ]
               },
               // Get birth date from any form that has it
@@ -353,6 +366,7 @@ router.get('/',
               animals: 1,
               availableServices: 1,
               coordinates: 1,
+              serialNumber: 1,
               createdBy: 1,
               updatedBy: 1,
               createdAt: 1,
@@ -371,7 +385,7 @@ router.get('/',
               parasiteControlCount: { $size: '$parasiteControls' }
             }
           },
-          { $sort: { createdAt: -1 } },
+          { $sort: { serialNumber: 1, createdAt: 1 } }, // Sort by serialNumber ascending, then by createdAt
           { $skip: skip },
           { $limit: parseInt(limit) }
         ];
@@ -401,10 +415,10 @@ router.get('/',
           .populate('village', 'nameArabic nameEnglish serialNumber sector')
           .skip(skip)
           .limit(parseInt(limit))
-          .sort({ createdAt: -1 });
+          .sort({ serialNumber: 1, createdAt: 1 }); // Sort by serialNumber ascending, then by createdAt
       }
     } catch (findError) {
-      console.error('Error finding clients:', findError);
+      logger.error('Error finding clients:', { error: findError });
       clients = [];
     }
     
@@ -432,8 +446,19 @@ router.get('/',
           {
             $lookup: {
               from: 'equinehealths',
-              localField: '_id',
-              foreignField: 'client',
+              let: { clientId: '$_id', nationalId: '$nationalId' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $or: [
+                        { $eq: ['$client', '$$clientId'] },
+                        { $eq: ['$client.nationalId', '$$nationalId'] }
+                      ]
+                    }
+                  }
+                }
+              ],
               as: 'equineHealths'
             }
           },
@@ -456,12 +481,13 @@ router.get('/',
           {
             $addFields: {
               servicesReceived: {
-                $concatArrays: [
+                $setUnion: [
                   { $map: { input: '$mobileClinics', as: 'mc', in: 'mobile_clinic' } },
                   { $map: { input: '$vaccinations', as: 'v', in: 'vaccination' } },
                   { $map: { input: '$equineHealths', as: 'eh', in: 'equine_health' } },
                   { $map: { input: '$laboratories', as: 'l', in: 'laboratory' } },
-                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } }
+                  { $map: { input: '$parasiteControls', as: 'pc', in: 'parasite_control' } },
+                  { $ifNull: ['$availableServices', []] }
                 ]
               }
             }
@@ -511,7 +537,7 @@ router.get('/',
         total = await Client.countDocuments(filter);
       }
     } catch (countError) {
-      console.error('Error counting clients:', countError);
+      logger.error('Error counting clients:', { error: countError });
       total = 0;
     }
 
@@ -559,7 +585,7 @@ router.get('/statistics',
         data: statistics
       });
     } catch (error) {
-      console.error('Error getting clients statistics:', error);
+      logger.error('Error getting clients statistics:', { error: error });
       
       // Return basic count if aggregation fails
       let basicStats = {
@@ -572,7 +598,7 @@ router.get('/statistics',
       try {
         basicStats.totalClients = await Client.countDocuments();
       } catch (countError) {
-        console.error('Error counting clients:', countError);
+        logger.error('Error counting clients:', { error: countError });
       }
       
       res.json({
@@ -620,14 +646,14 @@ router.get('/export',
       search
     } = req.query;
     
-    console.log('🔍 Clients Export - Received query params:', req.query);
+    logger.info('Clients Export - Received query params:', { data: req.query });
     
     const filter = {};
     
     // Services received filter
     if (servicesReceived && servicesReceived !== '__all__') {
       const services = servicesReceived.split(',');
-      console.log('🔍 Filtering by services:', services);
+      logger.info('Filtering by services:', { data: services });
       
       // Create comprehensive service filter to match different service name formats
       const serviceVariants = [];
@@ -648,7 +674,7 @@ router.get('/export',
         }
       });
       
-      console.log('🔍 Service variants to search for:', serviceVariants);
+      logger.info('Service variants to search for:', { data: serviceVariants });
       
       // Use $or for services fields only, don't overwrite existing $or
       const servicesFilter = {
@@ -705,22 +731,22 @@ router.get('/export',
       }
     }
 
-    console.log('🔍 Clients Export - Applied filter:', JSON.stringify(filter, null, 2));
+    logger.info('Clients Export - Applied filter:', { data: JSON.stringify(filter, null, 2) });
 
     const clients = await Client.find(filter)
       .populate('village', 'nameArabic nameEnglish name serialNumber')
       .sort({ createdAt: -1 });
 
-    console.log(`📊 Clients Export - Found ${clients.length} clients matching filter`);
+    logger.info(`Clients Export - Found ${clients.length} clients matching filter`);
     
     // Add detailed logging for debugging
     if (clients.length === 0) {
-      console.log('⚠️ No clients found. Checking if any clients exist in database...');
+      logger.info('No clients found Checking if any clients exist in database');
       const totalClients = await Client.countDocuments({});
-      console.log(`📈 Total clients in database: ${totalClients}`);
+      logger.info(`Total clients in database: ${totalClients}`);
       
       if (totalClients > 0 && servicesReceived) {
-        console.log('🔍 Checking what services exist in database...');
+        logger.info('Checking what services exist in database');
         
         // Check what services actually exist in the database
         const servicesAggregation = await Client.aggregate([
@@ -740,11 +766,11 @@ router.get('/export',
           { $sort: { count: -1 } }
         ]);
         
-        console.log('📊 Services found in database:', servicesAggregation);
-        console.log('🔍 Filter may be too restrictive. Consider adjusting filter criteria.');
+        logger.info('Services found in database:', { data: servicesAggregation });
+        logger.info('Filter may be too restrictive Consider adjusting filter criteria');
       }
     } else {
-      console.log(`✅ Successfully found ${clients.length} clients for export`);
+      logger.info(`Successfully found ${clients.length} clients for export`);
     }
 
     // Transform data for export to match table columns exactly
@@ -791,6 +817,7 @@ router.get('/export',
       const birthDateSource = client.birthDateFromForms ? 'من النماذج' : 'من المربي';
       
       return {
+        'الرقم التسلسلي': client.serialNumber || '',
         'الرقم القومي': client.nationalId || client.national_id || '',
         'الاسم': client.name || '',
         'رقم الهاتف': client.phone || '',
@@ -811,6 +838,7 @@ router.get('/export',
       
       // Define CSV fields explicitly to handle empty data
       const csvFields = [
+        'الرقم التسلسلي',
         'الرقم القومي',
         'الاسم', 
         'رقم الهاتف',
@@ -829,7 +857,7 @@ router.get('/export',
       
       // Handle empty data case
       if (transformedClients.length === 0) {
-        console.log('⚠️ No clients found matching the filter criteria');
+        logger.info('No clients found matching the filter criteria');
         // Create empty CSV with headers only
         const csv = parser.parse([]);
         res.setHeader('Content-Type', 'text/csv');
@@ -851,9 +879,10 @@ router.get('/export',
       
       // Handle empty data case
       if (transformedClients.length === 0) {
-        console.log('⚠️ No clients found matching the filter criteria for Excel export');
+        logger.info('No clients found matching the filter criteria for Excel export');
         // Create empty worksheet with headers only
         const emptyData = [{
+          'الرقم التسلسلي': '',
           'الرقم القومي': '',
           'الاسم': '', 
           'رقم الهاتف': '',
@@ -1085,30 +1114,27 @@ router.get('/:id/visits',
         require('../models/MobileClinic').find({ client: clientId })
           .populate('client', 'name nationalId phone village')
           .populate('holdingCode', 'code village description isActive')
-          .sort({ date: -1 }),
+          .sort({ serialNo: 1 }), // Sort by serialNo ascending
         
         // Vaccination visits
         require('../models/Vaccination').find({ client: clientId })
           .populate('client', 'name nationalId phone village')
           .populate('holdingCode', 'code village description isActive')
-          .sort({ date: -1 }),
+          .sort({ serialNo: 1 }), // Sort by serialNo ascending
         
         // Parasite Control visits
         require('../models/ParasiteControl').find({ client: clientId })
           .populate('client', 'name nationalId phone village')
           .populate('holdingCode', 'code village description isActive')
-          .sort({ date: -1 }),
+          .sort({ serialNo: 1 }), // Sort by serialNo ascending
         
-        // Equine Health visits
-        require('../models/EquineHealth').find({ client: clientId })
-          .populate('client', 'name nationalId phone village')
-          .populate('holdingCode', 'code village description isActive')
-          .sort({ date: -1 }),
+        // Equine Health visits - uses embedded client object with nationalId, no holdingCode field
+        require('../models/EquineHealth').find({ 'client.nationalId': client.nationalId })
+          .sort({ serialNo: 1 }), // Sort by serialNo ascending
         
-        // Laboratory visits
+        // Laboratory visits - no holdingCode field in Laboratory model
         require('../models/Laboratory').find({ client: clientId })
           .populate('client', 'name nationalId phone village')
-          .populate('holdingCode', 'code village description isActive')
           .sort({ date: -1 })
       ]);
 
@@ -1123,7 +1149,7 @@ router.get('/:id/visits',
         }
       });
     } catch (error) {
-      console.error('Error fetching client visits:', error);
+      logger.error('Error fetching client visits:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Error fetching client visits',
@@ -1341,7 +1367,7 @@ router.delete('/bulk-delete',
 
       res.json(response);
     } catch (error) {
-      console.error('Bulk delete error:', error);
+      logger.error('Bulk delete error:', { error: error });
       return res.status(500).json({
         success: false,
         message: 'Error deleting clients',

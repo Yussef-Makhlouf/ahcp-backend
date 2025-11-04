@@ -6,6 +6,7 @@ const { validate, schemas } = require('../middleware/validation');
 const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 /**
@@ -245,7 +246,7 @@ router.get('/supervisors-only',
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error('❌ Error fetching supervisors-only:', error);
+      logger.error('Error fetching supervisors-only:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في جلب بيانات المشرفين',
@@ -316,7 +317,7 @@ router.get('/supervisors/list',
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error('❌ Error fetching supervisors:', error);
+      logger.error('Error fetching supervisors:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في جلب بيانات المشرفين',
@@ -345,7 +346,7 @@ router.post('/supervisors/update-codes',
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
     try {
-      console.log('🔄 Starting to update existing supervisors...');
+      logger.info('Starting to update existing supervisors');
 
       // Get all section supervisors
       const supervisors = await User.find({
@@ -401,7 +402,7 @@ router.post('/supervisors/update-codes',
         }
       });
     } catch (error) {
-      console.error('❌ Error updating supervisors:', error);
+      logger.error('Error updating supervisors:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في تحديث المشرفين',

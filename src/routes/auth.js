@@ -8,6 +8,7 @@ const { auth, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { sendPasswordResetEmail } = require('../utils/emailService');
 
+const logger = require('../utils/logger');
 const router = express.Router();
 
 /**
@@ -174,7 +175,7 @@ router.post('/login',
 
       // Check if JWT_SECRET is available
       if (!process.env.JWT_SECRET) {
-        console.error('❌ JWT_SECRET not found in environment variables');
+        logger.error('JWT_SECRET not found in environment variables');
         return res.status(500).json({
           success: false,
           message: 'Server configuration error',
@@ -240,7 +241,7 @@ router.post('/login',
         }
       });
     } catch (error) {
-      console.error('❌ Login error:', error);
+      logger.error('Login error:', { error: error });
       res.status(500).json({
         success: false,
         message: 'Internal server error during login',
@@ -623,7 +624,7 @@ router.get('/supervisors',
       // Check cache first for performance
       const now = Date.now();
       if (supervisorsCache && (now - cacheTimestamp) < CACHE_DURATION) {
-        console.log('📋 Returning cached supervisors');
+        logger.info('Returning cached supervisors');
         return res.json({
           success: true,
           data: supervisorsCache,
@@ -632,7 +633,7 @@ router.get('/supervisors',
         });
       }
 
-      console.log('🔍 Fetching supervisors from database...');
+      logger.info('Fetching supervisors from database');
       
       // Get all active users with supervisor roles - optimized query
       const supervisors = await User.find(
@@ -661,7 +662,7 @@ router.get('/supervisors',
         count: supervisors.length
       });
     } catch (error) {
-      console.error('❌ Error fetching supervisors:', error);
+      logger.error('Error fetching supervisors:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في جلب بيانات المشرفين',
@@ -676,7 +677,7 @@ router.post('/supervisors/clear-cache',
   asyncHandler(async (req, res) => {
     supervisorsCache = null;
     cacheTimestamp = 0;
-    console.log('🗑️ Supervisors cache cleared');
+    logger.info('Supervisors cache cleared');
     res.json({
       success: true,
       message: 'Cache cleared successfully'
@@ -761,7 +762,7 @@ router.get('/supervisors/by-section/:section',
         fallback: supervisors.length > 0 && supervisors[0]?.role === 'super_admin'
       });
     } catch (error) {
-      console.error('❌ Error fetching supervisors by section:', error);
+      logger.error('Error fetching supervisors by section:', { error: error });
       res.status(500).json({
         success: false,
         message: 'خطأ في جلب بيانات المشرفين',
@@ -871,7 +872,7 @@ router.post('/forgot-password',
       const emailResult = await sendPasswordResetEmail(user.email, resetUrl, user.name);
       
       if (emailResult.success) {
-        console.log('📧 Password reset email sent successfully to:', user.email);
+        logger.info('Password reset email sent successfully to:', { data: user.email });
         res.json({
           success: true,
           message: 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
@@ -880,7 +881,7 @@ router.post('/forgot-password',
           }
         });
       } else {
-        console.error('❌ Failed to send email:', emailResult.error);
+        logger.error('Failed to send email:', { error: emailResult.error });
         // Still return success but log the error
         res.json({
           success: true,
@@ -891,7 +892,7 @@ router.post('/forgot-password',
         });
       }
     } catch (emailError) {
-      console.error('❌ Email service error:', emailError);
+      logger.error('Email service error:', { error: emailError });
       // Fallback: return the reset URL even if email fails
       res.json({
         success: true,

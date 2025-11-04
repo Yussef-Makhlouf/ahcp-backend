@@ -9,6 +9,7 @@ const { auth, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
+const logger = require('../utils/logger');
 // Import/Export functionality moved to import-export routes
 
 const router = express.Router();
@@ -142,15 +143,15 @@ router.get('/',
   asyncHandler(async (req, res) => {
     const startTime = Date.now();
     
-    console.log('🔍 ParasiteControl Backend - Received query params:', req.query);
+    logger.info('ParasiteControl Backend - Received query params:', { data: req.query });
     
     // Build advanced filter using FilterBuilder
     const filter = filterBuilder.buildParasiteControlFilter(req.query);
     const paginationParams = filterBuilder.buildPaginationParams(req.query);
     const sortParams = filterBuilder.buildSortParams(req.query);
 
-    console.log('📋 Built filter object:', JSON.stringify(filter, null, 2));
-    console.log('📄 Pagination params:', paginationParams);
+    logger.info('Built filter object:', { data: JSON.stringify(filter, null, 2) });
+    logger.info('Pagination params:', { data: paginationParams });
 
     // Execute query with performance tracking
     const queryStartTime = Date.now();
@@ -176,7 +177,7 @@ router.get('/',
         ParasiteControl.countDocuments(filter)
       ]);
     } catch (populateError) {
-      console.error('🚨 Populate error, falling back to basic query:', populateError);
+      logger.error('Populate error falling back to basic query:', { error: populateError });
       // Fallback with basic populate if there's an issue
       [records, total] = await Promise.all([
         ParasiteControl.find(filter)
@@ -213,20 +214,20 @@ router.get('/',
       try {
         const explanation = await queryLogger.explainQuery(ParasiteControl, filter);
         if (explanation) {
-          console.log('🔍 Query Performance Analysis:', {
+          logger.info('Query Performance Analysis:', { data: {
             indexesUsed: explanation.indexesUsed,
             documentsExamined: explanation.documentsExamined,
             keysExamined: explanation.keysExamined,
             efficiency: explanation.keysExamined > 0 ? 
               (explanation.documentsExamined / explanation.keysExamined).toFixed(2) : 'N/A'
-          });
+          }});
         }
       } catch (explainError) {
-        console.warn('⚠️ Could not explain query:', explainError.message);
+        logger.warn('Could not explain query:', { data: explainError.message });
       }
     }
 
-    console.log(`📊 Query results: Found ${records.length} records out of ${total} total matching filter`);
+    logger.info(`Query results: Found ${records.length} records out of ${total} total matching filter`);
 
     res.json({
       success: true,
@@ -296,7 +297,7 @@ router.get('/statistics',
         data: statistics
       });
     } catch (error) {
-      console.error('Error getting parasite control statistics:', error);
+      logger.error('Error getting parasite control statistics:', { error: error });
       
       // Return default statistics if method fails
       const defaultStats = {
@@ -451,7 +452,7 @@ router.get('/detailed-statistics',
         data: detailedStats
       });
     } catch (error) {
-      console.error('Error getting detailed parasite control statistics:', error);
+      logger.error('Error getting detailed parasite control statistics:', { error: error });
       
       // Return default detailed statistics if method fails
       const defaultStats = {
@@ -521,7 +522,7 @@ router.get('/export',
       complyingToInstructions
     } = req.query;
     
-    console.log('🔍 Export - Received query params:', req.query);
+    logger.info('Export - Received query params:', { data: req.query });
     
     const filter = {};
     
@@ -531,46 +532,46 @@ router.get('/export',
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
-      console.log('📅 Export - Date filter applied:', filter.date);
+      logger.info('Export - Date filter applied:', { data: filter.date });
     }
     
     // Insecticide method filter
     if (method && method !== '__all__') {
       filter['insecticide.method'] = { $in: method.split(',') };
-      console.log('🧪 Export - Method filter applied:', filter['insecticide.method']);
+      logger.info('Export - Method filter applied:', { data: filter['insecticide.method'] });
     }
     
     // Insecticide category filter
     if (category && category !== '__all__') {
       filter['insecticide.category'] = { $in: category.split(',') };
-      console.log('🏷️ Export - Category filter applied:', filter['insecticide.category']);
+      logger.info('Export - Category filter applied:', { data: filter['insecticide.category'] });
     }
     
     // Insecticide status filter
     if (status && status !== '__all__') {
       filter['insecticide.status'] = { $in: status.split(',') };
-      console.log('📊 Export - Status filter applied:', filter['insecticide.status']);
+      logger.info('Export - Status filter applied:', { data: filter['insecticide.status'] });
     }
     
     // Insecticide type filter
     if (type && type !== '__all__') {
       filter['insecticide.type'] = { $in: type.split(',') };
-      console.log('🔬 Export - Type filter applied:', filter['insecticide.type']);
+      logger.info('Export - Type filter applied:', { data: filter['insecticide.type'] });
     }
     
     // Herd health status filter
     if (herdHealthStatus && herdHealthStatus !== '__all__') {
       filter.herdHealthStatus = { $in: herdHealthStatus.split(',') };
-      console.log('🐑 Export - Herd health filter applied:', filter.herdHealthStatus);
+      logger.info('Export - Herd health filter applied:', { data: filter.herdHealthStatus });
     }
     
     // Complying to instructions filter
     if (complyingToInstructions && complyingToInstructions !== '__all__') {
       filter.complyingToInstructions = { $in: complyingToInstructions.split(',') };
-      console.log('✅ Export - Complying filter applied:', filter.complyingToInstructions);
+      logger.info('Export - Complying filter applied:', { data: filter.complyingToInstructions });
     }
     
-    console.log('🔍 Export - Final MongoDB filter object:', JSON.stringify(filter, null, 2));
+    logger.info('Export - Final MongoDB filter object:', { data: JSON.stringify(filter, null, 2) });
 
     const records = await ParasiteControl.find(filter)
       .populate('client', 'name nationalId phone village detailedAddress birthDate')
@@ -798,8 +799,8 @@ router.post('/',
     }
 
     // Handle client - find or create
-    console.log('🔍 Client data received:', req.body.client);
-    console.log('🔍 Client type:', typeof req.body.client);
+    logger.info('Client data received:', { data: req.body.client });
+    logger.info('Client type:', { data: typeof req.body.client });
     
     let clientId;
     if (typeof req.body.client === 'object' && req.body.client.name) {
@@ -830,7 +831,7 @@ router.post('/',
       }
       
       clientId = client._id;
-      console.log('✅ Client created/found with ID:', clientId);
+      logger.info('Client createdfound with ID:', { data: clientId });
     } else if (typeof req.body.client === 'string' && req.body.client.trim()) {
       // Client name provided, create simple client
       const Client = require('../models/Client');
@@ -847,14 +848,14 @@ router.post('/',
       });
       await client.save();
       clientId = client._id;
-      console.log('✅ Simple client created with ID:', clientId);
+      logger.info('Simple client created with ID:', { data: clientId });
     } else {
       // Client ID provided (ObjectId)
       clientId = req.body.client;
-      console.log('✅ Using existing client ID:', clientId);
+      logger.info('Using existing client ID:', { data: clientId });
     }
     
-    console.log('🔍 Final clientId before saving:', clientId);
+    logger.info('Final clientId before saving:', { data: clientId });
 
     // Handle holding code - convert to ObjectId if provided
     let holdingCodeId = null;
@@ -871,10 +872,10 @@ router.post('/',
         }
       }
     }
-    console.log('🔍 Holding code processing:', req.body.holdingCode, '→', holdingCodeId);
-    console.log('🔍 Holding code type:', typeof req.body.holdingCode);
+    logger.info('Holding code processing:', { data: { holdingCode: req.body.holdingCode, holdingCodeId: holdingCodeId } });
+    logger.info('Holding code type:', { data: typeof req.body.holdingCode });
     const mongoose = require('mongoose');
-    console.log('🔍 Holding code is valid ObjectId:', mongoose.Types.ObjectId.isValid(req.body.holdingCode));
+    logger.info('Holding code is valid ObjectId:', { data: mongoose.Types.ObjectId.isValid(req.body.holdingCode) });
 
     const record = new ParasiteControl({
       ...req.body,
@@ -941,17 +942,17 @@ router.put('/:id',
   auth,
   validate(schemas.parasiteControlUpdate),
   asyncHandler(async (req, res) => {
-    console.log('🔄 PUT /parasite-control/:id - Update request received');
-    console.log('📋 Request params:', req.params);
-    console.log('📤 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('👤 User:', req.user?.email);
-    console.log('🚨 HOLDING CODE DETAILED DEBUG:');
-    console.log('req.body.holdingCode:', req.body.holdingCode);
-    console.log('Type:', typeof req.body.holdingCode);
-    console.log('Is undefined?', req.body.holdingCode === undefined);
-    console.log('Is null?', req.body.holdingCode === null);
-    console.log('Is empty string?', req.body.holdingCode === '');
-    console.log('All body keys:', Object.keys(req.body));
+    logger.info('PUT parasite-control:id - Update request received');
+    logger.info('Request params:', { data: req.params });
+    logger.info('Request body:', { data: JSON.stringify(req.body, null, 2) });
+    logger.info('User:', { data: req.user?.email });
+    logger.info('HOLDING CODE DETAILED DEBUG:');
+    logger.info('reqbodyholdingCode:', { data: req.body.holdingCode });
+    logger.info('Type:', { data: typeof req.body.holdingCode });
+    logger.info('Is undefined', { data: req.body.holdingCode === undefined });
+    logger.info('Is null', { data: req.body.holdingCode === null });
+    logger.info('Is empty string', { data: req.body.holdingCode === '' });
+    logger.info('All body keys:', { data: Object.keys(req.body) });
     
     const record = await ParasiteControl.findById(req.params.id);
     
@@ -979,8 +980,8 @@ router.put('/:id',
     }
 
     // Handle client - find or create
-    console.log('🔍 PUT - Client data received:', req.body.client);
-    console.log('🔍 PUT - Client type:', typeof req.body.client);
+    logger.info('PUT - Client data received:', { data: req.body.client });
+    logger.info('PUT - Client type:', { data: typeof req.body.client });
     
     let updateData = { ...req.body };
     let clientId;
@@ -1037,7 +1038,7 @@ router.put('/:id',
       
       clientId = client._id;
       updateData.client = clientId;
-      console.log('✅ PUT - Client created/found with ID:', clientId);
+      logger.info('PUT - Client createdfound with ID:', { data: clientId });
     } else if (typeof req.body.client === 'string' && req.body.client.trim()) {
       // Client name provided, create simple client
       const Client = require('../models/Client');
@@ -1055,53 +1056,53 @@ router.put('/:id',
       await client.save();
       clientId = client._id;
       updateData.client = clientId;
-      console.log('✅ PUT - Simple client created with ID:', clientId);
+      logger.info('PUT - Simple client created with ID:', { data: clientId });
     } else {
       // Client ID provided (ObjectId)
       clientId = req.body.client;
       updateData.client = clientId;
-      console.log('✅ PUT - Using existing client ID:', clientId);
+      logger.info('PUT - Using existing client ID:', { data: clientId });
     }
     
-    console.log('🔍 PUT - Final clientId before updating:', clientId);
+    logger.info('PUT - Final clientId before updating:', { data: clientId });
 
     // Handle holding code - convert to ObjectId if provided
     let holdingCodeId = null;
-    console.log('🔍 PUT - Raw holdingCode from request:', {
+    logger.info('PUT - Raw holdingCode from request:', { data: {
       value: req.body.holdingCode,
       type: typeof req.body.holdingCode,
       isNull: req.body.holdingCode === null,
       isUndefined: req.body.holdingCode === undefined,
       isEmpty: req.body.holdingCode === '',
       length: req.body.holdingCode?.length
-    });
+    } });
     
     if (req.body.holdingCode && req.body.holdingCode !== null && typeof req.body.holdingCode === 'string' && req.body.holdingCode.trim() !== '') {
       const mongoose = require('mongoose');
       const trimmedCode = req.body.holdingCode.trim();
-      console.log('🔍 PUT - Trimmed holdingCode:', trimmedCode);
-      console.log('🔍 PUT - Is valid ObjectId?', mongoose.Types.ObjectId.isValid(trimmedCode));
+      logger.info('PUT - Trimmed holdingCode:', { data: trimmedCode });
+      logger.info('PUT - Is valid ObjectId', { data: mongoose.Types.ObjectId.isValid(trimmedCode) });
       
       if (mongoose.Types.ObjectId.isValid(trimmedCode)) {
         holdingCodeId = trimmedCode;
-        console.log('✅ PUT - Using holdingCode as ObjectId:', holdingCodeId);
+        logger.info('PUT - Using holdingCode as ObjectId:', { data: holdingCodeId });
       } else {
         // If it's a code string, find the holding code by code
-        console.log('🔍 PUT - Searching for holdingCode by code:', trimmedCode);
+        logger.info('PUT - Searching for holdingCode by code:', { data: trimmedCode });
         const HoldingCode = require('../models/HoldingCode');
         const holdingCode = await HoldingCode.findOne({ code: trimmedCode });
         if (holdingCode) {
           holdingCodeId = holdingCode._id;
-          console.log('✅ PUT - Found holdingCode by code:', holdingCodeId);
+          logger.info('PUT - Found holdingCode by code:', { data: holdingCodeId });
         } else {
-          console.log('❌ PUT - No holdingCode found with code:', trimmedCode);
+          logger.info('PUT - No holdingCode found with code:', { data: trimmedCode });
         }
       }
     } else {
-      console.log('⚠️ PUT - holdingCode is null, undefined, or empty - will be set to null');
+      logger.info('PUT - holdingCode is null undefined or empty - will be set to null');
     }
     
-    console.log('🎯 PUT - Final holdingCodeId to save:', holdingCodeId);
+    logger.info('PUT - Final holdingCodeId to save:', { data: holdingCodeId });
     updateData.holdingCode = holdingCodeId;
 
     // Update record
@@ -1224,7 +1225,7 @@ router.delete('/bulk-delete',
 
       res.json(response);
     } catch (error) {
-      console.error('Bulk delete error:', error);
+      logger.error('Bulk delete error:', { error: error });
       return res.status(500).json({
         success: false,
         message: 'Error deleting parasite control records',

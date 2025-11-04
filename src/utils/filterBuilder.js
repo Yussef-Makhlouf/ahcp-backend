@@ -1,5 +1,5 @@
 const { normalizeEquineInterventionCategoryList } = require('./interventionCategories');
-
+const logger = require('./logger');
 class FilterBuilder {
   constructor() {
     this.DEFAULT_LIMIT = 30;
@@ -271,21 +271,9 @@ class FilterBuilder {
     const sampleTypeFilter = this.buildMultiValueFilter(query.sampleType);
     if (sampleTypeFilter) filter.sampleType = sampleTypeFilter;
     
-    // فلتر نتيجة الفحص
-    const testResultFilter = this.buildMultiValueFilter(query.testResult);
-    if (testResultFilter) filter['testResults.status'] = testResultFilter;
-    
-    // فلتر حالة الفحص
-    const testStatusFilter = this.buildMultiValueFilter(query.testStatus);
-    if (testStatusFilter) filter.testStatus = testStatusFilter;
-    
     // فلتر نوع الفحص
     const testTypeFilter = this.buildMultiValueFilter(query.testType);
-    if (testTypeFilter) filter['testResults.testType'] = testTypeFilter;
-    
-    // فلتر الأولوية
-    const priorityFilter = this.buildMultiValueFilter(query.priority);
-    if (priorityFilter) filter.priority = priorityFilter;
+    if (testTypeFilter) filter.testType = testTypeFilter;
     
     return filter;
   }
@@ -352,11 +340,11 @@ class FilterBuilder {
 
     const interventionFilter = this.buildMultiValueFilter(query.interventionCategory);
     if (interventionFilter) {
-      console.log('🔍 Original intervention filter:', interventionFilter);
+      logger.info('Original intervention filter:', { data: interventionFilter });
       
       if (interventionFilter.$in) {
         const normalizedIn = normalizeEquineInterventionCategoryList(interventionFilter.$in);
-        console.log('🔄 Normalized $in values:', normalizedIn);
+        logger.info('Normalized in values:', { data: normalizedIn });
         if (normalizedIn.length) {
           interventionFilter.$in = normalizedIn;
         } else {
@@ -366,7 +354,7 @@ class FilterBuilder {
 
       if (interventionFilter.$nin) {
         const normalizedNin = normalizeEquineInterventionCategoryList(interventionFilter.$nin);
-        console.log('🔄 Normalized $nin values:', normalizedNin);
+        logger.info('Normalized nin values:', { data: normalizedNin });
         if (normalizedNin.length) {
           interventionFilter.$nin = normalizedNin;
         } else {
@@ -376,7 +364,7 @@ class FilterBuilder {
 
       if (Object.keys(interventionFilter).length > 0) {
         filter.interventionCategory = interventionFilter;
-        console.log('✅ Final intervention filter applied:', interventionFilter);
+        logger.info('Final intervention filter applied:', { data: interventionFilter });
       }
     }
 
@@ -400,7 +388,7 @@ class FilterBuilder {
       if (searchFilter) Object.assign(filter, searchFilter);
     }
 
-    console.log('🎯 Final EquineHealth filter:', JSON.stringify(filter, null, 2));
+    logger.info('Final EquineHealth filter:', { data: JSON.stringify(filter, null, 2) });
     return filter;
   }
 
@@ -418,8 +406,14 @@ class FilterBuilder {
 
   // بناء معاملات الترتيب
   buildSortParams(query) {
-    const sortBy = query.sortBy || 'date';
-    const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
+    // Default to serialNo ascending if no sort specified
+    const sortBy = query.sortBy || 'serialNo';
+    const sortOrder = query.sortOrder === 'asc' ? 1 : (query.sortOrder === 'desc' ? -1 : 1);
+    
+    // For serialNo, always use ascending order unless explicitly specified otherwise
+    if (sortBy === 'serialNo' || sortBy === 'serialNumber') {
+      return { serialNo: query.sortOrder === 'desc' ? -1 : 1 };
+    }
     
     return { [sortBy]: sortOrder };
   }
