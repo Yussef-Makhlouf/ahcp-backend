@@ -1817,7 +1817,7 @@ const processVaccinationRow = async (row, userId, errors) => {
     
     // Create vaccination record
     const vaccination = new Vaccination({
-      serialNo: generateSerialNo(row, 'VAC'),
+      serialNo: await generateSerialNo(row, 'VAC', Vaccination),
       date: dates.mainDate,
       client: client._id,
       farmLocation: getFieldValue(row, [
@@ -1914,7 +1914,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
     
     // Create parasite control record
     const parasiteControl = new ParasiteControl({
-      serialNo: generateSerialNo(row, 'PAR'),
+      serialNo: await generateSerialNo(row, 'PAR', ParasiteControl),
       date: dates.mainDate,
       client: client._id,
       herdLocation: (() => {
@@ -1983,6 +1983,33 @@ const processParasiteControlRow = async (row, userId, errors) => {
             // Only use real data, avoid default values when actual data exists
             if (typeValue && typeValue !== '' && typeValue !== 'N/A' && typeValue !== 'null' && typeValue !== 'undefined') {
               return typeValue.toString().trim();
+            }
+            
+            // Try to infer from other fields before throwing error
+            const methodValue = getFieldValue(row, [
+              'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
+              'Application Method', 'applicationMethod', 'application_method',
+              'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
+            ]);
+            
+            const categoryValue = getFieldValue(row, [
+              'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
+              'فئة المبيد'
+            ]);
+            
+            // Try to infer type from method or category
+            if (methodValue) {
+              const methodLower = methodValue.toString().toLowerCase();
+              if (methodLower.includes('pour')) return 'Pour-on Insecticide';
+              if (methodLower.includes('spray')) return 'Spray Insecticide';
+              if (methodLower.includes('oral') || methodLower.includes('drench')) return 'Oral Insecticide';
+            }
+            
+            if (categoryValue) {
+              const categoryLower = categoryValue.toString().toLowerCase();
+              if (categoryLower.includes('pour')) return 'Pour-on Insecticide';
+              if (categoryLower.includes('spray')) return 'Spray Insecticide';
+              if (categoryLower.includes('oral')) return 'Oral Insecticide';
             }
             
             // If no type found, this will cause validation error which is better than fake data
@@ -2422,7 +2449,7 @@ const processMobileClinicRow = async (row, userId, errors) => {
     ]);
 
     const mobileClinic = new MobileClinic({
-      serialNo: generateSerialNo(row, 'MC'),
+      serialNo: await generateSerialNo(row, 'MC', MobileClinic),
       date: dates.mainDate,
       client: client._id,
       farmLocation: getFieldValue(row, [
@@ -3330,15 +3357,34 @@ const processSpeciesCounts = (row) => {
  * Generate serial number - Returns the original serial number as-is
  * If no serial number is provided, generates a unique one
  */
-const generateSerialNo = (row, prefix) => {
+const generateSerialNo = async (row, prefix, Model) => {
   const serialNo = getFieldValue(row, [
     'Serial No', 'serialNo', 'serial_no', 'Serial Number',
     'الرقم التسلسلي', 'رقم تسلسلي'
   ]);
   
-  // Return the original serial number as-is if it exists
+  // If serial number exists in Excel, check for duplicates and handle them
   if (serialNo) {
-    return serialNo;
+    const originalSerialNo = serialNo.toString().trim();
+    
+    // Check if this serial number already exists in the database
+    if (Model) {
+      const existingRecord = await Model.findOne({ serialNo: originalSerialNo });
+      if (existingRecord) {
+        // Generate a unique serial number by appending a suffix
+        let counter = 1;
+        let uniqueSerialNo = `${originalSerialNo}-${counter}`;
+        
+        while (await Model.findOne({ serialNo: uniqueSerialNo })) {
+          counter++;
+          uniqueSerialNo = `${originalSerialNo}-${counter}`;
+        }
+        
+        return uniqueSerialNo;
+      }
+    }
+    
+    return originalSerialNo;
   }
   
   // Only generate a new serial number if none was provided
@@ -3614,7 +3660,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       sampleCode: getFieldValue(row, [
         'sampleCode', 'Sample Code', 'code', 'sample_code',
         'رمز العينة', 'رمز'
-      ]) || generateSerialNo(row, 'LAB'),
+      ]) || await generateSerialNo(row, 'LAB', Laboratory),
       date: dates.mainDate,
       client: client?._id || null, // Add client reference if available
       clientName: clientData.name || 'غير محدد',
@@ -3741,7 +3787,7 @@ const processEquineHealthRow = async (row, userId, errors) => {
     // Create equine health record
     // Note: EquineHealth uses embedded client data (not ObjectId reference)
     const equineHealth = new EquineHealth({
-      serialNo: generateSerialNo(row, 'EH'),
+      serialNo: await generateSerialNo(row, 'EH', EquineHealth),
       date: dates.mainDate,
       client: {
         name: clientData.name || 'غير محدد',

@@ -91,7 +91,32 @@ const insecticideSchema = new mongoose.Schema({
       values: ['Pour on', 'Spraying', 'Oral Drenching'],
       message: 'Method must be one of: Pour on, Spraying, Oral Drenching'
     },
-    default: 'Pour on'
+    default: 'Pour on',
+    set: function(value) {
+      // Additional validation and normalization at the model level
+      if (!value) return 'Pour on';
+      
+      const normalizedValue = value.toString().trim();
+      const validMethods = ['Pour on', 'Spraying', 'Oral Drenching'];
+      
+      // Return if already valid
+      if (validMethods.includes(normalizedValue)) {
+        return normalizedValue;
+      }
+      
+      // Handle common variations
+      const lowerValue = normalizedValue.toLowerCase();
+      if (lowerValue === 'spray' || lowerValue === 'spraying') {
+        return 'Spraying';
+      } else if (lowerValue === 'pour on' || lowerValue === 'pouron' || lowerValue === 'pour-on') {
+        return 'Pour on';
+      } else if (lowerValue === 'oral drenching' || lowerValue === 'oral' || lowerValue === 'drenching') {
+        return 'Oral Drenching';
+      }
+      
+      // Default fallback
+      return 'Pour on';
+    }
   },
   volumeMl: {
     type: Number,

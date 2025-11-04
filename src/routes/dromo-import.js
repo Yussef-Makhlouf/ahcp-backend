@@ -461,7 +461,24 @@ const processParasiteControlRow = async (row, userId) => {
       },
       insecticide: {
         type: row.insecticideType || 'غير محدد',
-        method: row.insecticideMethod || 'Spray',
+        method: (() => {
+          const method = row.insecticideMethod || 'Spraying';
+          // Ensure method is one of the valid enum values
+          const validMethods = ['Pour on', 'Spraying', 'Oral Drenching'];
+          if (validMethods.includes(method)) {
+            return method;
+          }
+          // Handle common variations
+          const methodLower = method.toLowerCase();
+          if (methodLower.includes('pour') || methodLower === 'pour on') {
+            return 'Pour on';
+          } else if (methodLower.includes('spray') || methodLower === 'spray') {
+            return 'Spraying';
+          } else if (methodLower.includes('oral') || methodLower.includes('drench')) {
+            return 'Oral Drenching';
+          }
+          return 'Spraying'; // Default fallback
+        })(),
         volumeMl: parseInt(row.insecticideVolume) || 0,
         status: row.insecticideStatus || 'Sprayed',
         category: row.insecticideCategory || 'General'
