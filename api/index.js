@@ -131,7 +131,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://https://ahcp-backend.vercel.app',
+        url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://ahcp-backend.vercel.app',
         description: 'Production server'
       }
     ],
@@ -259,9 +259,19 @@ const connectDB = async () => {
       return;
     }
     
+    // Close existing connection if any
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.close();
+    }
+    
     await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      bufferCommands: false,
+      bufferMaxEntries: 0
     });
     console.log('✅ Connected to MongoDB successfully');
     console.log(`📊 Database: ${mongoose.connection.name}`);
@@ -271,7 +281,25 @@ const connectDB = async () => {
   }
 };
 
-// Connect to database
+// Middleware to ensure database connection for each request
+app.use(async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      console.log('🔄 Reconnecting to MongoDB...');
+      await connectDB();
+    }
+    next();
+  } catch (error) {
+    console.error('❌ Database connection middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database connection error',
+      error: 'DATABASE_CONNECTION_ERROR'
+    });
+  }
+});
+
+// Connect to database initially
 connectDB();
 
 // Graceful shutdown

@@ -14,46 +14,9 @@ const filterBuilder = require('../utils/filterBuilder');
 
 const logger = require('../utils/logger');
 const router = express.Router();
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `import-${Date.now()}-${file.originalname}`);
-  }
-});
-
-const upload = multer({ 
-  storage,
-  limits: { 
-    fileSize: 50 * 1024 * 1024, // 50MB limit - increased for large files
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-    const allowedExtensions = ['.csv', '.xlsx', '.xls'];
-    
-    const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
-    const hasValidExtension = allowedExtensions.some(ext => 
-      file.originalname.toLowerCase().endsWith(ext)
-    );
-    
-    if (hasValidMimeType || hasValidExtension) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only CSV and Excel files are allowed (.csv, .xlsx, .xls)'));
-    }
-  }
-});
+// Configure multer for file uploads using serverless-compatible storage
+const { createStandardUpload } = require('../utils/serverless-storage');
+const upload = createStandardUpload('laboratories');
 
 /**
  * @swagger

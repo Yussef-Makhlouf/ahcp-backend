@@ -1,17 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
+
 class QueryLogger {
   constructor() {
     this.logs = [];
     this.logFile = path.join(__dirname, '../../logs/query-performance.log');
-    this.ensureLogDirectory();
+    this.isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+    
+    if (!this.isServerless) {
+      this.ensureLogDirectory();
+    }
   }
 
   ensureLogDirectory() {
+    if (this.isServerless) return; // Skip in serverless environments
+    
     const logDir = path.dirname(this.logFile);
     if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+      } catch (error) {
+        console.warn('Could not create query logs directory:', error.message);
+      }
     }
   }
 
@@ -51,8 +62,20 @@ class QueryLogger {
   }
 
   writeToFile(entry) {
-    const logLine = `${entry.timestamp} | ${entry.operation} | ${entry.executionTime} | ${entry.resultCount} results | ${entry.query}\n`;
-    fs.appendFileSync(this.logFile, logLine);
+    if (this.isServerless) {
+      // In serverless environments, use console logging instead of file writing
+      console.log(`Query Performance: ${entry.timestamp} | ${entry.operation} | ${entry.executionTime} | ${entry.resultCount} results | ${entry.query}`);
+      return;
+    }
+    
+    try {
+      const logLine = `${entry.timestamp} | ${entry.operation} | ${entry.executionTime} | ${entry.resultCount} results | ${entry.query}\n`;
+      fs.appendFileSync(this.logFile, logLine);
+    } catch (error) {
+      console.warn('Could not write to query log file:', error.message);
+      // Fallback to console logging
+      console.log(`Query Performance: ${entry.timestamp} | ${entry.operation} | ${entry.executionTime} | ${entry.resultCount} results | ${entry.query}`);
+    }
   }
 
   async explainQuery(model, query) {

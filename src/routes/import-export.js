@@ -1917,17 +1917,41 @@ const processParasiteControlRow = async (row, userId, errors) => {
       serialNo: generateSerialNo(row, 'PAR'),
       date: dates.mainDate,
       client: client._id,
-      herdLocation: getFieldValue(row, [
-        'Herd Location', 'herdLocation', 'Location', 'location',
-        'موقع القطيع', 'الموقع'
-      ]) || 'N/A',
-      supervisor: getFieldValue(row, [
-        'Supervisor', 'supervisor', 'المشرف'
-      ]) || 'Default Supervisor',
-      vehicleNo: getFieldValue(row, [
-        'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
-        'رقم المركبة'
-      ]) || 'N/A',
+      herdLocation: (() => {
+        const locationValue = getFieldValue(row, [
+          'Herd Location', 'herdLocation', 'Location', 'location',
+          'موقع القطيع', 'الموقع'
+        ]);
+        
+        if (locationValue && locationValue !== '' && locationValue !== 'N/A' && locationValue !== 'null' && locationValue !== 'undefined') {
+          return locationValue.toString().trim();
+        }
+        
+        return ''; // Return empty string instead of 'N/A'
+      })(),
+      supervisor: (() => {
+        const supervisorValue = getFieldValue(row, [
+          'Supervisor', 'supervisor', 'المشرف'
+        ]);
+        
+        if (supervisorValue && supervisorValue !== '' && supervisorValue !== 'N/A' && supervisorValue !== 'null' && supervisorValue !== 'undefined') {
+          return supervisorValue.toString().trim();
+        }
+        
+        return 'غير محدد'; // Return meaningful default in Arabic
+      })(),
+      vehicleNo: (() => {
+        const vehicleValue = getFieldValue(row, [
+          'Vehicle No.', 'Vehicle No', 'vehicleNo', 'vehicle_no',
+          'رقم المركبة'
+        ]);
+        
+        if (vehicleValue && vehicleValue !== '' && vehicleValue !== 'N/A' && vehicleValue !== 'null' && vehicleValue !== 'undefined') {
+          return vehicleValue.toString().trim();
+        }
+        
+        return 'غير محدد'; // Return meaningful default in Arabic
+      })(),
       coordinates: coordinates,
       herdCounts: herdCounts,
       insecticide: (() => {
@@ -1950,10 +1974,20 @@ const processParasiteControlRow = async (row, userId, errors) => {
         
         // Fallback to individual fields
         return {
-          type: getFieldValue(row, [
-            'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
-            'نوع المبيد', 'المبيد المستخدم'
-          ]) || 'N/A',
+          type: (() => {
+            const typeValue = getFieldValue(row, [
+              'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
+              'نوع المبيد', 'المبيد المستخدم'
+            ]);
+            
+            // Only use real data, avoid default values when actual data exists
+            if (typeValue && typeValue !== '' && typeValue !== 'N/A' && typeValue !== 'null' && typeValue !== 'undefined') {
+              return typeValue.toString().trim();
+            }
+            
+            // If no type found, this will cause validation error which is better than fake data
+            throw new Error('نوع المبيد مطلوب ولم يتم العثور عليه في البيانات');
+          })(),
           method: (() => {
             // Try to get method from various fields
             let method = getFieldValue(row, [
@@ -1962,7 +1996,7 @@ const processParasiteControlRow = async (row, userId, errors) => {
               'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
             ]);
             
-            if (!method) {
+            if (!method || method === '' || method === 'N/A' || method === 'null' || method === 'undefined') {
               // Fallback to category if method not found
               const category = getFieldValue(row, [
                 'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
@@ -1970,23 +2004,68 @@ const processParasiteControlRow = async (row, userId, errors) => {
               ]);
               
               // Map common categories to methods
-              if (category) {
-                const categoryLower = category.toLowerCase();
+              if (category && category !== '' && category !== 'N/A') {
+                const categoryLower = category.toLowerCase().trim();
                 if (categoryLower.includes('pour') || categoryLower.includes('صب')) method = 'Pour on';
                 else if (categoryLower.includes('spray') || categoryLower.includes('رش')) method = 'Spraying';
                 else if (categoryLower.includes('dip') || categoryLower.includes('غمس')) method = 'Dipping';
+                else if (categoryLower.includes('inject') || categoryLower.includes('حقن')) method = 'Injection';
+                else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) method = 'Oral';
                 else method = 'Other';
+              } else {
+                // If no category, try to infer from type
+                const type = getFieldValue(row, [
+                  'Type', 'Insecticide Type', 'insecticideType', 'insecticide_type',
+                  'نوع المبيد', 'المبيد المستخدم'
+                ]);
+                
+                if (type && type !== '' && type !== 'N/A') {
+                  const typeLower = type.toLowerCase().trim();
+                  if (typeLower.includes('pour') || typeLower.includes('صب')) method = 'Pour on';
+                  else if (typeLower.includes('spray') || typeLower.includes('رش')) method = 'Spraying';
+                  else method = 'Other';
+                } else {
+                  method = 'Other'; // Default fallback
+                }
+              }
+            }
+            
+            // Clean and normalize method value
+            if (method) {
+              method = method.toString().trim();
+              
+              // Handle common variations and typos
+              const methodLower = method.toLowerCase();
+              if (methodLower === 'pour-on' || methodLower === 'pouron' || methodLower.includes('pour on')) {
+                method = 'Pour on';
+              } else if (methodLower === 'spray' || methodLower === 'spraying' || methodLower.includes('رش')) {
+                method = 'Spraying';
+              } else if (methodLower === 'dip' || methodLower === 'dipping' || methodLower.includes('غمس')) {
+                method = 'Dipping';
+              } else if (methodLower === 'inject' || methodLower === 'injection' || methodLower.includes('حقن')) {
+                method = 'Injection';
+              } else if (methodLower === 'oral' || methodLower.includes('فموي')) {
+                method = 'Oral';
               }
             }
             
             // Validate method against allowed values
             const validMethods = ['Pour on', 'Spraying', 'Dipping', 'Injection', 'Oral', 'Other'];
-            return validMethods.includes(method) ? method : 'Pour on';
+            return validMethods.includes(method) ? method : 'Other';
           })(),
-          volumeMl: parseInt(getFieldValue(row, [
-            'Volume (ml)', 'Volume', 'Insecticide Volume (ml)', 'insecticideVolume', 'insecticide_volume',
-            'الحجم (مل)', 'الحجم'
-          ]) || 0),
+          volumeMl: (() => {
+            const volumeValue = getFieldValue(row, [
+              'Volume (ml)', 'Volume', 'Insecticide Volume (ml)', 'insecticideVolume', 'insecticide_volume',
+              'الحجم (مل)', 'الحجم'
+            ]);
+            
+            if (!volumeValue || volumeValue === '' || volumeValue === 'N/A' || volumeValue === 'null' || volumeValue === 'undefined') {
+              return 0;
+            }
+            
+            const parsed = parseFloat(volumeValue);
+            return isNaN(parsed) ? 0 : Math.max(0, Math.min(50000, parsed));
+          })(),
           status: (() => {
             const statusValue = getFieldValue(row, [
               'Status', 'Insecticide Status', 'insecticideStatus', 'insecticide_status', 'حالة الرش'
@@ -2007,12 +2086,39 @@ const processParasiteControlRow = async (row, userId, errors) => {
           })(),
           category: (() => {
             // Get category from various fields
-            const category = getFieldValue(row, [
+            let category = getFieldValue(row, [
               'Category', 'Insecticide Category', 'insecticideCategory', 'insecticide_category',
               'فئة المبيد'
             ]);
             
-            if (category && category !== 'N/A') return category;
+            if (category && category !== '' && category !== 'N/A' && category !== 'null' && category !== 'undefined') {
+              category = category.toString().trim();
+              
+              // Normalize common category variations
+              const categoryLower = category.toLowerCase();
+              
+              // Map common variations to standard categories
+              if (categoryLower.includes('pour') && categoryLower.includes('on')) {
+                return 'Pour-on';
+              } else if (categoryLower.includes('pour') || categoryLower.includes('صب')) {
+                return 'Pour-on';
+              } else if (categoryLower.includes('spray') || categoryLower.includes('رش')) {
+                return 'Spraying';
+              } else if (categoryLower.includes('oral') && categoryLower.includes('drench')) {
+                return 'Oral Drenching';
+              } else if (categoryLower.includes('oral') || categoryLower.includes('فموي')) {
+                return 'Oral';
+              } else if (categoryLower.includes('dip') || categoryLower.includes('غمس')) {
+                return 'Dipping';
+              } else if (categoryLower.includes('inject') || categoryLower.includes('حقن')) {
+                return 'Injection';
+              } else if (categoryLower.includes('parasite') && categoryLower.includes('control')) {
+                return 'Parasite Control Activity';
+              } else {
+                // Return the original category if it doesn't match common patterns
+                return category;
+              }
+            }
             
             // Fallback to type if category not found
             const type = getFieldValue(row, [
@@ -2020,7 +2126,48 @@ const processParasiteControlRow = async (row, userId, errors) => {
               'نوع المبيد', 'المبيد المستخدم'
             ]);
             
-            return type || 'Pour-on'; // Default category
+            if (type && type !== '' && type !== 'N/A' && type !== 'null' && type !== 'undefined') {
+              const typeLower = type.toLowerCase();
+              
+              // Infer category from type
+              if (typeLower.includes('pour')) {
+                return 'Pour-on';
+              } else if (typeLower.includes('spray')) {
+                return 'Spraying';
+              } else if (typeLower.includes('oral')) {
+                return 'Oral';
+              } else {
+                return type.toString().trim();
+              }
+            }
+            
+            // Fallback to method-based category
+            const method = getFieldValue(row, [
+              'Method', 'Insecticide Method', 'insecticideMethod', 'insecticide_method',
+              'Application Method', 'applicationMethod', 'application_method',
+              'طريقة الرش', 'طريقة التطبيق', 'الطريقة'
+            ]);
+            
+            if (method && method !== '' && method !== 'N/A' && method !== 'null' && method !== 'undefined') {
+              const methodLower = method.toLowerCase().trim();
+              
+              if (methodLower === 'pour on' || methodLower === 'pour-on') {
+                return 'Pour-on';
+              } else if (methodLower === 'spraying' || methodLower === 'spray') {
+                return 'Spraying';
+              } else if (methodLower === 'oral') {
+                return 'Oral';
+              } else if (methodLower === 'dipping') {
+                return 'Dipping';
+              } else if (methodLower === 'injection') {
+                return 'Injection';
+              } else {
+                return 'General';
+              }
+            }
+            
+            // If no category found, use a default that makes sense
+            return 'Parasite Control Activity';
           })(),
           // Extract concentration from type if available
           concentration: (() => {
@@ -2041,10 +2188,19 @@ const processParasiteControlRow = async (row, userId, errors) => {
           ]) || ''
         };
       })(),
-      animalBarnSizeSqM: parseInt(getFieldValue(row, [
-        'Size (sqM)', 'Size', 'Barn Size', 'animalBarnSize', 'animal_barn_size',
-        'مساحة الحظيرة', 'الحجم (متر مربع)'
-      ]) || 0),
+      animalBarnSizeSqM: (() => {
+        const sizeValue = getFieldValue(row, [
+          'Size (sqM)', 'Size', 'Barn Size', 'animalBarnSize', 'animal_barn_size',
+          'مساحة الحظيرة', 'الحجم (متر مربع)'
+        ]);
+        
+        if (!sizeValue || sizeValue === '' || sizeValue === 'N/A' || sizeValue === 'null' || sizeValue === 'undefined') {
+          return 0;
+        }
+        
+        const parsed = parseFloat(sizeValue);
+        return isNaN(parsed) ? 0 : Math.max(0, parsed);
+      })(),
       breedingSites: (() => {
         // First try to get breedingSites as JSON string
         const breedingSitesJson = getFieldValue(row, ['breedingSites', 'Breeding Sites']);
@@ -2086,18 +2242,41 @@ const processParasiteControlRow = async (row, userId, errors) => {
         }
         
         // Fallback to individual fields or string value
-        return getFieldValue(row, [
+        const breedingSitesValue = getFieldValue(row, [
           'Breeding Sites', 'breeding_sites', 'مواقع التكاثر'
-        ]) || 'N/A';
+        ]);
+        
+        if (breedingSitesValue && breedingSitesValue !== '' && breedingSitesValue !== 'N/A' && breedingSitesValue !== 'null' && breedingSitesValue !== 'undefined') {
+          return breedingSitesValue.toString().trim();
+        }
+        
+        return ''; // Return empty string instead of 'N/A'
       })(),
-      parasiteControlVolume: parseInt(getFieldValue(row, [
-        'Parasite Control Volume', 'parasiteControlVolume', 'parasite_control_volume',
-        'حجم مكافحة الطفيليات'
-      ]) || getFieldValue(row, ['Volume (ml)', 'Volume']) || 0),
-      parasiteControlStatus: getFieldValue(row, [
-        'Parasite Control Status', 'parasiteControlStatus', 'parasite_control_status',
-        'حالة مكافحة الطفيليات'
-      ]) || getFieldValue(row, ['Insecticide']) || 'N/A',
+      parasiteControlVolume: (() => {
+        const volumeValue = getFieldValue(row, [
+          'Parasite Control Volume', 'parasiteControlVolume', 'parasite_control_volume',
+          'حجم مكافحة الطفيليات'
+        ]) || getFieldValue(row, ['Volume (ml)', 'Volume']);
+        
+        if (!volumeValue || volumeValue === '' || volumeValue === 'N/A' || volumeValue === 'null' || volumeValue === 'undefined') {
+          return 0;
+        }
+        
+        const parsed = parseFloat(volumeValue);
+        return isNaN(parsed) ? 0 : Math.max(0, parsed);
+      })(),
+      parasiteControlStatus: (() => {
+        const statusValue = getFieldValue(row, [
+          'Parasite Control Status', 'parasiteControlStatus', 'parasite_control_status',
+          'حالة مكافحة الطفيليات'
+        ]) || getFieldValue(row, ['Insecticide']);
+        
+        if (statusValue && statusValue !== '' && statusValue !== 'N/A' && statusValue !== 'null' && statusValue !== 'undefined') {
+          return statusValue.toString().trim();
+        }
+        
+        return ''; // Return empty string instead of 'N/A'
+      })(),
       herdHealthStatus: (() => {
         const healthValue = getFieldValue(row, [
           'Herd Health Status', 'herdHealthStatus', 'herd_health_status', 'حالة صحة القطيع'

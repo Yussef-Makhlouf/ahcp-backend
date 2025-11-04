@@ -199,13 +199,25 @@ const parasiteControlSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Supervisor is required'],
     trim: true,
-    maxlength: [100, 'Supervisor name cannot exceed 100 characters']
+    maxlength: [100, 'Supervisor name cannot exceed 100 characters'],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'Supervisor cannot be empty'
+    }
   },
   vehicleNo: {
     type: String,
     required: [true, 'Vehicle number is required'],
     trim: true,
-    maxlength: [20, 'Vehicle number cannot exceed 20 characters']
+    maxlength: [20, 'Vehicle number cannot exceed 20 characters'],
+    validate: {
+      validator: function(v) {
+        return v && v.length > 0;
+      },
+      message: 'Vehicle number cannot be empty'
+    }
   },
   herdCounts: {
     sheep: animalCountSchema,

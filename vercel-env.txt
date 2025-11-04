@@ -1,0 +1,35 @@
+# Copy these environment variables to your Vercel project settings
+# Go to: https://vercel.com/dashboard -> Your Project -> Settings -> Environment Variables
+
+NODE_ENV=production
+MONGODB_URI=mongodb+srv://yussefmakhloufiti_db_user:Yussef12345@cluster0.pgy8qei.mongodb.net/ahcp_database?retryWrites=true&w=majority&appName=Cluster0
+JWT_SECRET=7821654765121e9bd8fa01c098183867d6edd9762c213e3030566e8aba78796ebf1f5070e04fb5c7fc150aef39cdfc82a570e83ced86a6f2f3c2d642e9a5f232
+JWT_EXPIRES_IN=24h
+NEXT_PUBLIC_API_URL=https://ahcp-backend.vercel.app/api
+API_DOCS_ENABLED=true
+CORS_ORIGIN=*
+ALLOWED_ORIGINS=*
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+MAX_FILE_SIZE=5242880
+UPLOAD_PATH=./uploads
+ALLOWED_FILE_TYPES=image/jpeg,image/png,image/gif,application/pdf
+ADMIN_EMAIL=admin@ahcp.gov.sa
+ADMIN_PASSWORD=Admin@123456
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+FROM_EMAIL=noreply@ahcp.com
+FROM_NAME=AHCP System
+API_DOCS_PATH=/api-docs
+LOG_LEVEL=info
+LOG_FILE=logs/app.log
+BCRYPT_ROUNDS=12
+SESSION_SECRET=ahcp
+NEXT_PUBLIC_DROMO_LICENSE_KEY=0baceb87-3a34-4905-ad40-40ae733578f5
+NEXT_PUBLIC_DROMO_TEMPLATE_VACCINATION=a4f34f84-12b9-4756-a109-ce7c616e4b19
+NEXT_PUBLIC_DROMO_TEMPLATE_LAB=c459bd3e-ac1a-4140-b5c2-0f459c6d5ad5
+NEXT_PUBLIC_DROMO_TEMPLATE_PARASITE=b8e7f9c2-5d4a-4b1c-8e3f-9a2b5c7d8e1f
+NEXT_PUBLIC_DROMO_TEMPLATE_MOBILE=f3e8d7c6-9b2a-4f1e-7c8d-5a9b3e6f2c1d
+NEXT_PUBLIC_DROMO_TEMPLATE_EQUINE=e2d9c8b7-4a6f-3e1d-9c8b-7a5f4e3d2c1b

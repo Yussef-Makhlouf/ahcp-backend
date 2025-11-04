@@ -7,10 +7,16 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure logs directory exists
+// Ensure logs directory exists (only in non-serverless environments)
 const logsDir = path.join(__dirname, '../../logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+if (!isServerless && !fs.existsSync(logsDir)) {
+  try {
+    fs.mkdirSync(logsDir, { recursive: true });
+  } catch (error) {
+    console.warn('Could not create logs directory:', error.message);
+  }
 }
 
 // Custom format for console output with colors and emojis
@@ -48,10 +54,11 @@ const fileFormat = winston.format.combine(
 );
 
 // Create logger instance
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  defaultMeta: { service: 'ahcp-backend' },
-  transports: [
+const transports = [];
+
+// Only add file transports in non-serverless environments
+if (!isServerless) {
+  transports.push(
     // Error logs - separate file
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),
@@ -66,12 +73,18 @@ const logger = winston.createLogger({
       format: fileFormat,
       maxsize: 5242880, // 5MB
       maxFiles: 5,
-    }),
-  ],
+    })
+  );
+}
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  defaultMeta: { service: 'ahcp-backend' },
+  transports,
 });
 
-// Console transport - only in development or if explicitly enabled
-if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_CONSOLE_LOGS === 'true') {
+// Console transport - always enabled in serverless environments, or in development
+if (isServerless || process.env.NODE_ENV !== 'production' || process.env.ENABLE_CONSOLE_LOGS === 'true') {
   logger.add(
     new winston.transports.Console({
       format: winston.format.combine(
