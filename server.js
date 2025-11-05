@@ -26,7 +26,7 @@ let authRoutes, usersRoutes, sectionsRoutes, seedRoutes;
 let parasiteControlRoutes, vaccinationRoutes, mobileClinicsRoutes;
 let equineHealthRoutes, laboratoriesRoutes, clientsRoutes;
 let reportsRoutes, uploadRoutes, villagesRoutes, holdingCodesRoutes, importExportRoutes;
-let dromoImportRoutes, dropdownListsRoutes;
+let dromoImportRoutes, dropdownListsRoutes, trashRoutes;
 
 let errorHandler, notFound, authMiddleware;
 
@@ -50,7 +50,8 @@ try {
   importExportRoutes = require('./src/routes/import-export');
   dromoImportRoutes = require('./src/routes/dromo-import');
   dropdownListsRoutes = require('./src/routes/dropdownLists');
-  logger.info('Dromo import routes loaded');
+  trashRoutes = require('./src/routes/trash-simple'); // Using simple version for stability
+  logger.info('Dromo import and trash routes loaded');
 
   // Import middleware
   errorHandler = require('./src/middleware/errorHandler').errorHandler;
@@ -286,6 +287,12 @@ if (holdingCodesRoutes) {
 if (dropdownListsRoutes) {
   logger.info('Loading dropdown-lists routes with authentication');
   app.use('/api/dropdown-lists', selectedAuth, dropdownListsRoutes);
+}
+
+// Trash routes (Super Admin and Admin only)
+if (trashRoutes) {
+  logger.info('Loading trash routes with authentication');
+  app.use('/api/trash', selectedAuth, trashRoutes);
 }
 
 // Import/Export routes

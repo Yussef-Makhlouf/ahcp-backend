@@ -481,4 +481,11 @@ equineHealthSchema.pre('save', function(next) {
   next();
 });
 
+// Soft delete fields (manual implementation for safety)
+equineHealthSchema.add({
+  isDeleted: { type: Boolean, default: false, index: true },
+  deletedAt: { type: Date, default: null },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+});
+
 module.exports = mongoose.model('EquineHealth', equineHealthSchema);
