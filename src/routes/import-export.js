@@ -3923,12 +3923,7 @@ const processEquineHealthRow = async (row, userId, errors) => {
           try {
             const parsed = JSON.parse(medicationJson);
             return {
-              name: parsed.name || 'N/A',
-              dosage: parsed.dosage || 'N/A',
-              quantity: parsed.quantity || 'N/A',
-              route: parsed.route || 'N/A',
-              frequency: parsed.frequency || 'N/A',
-              duration: parsed.duration || 'N/A'
+              name: parsed.name || 'N/A'
             };
           } catch (error) {
             logger.info('Failed to parse medication JSON using individual fields');
@@ -3940,26 +3935,6 @@ const processEquineHealthRow = async (row, userId, errors) => {
           name: getFieldValue(row, [
             'Medication Name', 'medicationName', 'medication_name',
             'اسم الدواء', 'الدواء'
-          ]) || 'N/A',
-          dosage: getFieldValue(row, [
-            'Medication Dosage', 'medicationDosage', 'medication_dosage',
-            'جرعة الدواء', 'الجرعة'
-          ]) || 'N/A',
-          quantity: getFieldValue(row, [
-            'Medication Quantity', 'medicationQuantity', 'medication_quantity',
-            'كمية الدواء', 'الكمية'
-          ]) || 'N/A',
-          route: getFieldValue(row, [
-            'Administration Route', 'administrationRoute', 'administration_route',
-            'طريقة الإعطاء'
-          ]) || 'N/A',
-          frequency: getFieldValue(row, [
-            'Medication Frequency', 'medicationFrequency', 'medication_frequency',
-            'تكرار الدواء', 'التكرار'
-          ]) || 'N/A',
-          duration: getFieldValue(row, [
-            'Medication Duration', 'medicationDuration', 'medication_duration',
-            'مدة الدواء', 'المدة'
           ]) || 'N/A'
         };
       })(),

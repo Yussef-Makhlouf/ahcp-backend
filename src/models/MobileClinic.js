@@ -69,12 +69,6 @@ const mongoose = require('mongoose');
  *             properties:
  *               name:
  *                 type: string
- *               dosage:
- *                 type: string
- *               quantity:
- *                 type: number
- *               route:
- *                 type: string
  *         request:
  *           type: object
  *           properties:
@@ -103,22 +97,6 @@ const medicationSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [100, 'Medication name cannot exceed 100 characters']
-  },
-  dosage: {
-    type: String,
-    trim: true,
-    maxlength: [50, 'Dosage cannot exceed 50 characters']
-  },
-  quantity: {
-    type: Number,
-    min: [0, 'Quantity cannot be negative']
-  },
-  administrationRoute: {
-    type: String,
-    enum: {
-      values: ['Oral', 'Injection', 'Topical', 'Intravenous', 'Intramuscular', 'Subcutaneous'],
-      message: 'Invalid administration route'
-    }
   }
 }, { _id: false });
 

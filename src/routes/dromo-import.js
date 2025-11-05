@@ -545,10 +545,7 @@ const processMobileClinicRow = async (row, userId) => {
       interventionCategory: row.interventionCategory || 'Routine',
       treatment: row.treatment || '',
       medicationsUsed: row.medicationsUsed ? row.medicationsUsed.split(',').map(med => ({ 
-        name: med.trim(), 
-        dosage: '1 dose', 
-        quantity: 1, 
-        route: 'Oral' 
+        name: med.trim()
       })) : [],
       request: {
         date: parseSimpleDate(row.requestDate) || mainDate,
@@ -657,20 +654,10 @@ const processEquineHealthRow = async (row, userId) => {
       serviceType: row.serviceType || 'Vaccination',
       treatment: row.treatment || '',
       medicationsUsed: row.medicationsUsed ? row.medicationsUsed.split(',').map(med => ({ 
-        name: med.trim(),
-        dosage: '1 dose',
-        quantity: 1,
-        route: 'Injection',
-        frequency: 'Once daily',
-        duration: '1 day'
+        name: med.trim()
       })) : [],
       vaccinesGiven: row.vaccinesGiven ? row.vaccinesGiven.split(',').map(vac => ({ 
-        name: vac.trim(),
-        dosage: '1 dose',
-        quantity: 1,
-        route: 'Injection',
-        frequency: 'Single dose',
-        duration: 'N/A'
+        name: vac.trim()
       })) : [],
       request: {
         date: parseSimpleDate(row.requestDate) || mainDate,

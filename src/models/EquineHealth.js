@@ -77,12 +77,6 @@ const { populate } = require('./Client');
  *             properties:
  *               name:
  *                 type: string
- *               dosage:
- *                 type: string
- *               quantity:
- *                 type: number
- *               route:
- *                 type: string
  *         request:
  *           type: object
  *           properties:
@@ -178,44 +172,9 @@ const horseDetailSchema = new mongoose.Schema({
 const medicationSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: false, // Made optional for import flexibility
+    required: false,
     trim: true,
-    maxlength: [200, 'Medication name cannot exceed 200 characters'],
-    default: 'N/A' // Default value for missing data
-  },
-  dosage: {
-    type: String,
-    required: false, // Made optional for import flexibility
-    trim: true,
-    maxlength: [100, 'Dosage cannot exceed 100 characters'],
-    default: 'N/A' // Default value for missing data
-  },
-  quantity: {
-    type: Number,
-    required: false, // Made optional for import flexibility
-    min: [0, 'Quantity cannot be negative'],
-    default: 0 // Default value for missing data
-  },
-  route: {
-    type: String,
-    required: false, // Made optional for import flexibility
-    trim: true,
-    maxlength: [100, 'Administration route cannot exceed 100 characters'],
-    default: 'N/A' // Default value for missing data - removed enum validation
-  },
-  frequency: {
-    type: String,
-    required: false, // Made optional for import flexibility
-    trim: true,
-    maxlength: [100, 'Frequency cannot exceed 100 characters'],
-    default: 'N/A' // Default value for missing data
-  },
-  duration: {
-    type: String,
-    required: false, // Made optional for import flexibility
-    trim: true,
-    maxlength: [100, 'Duration cannot exceed 100 characters'],
-    default: 'N/A' // Default value for missing data
+    maxlength: [200, 'Medication name cannot exceed 200 characters']
   }
 }, { _id: false });
 
