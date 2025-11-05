@@ -3731,7 +3731,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       ]) || '',
       animalCategory: getFieldValue(row, [
         'animalCategory', 'Animal Category', 'ANIMAL CATEGORY', 'animal_category',
-        'فئة الحيوان', 'نوع الحيوان'
+        'فئة الحيوان', 'نوع الحيوان' , 'Animal Species' , 'animal species'
       ]) || '',
       positiveCases: parseInt(getFieldValue(row, [
         'positiveCases', 'Positive Cases', 'POSITIVE CASES', 'positive_cases', 'positive cases',
