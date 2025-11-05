@@ -303,6 +303,13 @@ class FilterBuilder {
     const diagnosisFilter = this.buildMultiValueFilter(query.diagnosis);
     if (diagnosisFilter) filter.diagnosis = diagnosisFilter;
     
+    // فلتر الأدوية
+    const medicationsFilter = this.buildMultiValueFilter(query.medications);
+    if (medicationsFilter) {
+      // البحث في حقل medicationsUsed.name
+      filter['medicationsUsed.name'] = medicationsFilter;
+    }
+    
     // فلتر فئة التدخل
     const interventionCategoryFilter = this.buildMultiValueFilter(query.interventionCategory);
     if (interventionCategoryFilter) {

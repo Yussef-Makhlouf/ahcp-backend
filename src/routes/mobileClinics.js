@@ -444,13 +444,15 @@ router.post('/',
         diagnosis: req.body.diagnosis,
         treatment: req.body.treatment,
 
-        // Medication information
-        medication: {
-          name: req.body.medication?.name || req.body.medicationName,
-          dosage: req.body.medication?.dosage || req.body.dosage,
-          quantity: req.body.medication?.quantity || req.body.quantity,
-          administrationRoute: req.body.medication?.administrationRoute || req.body.administrationRoute
-        },
+        // Medications Used (array of medications from dynamic dropdown)
+        medicationsUsed: Array.isArray(req.body.medicationsUsed) 
+          ? req.body.medicationsUsed.map(med => ({
+              name: med.name || '',
+              dosage: med.dosage || '',
+              quantity: med.quantity || 0,
+              administrationRoute: med.administrationRoute || med.route || ''
+            }))
+          : [],
 
         // Request information
         request: {
@@ -935,7 +937,11 @@ router.get('/export',
           ? record.interventionCategories.join(' | ')
           : '',
         'Treatment': record.treatment || '',
-        'Medications Used': record.medicationsUsed || '',
+        'Medications Used': Array.isArray(record.medicationsUsed) && record.medicationsUsed.length > 0
+          ? record.medicationsUsed.map(med => 
+              `${med.name}${med.dosage ? ' (' + med.dosage + ')' : ''}${med.quantity ? ' x' + med.quantity : ''}${med.administrationRoute ? ' - ' + med.administrationRoute : ''}`
+            ).join(' | ')
+          : '',
         'Follow Up Required': record.followUpRequired ? 'Yes' : 'No',
         'Follow Up Date': record.followUpDate ? new Date(record.followUpDate).toISOString().split('T')[0] : '',
         'Request Date': record.request?.date ? record.request.date.toISOString().split('T')[0] : '',
@@ -1382,13 +1388,15 @@ router.put('/:id',
         diagnosis: req.body.diagnosis,
         treatment: req.body.treatment,
 
-        // Medication information
-        medication: {
-          name: req.body.medication?.name || req.body.medicationName,
-          dosage: req.body.medication?.dosage || req.body.dosage,
-          quantity: req.body.medication?.quantity || req.body.quantity,
-          administrationRoute: req.body.medication?.administrationRoute || req.body.administrationRoute
-        },
+        // Medications Used (array of medications from dynamic dropdown)
+        medicationsUsed: Array.isArray(req.body.medicationsUsed) 
+          ? req.body.medicationsUsed.map(med => ({
+              name: med.name || '',
+              dosage: med.dosage || '',
+              quantity: med.quantity || 0,
+              administrationRoute: med.administrationRoute || med.route || ''
+            }))
+          : [],
 
         // Request information
         request: {

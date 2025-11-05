@@ -69,8 +69,12 @@ const dropdownListSchema = new mongoose.Schema({
         'compliance',
         'breeding_sites',
         
-        // Equine Health categories
+        // Mobile Clinics categories
+        'diagnosis',
+        'medications',
         'intervention_categories',
+        
+        // Equine Health categories
         'horse_gender',
         'health_status',
         'administration_routes',
