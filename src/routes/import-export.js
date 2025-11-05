@@ -3727,7 +3727,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       ]) || 'N/A',
       causeOfSample: getFieldValue(row, [
         'causeOfSample', 'Cause of Sample', 'CAUSE OF SAMPLE', 'cause_of_sample',
-        'سبب العينة', 'سبب أخذ العينة'
+        'سبب العينة', 'سبب أخذ العينة' , 'Cause of Collection' , 'cause of collection'
       ]) || '',
       animalCategory: getFieldValue(row, [
         'animalCategory', 'Animal Category', 'ANIMAL CATEGORY', 'animal_category',
@@ -3736,12 +3736,12 @@ const processLaboratoryRow = async (row, userId, errors) => {
       positiveCases: parseInt(getFieldValue(row, [
         'positiveCases', 'Positive Cases', 'POSITIVE CASES', 'positive_cases', 'positive cases',
         'positiveSamples', 'Positive Samples', 'POSITIVE SAMPLES', 'positive samples',
-        'الحالات الإيجابية', 'إيجابي', 'العينات الإيجابية'
+        'الحالات الإيجابية', 'إيجابي', 'العينات الإيجابية' , 'positive cases' 
       ]) || 0),
       negativeCases: parseInt(getFieldValue(row, [
         'negativeCases', 'Negative Cases', 'NEGATIVE CASES', 'negative_cases', 'negative cases',
         'negativeSamples', 'Negative Samples', 'NEGATIVE SAMPLES', 'negative samples',
-        'الحالات السلبية', 'سلبي', 'العينات السلبية'
+        'الحالات السلبية', 'سلبي', 'العينات السلبية' , 'negative cases' , 'negative samples'
       ]) || 0),
       testResults: parseJsonField(getFieldValue(row, [
         'testResults', 'Test Results', 'test_results', 'results',
