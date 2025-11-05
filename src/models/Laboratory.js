@@ -246,6 +246,34 @@ const laboratorySchema = new mongoose.Schema({
     trim: true,
     maxlength: [200, 'Test type cannot exceed 200 characters']
   },
+  supervisor: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: [200, 'Supervisor name cannot exceed 200 characters'],
+    default: 'N/A'
+  },
+  vehicleNo: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: [50, 'Vehicle number cannot exceed 50 characters'],
+    default: 'N/A'
+  },
+  causeOfSample: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: [500, 'Cause of sample cannot exceed 500 characters'],
+    default: ''
+  },
+  animalCategory: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: [100, 'Animal category cannot exceed 100 characters'],
+    default: ''
+  },
   positiveCases: { 
     type: Number, 
     required: false, // Made optional for import flexibility
@@ -288,6 +316,9 @@ laboratorySchema.index({ testType: 1 });
 laboratorySchema.index({ testStatus: 1 });
 laboratorySchema.index({ priority: 1 });
 laboratorySchema.index({ sampleType: 1 });
+laboratorySchema.index({ supervisor: 1 });
+laboratorySchema.index({ vehicleNo: 1 });
+laboratorySchema.index({ animalCategory: 1 });
 laboratorySchema.index({ 'coordinates.latitude': 1, 'coordinates.longitude': 1 });
 
 // Virtual for total samples

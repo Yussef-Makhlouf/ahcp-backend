@@ -3717,6 +3717,22 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'testType', 'Test Type', 'test_type',
         'نوع الفحص', 'الفحص'
       ]) || '',
+      supervisor: getFieldValue(row, [
+        'supervisor', 'Supervisor', 'SUPERVISOR',
+        'المشرف', 'مشرف'
+      ]) || 'N/A',
+      vehicleNo: getFieldValue(row, [
+        'vehicleNo', 'Vehicle No', 'Vehicle Number', 'VEHICLE NUMBER', 'vehicle_no',
+        'رقم المركبة', 'المركبة'
+      ]) || 'N/A',
+      causeOfSample: getFieldValue(row, [
+        'causeOfSample', 'Cause of Sample', 'CAUSE OF SAMPLE', 'cause_of_sample',
+        'سبب العينة', 'سبب أخذ العينة'
+      ]) || '',
+      animalCategory: getFieldValue(row, [
+        'animalCategory', 'Animal Category', 'ANIMAL CATEGORY', 'animal_category',
+        'فئة الحيوان', 'نوع الحيوان'
+      ]) || '',
       positiveCases: parseInt(getFieldValue(row, [
         'positiveCases', 'Positive Cases', 'POSITIVE CASES', 'positive_cases', 'positive cases',
         'positiveSamples', 'Positive Samples', 'POSITIVE SAMPLES', 'positive samples',
@@ -3729,7 +3745,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       ]) || 0),
       testResults: parseJsonField(getFieldValue(row, [
         'testResults', 'Test Results', 'test_results', 'results',
-        'النتائج', 'نتائج الفحص'
+        'النتائج', 'نتائج الفحص' , 'Details of Case' , 'Details of case' , 'details of case'
       ]), []),
       holdingCode: await processHoldingCodeReference(row, userId),
       remarks: getFieldValue(row, ['Remarks', 'remarks', 'ملاحظات']) || '',

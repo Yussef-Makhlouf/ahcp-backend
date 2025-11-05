@@ -265,6 +265,12 @@ const mapDromoToLaboratory = (row) => {
     sampleNumber: row.sampleNumber || '',
     collector: row.collector || 'غير محدد',
     
+    // Additional fields
+    supervisor: row.supervisor || row.Supervisor || 'غير محدد',
+    vehicleNo: row.vehicleNo || row['Vehicle No'] || row['Vehicle Number'] || 'N/A',
+    causeOfSample: row.causeOfSample || row['Cause of Sample'] || row['CAUSE OF SAMPLE'] || '',
+    animalCategory: row.animalCategory || row['Animal Category'] || row['ANIMAL CATEGORY'] || '',
+    
     // Test results - Support multiple column name variations
     positiveCases: (() => {
       const value = row.positiveCases || 
@@ -652,6 +658,10 @@ const processLaboratoryRow = async (row, userId) => {
       collector: mappedData.collector,
       sampleType: mappedData.sampleType,
       sampleNumber: mappedData.sampleNumber,
+      supervisor: mappedData.supervisor,
+      vehicleNo: mappedData.vehicleNo,
+      causeOfSample: mappedData.causeOfSample,
+      animalCategory: mappedData.animalCategory,
       positiveCases: mappedData.positiveCases,
       negativeCases: mappedData.negativeCases,
       testResults: [],
