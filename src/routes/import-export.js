@@ -3718,12 +3718,14 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'نوع الفحص', 'الفحص'
       ]) || '',
       positiveCases: parseInt(getFieldValue(row, [
-        'positiveCases', 'Positive Cases', 'positive_cases', 'positive cases',
-        'الحالات الإيجابية', 'إيجابي'
+        'positiveCases', 'Positive Cases', 'POSITIVE CASES', 'positive_cases', 'positive cases',
+        'positiveSamples', 'Positive Samples', 'POSITIVE SAMPLES', 'positive samples',
+        'الحالات الإيجابية', 'إيجابي', 'العينات الإيجابية'
       ]) || 0),
       negativeCases: parseInt(getFieldValue(row, [
-        'negativeCases', 'Negative Cases', 'negative_cases', 'negative cases',
-        'الحالات السلبية', 'سلبي'
+        'negativeCases', 'Negative Cases', 'NEGATIVE CASES', 'negative_cases', 'negative cases',
+        'negativeSamples', 'Negative Samples', 'NEGATIVE SAMPLES', 'negative samples',
+        'الحالات السلبية', 'سلبي', 'العينات السلبية'
       ]) || 0),
       testResults: parseJsonField(getFieldValue(row, [
         'testResults', 'Test Results', 'test_results', 'results',

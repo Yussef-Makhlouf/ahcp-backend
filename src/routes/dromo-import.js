@@ -265,9 +265,55 @@ const mapDromoToLaboratory = (row) => {
     sampleNumber: row.sampleNumber || '',
     collector: row.collector || 'غير محدد',
     
-    // Test results
-    positiveCases: parseInt(row.positiveCases) || 0,
-    negativeCases: parseInt(row.negativeCases) || 0,
+    // Test results - Support multiple column name variations
+    positiveCases: (() => {
+      const value = row.positiveCases || 
+                    row['Positive Cases'] || 
+                    row['POSITIVE CASES'] || 
+                    row['positive cases'] ||
+                    row.positiveSamples ||
+                    row['Positive Samples'] ||
+                    row['POSITIVE SAMPLES'] ||
+                    row['positive samples'] ||
+                    row['Positive_Cases'] ||
+                    row['positive_cases'] ||
+                    '';
+      
+      // Clean and parse the value
+      const cleaned = String(value).trim();
+      const parsed = parseInt(cleaned);
+      
+      // Log for debugging
+      if (value && value !== '0') {
+        logger.info('Positive cases parsing:', { original: value, cleaned, parsed, isNaN: isNaN(parsed) });
+      }
+      
+      return isNaN(parsed) ? 0 : parsed;
+    })(),
+    negativeCases: (() => {
+      const value = row.negativeCases || 
+                    row['Negative Cases'] || 
+                    row['NEGATIVE CASES'] || 
+                    row['negative cases'] ||
+                    row.negativeSamples ||
+                    row['Negative Samples'] ||
+                    row['NEGATIVE SAMPLES'] ||
+                    row['negative samples'] ||
+                    row['Negative_Cases'] ||
+                    row['negative_cases'] ||
+                    '';
+      
+      // Clean and parse the value
+      const cleaned = String(value).trim();
+      const parsed = parseInt(cleaned);
+      
+      // Log for debugging
+      if (value && value !== '0') {
+        logger.info('Negative cases parsing:', { original: value, cleaned, parsed, isNaN: isNaN(parsed) });
+      }
+      
+      return isNaN(parsed) ? 0 : parsed;
+    })(),
     
     // Species counts
     speciesCounts: {
@@ -572,9 +618,19 @@ const processLaboratoryRow = async (row, userId) => {
   try {
     logger.info('Processing laboratory row:', { data: JSON.stringify(row, null, 2) });
     
+    // Log all keys to help debug column names
+    logger.info('Available row keys:', { keys: Object.keys(row) });
+    
     // Map flat Dromo data to database structure
     const mappedData = mapDromoToLaboratory(row);
     logger.info('Mapped laboratory data:', { data: JSON.stringify(mappedData, null, 2) });
+    
+    // Log the specific sample counts for debugging
+    logger.info('Sample counts extracted:', {
+      positiveCases: mappedData.positiveCases,
+      negativeCases: mappedData.negativeCases,
+      total: mappedData.positiveCases + mappedData.negativeCases
+    });
     
     // Create or find client
     const client = await createSimpleClient(mappedData.clientData, userId);
