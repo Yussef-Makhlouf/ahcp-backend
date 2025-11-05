@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
-const asyncHandler = require('../middleware/asyncHandler');
+const { asyncHandler } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
 // Import models

@@ -42,6 +42,9 @@ try {
 
 const app = express();
 
+// Trust proxy - required for Vercel and rate limiting
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
