@@ -12,7 +12,8 @@ const { handleExport, handleTemplate, handleImport, findOrCreateClient } = requi
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
-const logger = require('../utils/logger');
+const logger = require('../config/logger');
+const clientServiceManager = require('../utils/clientServiceManager');
 const router = express.Router();
 // Configure multer for file uploads using serverless-compatible storage
 const { createStandardUpload } = require('../utils/serverless-storage');
@@ -1026,50 +1027,25 @@ router.delete('/:id',
       // Delete the laboratory record
       await Laboratory.findByIdAndDelete(id);
       
-      // Update client's availableServices and smart cleanup if client reference exists
-      let clientDeleted = false;
+      // Update client's availableServices (NEVER delete the client)
+      let clientUpdateResult = null;
       if (clientId) {
-        const Client = require('../models/Client');
+        console.log(`🔄 Updating client ${clientId} services after laboratory record deletion`);
+        clientUpdateResult = await clientServiceManager.handleRecordDeletion(clientId, 'laboratory');
         
-        try {
-          // Check if client is referenced in other services
-          const [labCount, vaccinationCount, parasiteCount, mobileCount, equineCount] = await Promise.all([
-            Laboratory.countDocuments({ client: clientId }),
-            require('../models/Vaccination').countDocuments({ client: clientId }),
-            require('../models/ParasiteControl').countDocuments({ client: clientId }),
-            require('../models/MobileClinic').countDocuments({ client: clientId }),
-            require('../models/EquineHealth').countDocuments({ client: clientId })
-          ]);
-          
-          // Remove laboratory service from client if no more laboratory records
-          if (labCount === 0) {
-            const client = await Client.findById(clientId);
-            if (client) {
-              client.availableServices = client.availableServices.filter(s => s !== 'laboratory');
-              await client.save();
-              console.log(`✅ Removed 'laboratory' service from client ${clientId}`);
-            }
-          }
-          
-          const totalReferences = labCount + vaccinationCount + parasiteCount + mobileCount + equineCount;
-          
-          if (totalReferences === 0) {
-            // Client is not referenced anywhere, safe to delete
-            await Client.findByIdAndDelete(clientId);
-            clientDeleted = true;
-            console.log(`🗑️ Deleted orphaned client: ${clientId}`);
-          } else {
-            console.log(`✅ Client ${clientId} kept (${totalReferences} references remaining)`);
-          }
-        } catch (clientError) {
-          console.error(`❌ Error processing client ${clientId}:`, clientError);
+        if (clientUpdateResult.success) {
+          console.log(`✅ Client update result:`, clientUpdateResult.message);
+        } else {
+          console.error(`❌ Failed to update client services:`, clientUpdateResult.message);
         }
       }
 
       res.json({
         success: true,
-        message: `Laboratory record deleted successfully${clientDeleted ? ' and orphaned client cleaned up' : ''}`,
-        clientDeleted: clientDeleted
+        message: 'Laboratory record deleted successfully',
+        clientUpdated: clientUpdateResult?.success || false,
+        serviceRemoved: clientUpdateResult?.serviceRemoved || false,
+        remainingServices: clientUpdateResult?.remainingServices || 0
       });
     } catch (error) {
       logger.error('Delete error:', { error: error });
@@ -1131,56 +1107,53 @@ router.get('/check-user',
 
 router.delete('/delete-all',
   auth,
-  // authorize('super_admin', 'admin'), // Temporarily disabled for testing
+  authorize('super_admin'),
   asyncHandler(async (req, res) => {
     try {
       logger.info('Starting delete all laboratory records operation');
       logger.info('User role:', { data: req.user?.role });
       logger.info('User ID:', { data: req.user?._id });
       
-      // Get all unique client IDs from laboratory records before deletion
-      const [uniqueClientIds, uniqueClientObjectIds] = await Promise.all([
-        Laboratory.distinct('clientId').then(ids => ids.filter(id => id && id !== 'N/A')),
-        Laboratory.distinct('client').then(ids => ids.filter(id => id))
-      ]);
+      // Get all unique client ObjectIds from laboratory records before deletion
+      const uniqueClientIds = await Laboratory.distinct('client').then(ids => ids.filter(id => id));
       
-      console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs (string) and ${uniqueClientObjectIds.length} unique client ObjectIds in laboratory records`);
+      console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in laboratory records`);
       
       // Delete all laboratory records
       const labResult = await Laboratory.deleteMany({});
       console.log(`🗑️ Deleted ${labResult.deletedCount} laboratory records`);
       
-      // Delete associated clients (only those that were created from laboratory imports)
-      let clientsDeleted = 0;
+      // Update all affected clients' availableServices (NEVER delete clients)
+      let clientsUpdated = 0;
+      let servicesRemoved = 0;
       
-      // Delete clients by nationalId (from clientId field)
       if (uniqueClientIds.length > 0) {
-        const clientResult1 = await Client.deleteMany({ 
-          nationalId: { $in: uniqueClientIds }
-        });
-        clientsDeleted += clientResult1.deletedCount;
-        console.log(`🗑️ Deleted ${clientResult1.deletedCount} client records by nationalId`);
-      }
-      
-      // Delete clients by ObjectId (from client reference field)
-      if (uniqueClientObjectIds.length > 0) {
-        const clientResult2 = await Client.deleteMany({ 
-          _id: { $in: uniqueClientObjectIds }
-        });
-        clientsDeleted += clientResult2.deletedCount;
-        console.log(`🗑️ Deleted ${clientResult2.deletedCount} client records by ObjectId`);
+        console.log(`🔄 Updating ${uniqueClientIds.length} clients' services...`);
+        const bulkResult = await clientServiceManager.handleBulkDeletion(uniqueClientIds, 'laboratory');
+        
+        if (bulkResult.success) {
+          clientsUpdated = bulkResult.clientsUpdated;
+          servicesRemoved = bulkResult.servicesRemoved;
+          console.log(`✅ ${bulkResult.message}`);
+          
+          if (bulkResult.errors && bulkResult.errors.length > 0) {
+            console.warn(`⚠️ ${bulkResult.errors.length} errors occurred during client updates`);
+          }
+        }
       }
       
       res.json({
         success: true,
-        message: `All laboratory records and associated clients deleted successfully`,
+        message: 'All laboratory records deleted successfully. Client data preserved.',
         deletedCount: labResult.deletedCount,
-        clientsDeleted: clientsDeleted,
+        clientsUpdated: clientsUpdated,
+        servicesRemoved: servicesRemoved,
         details: {
           laboratoryRecords: labResult.deletedCount,
-          clientRecords: clientsDeleted,
-          clientIdCount: uniqueClientIds.length,
-          clientObjectIdCount: uniqueClientObjectIds.length
+          clientsAffected: uniqueClientIds.length,
+          clientsUpdated: clientsUpdated,
+          servicesRemovedFromClients: servicesRemoved,
+          note: 'Clients are preserved. Only their laboratory service was removed if no records remain.'
         }
       });
     } catch (error) {

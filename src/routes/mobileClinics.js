@@ -10,6 +10,7 @@ const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
 const logger = require('../utils/logger');
+const clientServiceManager = require('../utils/clientServiceManager');
 const router = express.Router();
 
 const INTERVENTION_CATEGORY_NORMALIZATION_MAP = {
@@ -1124,7 +1125,7 @@ router.delete('/delete-all',
   asyncHandler(async (req, res) => {
     try {
       // Get all unique client IDs from mobile clinic records before deletion
-      const uniqueClientIds = await MobileClinic.distinct('client');
+      const uniqueClientIds = await MobileClinic.distinct('client').then(ids => ids.filter(id => id));
       console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in mobile clinic records`);
       
       // Get count before deletion for response
@@ -1135,7 +1136,7 @@ router.delete('/delete-all',
           success: true,
           message: 'No mobile clinic records found to delete',
           deletedCount: 0,
-          clientsDeleted: 0
+          clientsUpdated: 0
         });
       }
 
@@ -1143,24 +1144,37 @@ router.delete('/delete-all',
       const mobileResult = await MobileClinic.deleteMany({});
       console.log(`🗑️ Deleted ${mobileResult.deletedCount} mobile clinic records`);
       
-      // Delete associated clients (only those that were created from mobile clinic imports)
-      let clientsDeleted = 0;
+      // Update all affected clients' availableServices (NEVER delete clients)
+      let clientsUpdated = 0;
+      let servicesRemoved = 0;
+      
       if (uniqueClientIds.length > 0) {
-        const clientResult = await Client.deleteMany({ 
-          _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
-        });
-        clientsDeleted = clientResult.deletedCount;
-        console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+        console.log(`🔄 Updating ${uniqueClientIds.length} clients' services...`);
+        const bulkResult = await clientServiceManager.handleBulkDeletion(uniqueClientIds, 'mobile_clinic');
+        
+        if (bulkResult.success) {
+          clientsUpdated = bulkResult.clientsUpdated;
+          servicesRemoved = bulkResult.servicesRemoved;
+          console.log(`✅ ${bulkResult.message}`);
+          
+          if (bulkResult.errors && bulkResult.errors.length > 0) {
+            console.warn(`⚠️ ${bulkResult.errors.length} errors occurred during client updates`);
+          }
+        }
       }
 
       res.json({
         success: true,
-        message: `All mobile clinic records and associated clients deleted successfully`,
+        message: 'All mobile clinic records deleted successfully. Client data preserved.',
         deletedCount: mobileResult.deletedCount,
-        clientsDeleted: clientsDeleted,
+        clientsUpdated: clientsUpdated,
+        servicesRemoved: servicesRemoved,
         details: {
           mobileClinicRecords: mobileResult.deletedCount,
-          clientRecords: clientsDeleted
+          clientsAffected: uniqueClientIds.length,
+          clientsUpdated: clientsUpdated,
+          servicesRemovedFromClients: servicesRemoved,
+          note: 'Clients are preserved. Only their mobile_clinic service was removed if no records remain.'
         }
       });
     } catch (error) {
@@ -1563,11 +1577,30 @@ router.delete('/:id',
         });
       }
 
+      const clientId = record.client;
+      
+      // Delete the mobile clinic record
       await MobileClinic.findByIdAndDelete(req.params.id);
+      
+      // Update client's availableServices (NEVER delete the client)
+      let clientUpdateResult = null;
+      if (clientId) {
+        console.log(`🔄 Updating client ${clientId} services after mobile clinic record deletion`);
+        clientUpdateResult = await clientServiceManager.handleRecordDeletion(clientId, 'mobile_clinic');
+        
+        if (clientUpdateResult.success) {
+          console.log(`✅ Client update result:`, clientUpdateResult.message);
+        } else {
+          console.error(`❌ Failed to update client services:`, clientUpdateResult.message);
+        }
+      }
 
       res.json({
         success: true,
-        message: 'Mobile clinic record deleted successfully'
+        message: 'Mobile clinic record deleted successfully',
+        clientUpdated: clientUpdateResult?.success || false,
+        serviceRemoved: clientUpdateResult?.serviceRemoved || false,
+        remainingServices: clientUpdateResult?.remainingServices || 0
       });
     } catch (error) {
       logger.error('Error deleting mobile clinic record:', { error: error });

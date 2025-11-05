@@ -13,6 +13,7 @@ const filterBuilder = require('../utils/filterBuilder');
 const { normalizeEquineInterventionCategory } = require('../utils/interventionCategories');
 
 const logger = require('../utils/logger');
+const clientServiceManager = require('../utils/clientServiceManager');
 // Conditional auth middleware for development
 const conditionalAuth = (req, res, next) => {
   // If user is already set by devAuth middleware, skip auth
@@ -722,53 +723,28 @@ router.delete('/:id',
 
     const clientId = record.client;
 
-    // Delete the record
+    // Delete the equine health record
     await EquineHealth.findByIdAndDelete(id);
 
-    // Update client's availableServices and smart cleanup if client reference exists
-    let clientDeleted = false;
+    // Update client's availableServices (NEVER delete the client)
+    let clientUpdateResult = null;
     if (clientId) {
-      const Client = require('../models/Client');
+      console.log(`🔄 Updating client ${clientId} services after equine health record deletion`);
+      clientUpdateResult = await clientServiceManager.handleRecordDeletion(clientId, 'equine_health');
       
-      try {
-        // Check if client is referenced in other services
-        const [equineCount, labCount, vaccinationCount, parasiteCount, mobileCount] = await Promise.all([
-          EquineHealth.countDocuments({ client: clientId }),
-          require('../models/Laboratory').countDocuments({ client: clientId }),
-          require('../models/Vaccination').countDocuments({ client: clientId }),
-          require('../models/ParasiteControl').countDocuments({ client: clientId }),
-          require('../models/MobileClinic').countDocuments({ client: clientId })
-        ]);
-        
-        // Remove equine_health service from client if no more equine health records
-        if (equineCount === 0) {
-          const client = await Client.findById(clientId);
-          if (client) {
-            client.availableServices = client.availableServices.filter(s => s !== 'equine_health');
-            await client.save();
-            console.log(`✅ Removed 'equine_health' service from client ${clientId}`);
-          }
-        }
-        
-        const totalReferences = equineCount + labCount + vaccinationCount + parasiteCount + mobileCount;
-        
-        if (totalReferences === 0) {
-          // Client is not referenced anywhere, safe to delete
-          await Client.findByIdAndDelete(clientId);
-          clientDeleted = true;
-          console.log(`🗑️ Deleted orphaned client: ${clientId}`);
-        } else {
-          console.log(`✅ Client ${clientId} kept (${totalReferences} references remaining)`);
-        }
-      } catch (clientError) {
-        console.error(`❌ Error processing client ${clientId}:`, clientError);
+      if (clientUpdateResult.success) {
+        console.log(`✅ Client update result:`, clientUpdateResult.message);
+      } else {
+        console.error(`❌ Failed to update client services:`, clientUpdateResult.message);
       }
     }
 
     res.json({
       success: true,
-      message: `Equine health record deleted successfully${clientDeleted ? ' and orphaned client cleaned up' : ''}`,
-      clientDeleted: clientDeleted
+      message: 'Equine health record deleted successfully',
+      clientUpdated: clientUpdateResult?.success || false,
+      serviceRemoved: clientUpdateResult?.serviceRemoved || false,
+      remainingServices: clientUpdateResult?.remainingServices || 0
     });
   })
 );
@@ -977,12 +953,7 @@ router.delete('/delete-all',
   asyncHandler(async (req, res) => {
     try {
       // Get all unique client IDs from equine health records before deletion
-      // Note: EquineHealth stores client data as embedded object, not reference
-      // So we need to extract client data differently
-      const records = await EquineHealth.find({}, 'client').lean();
-      const uniqueClientIds = records
-        .map(record => record.client?._id || record.client)
-        .filter(id => id);
+      const uniqueClientIds = await EquineHealth.distinct('client').then(ids => ids.filter(id => id));
       console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in equine health records`);
       
       // Get count before deletion for response
@@ -993,7 +964,7 @@ router.delete('/delete-all',
           success: true,
           message: 'No equine health records found to delete',
           deletedCount: 0,
-          clientsDeleted: 0
+          clientsUpdated: 0
         });
       }
 
@@ -1001,55 +972,37 @@ router.delete('/delete-all',
       const equineResult = await EquineHealth.deleteMany({});
       console.log(`🗑️ Deleted ${equineResult.deletedCount} equine health records`);
       
-      // Update clients' availableServices instead of deleting them
+      // Update all affected clients' availableServices (NEVER delete clients)
       let clientsUpdated = 0;
-      let clientsDeleted = 0;
+      let servicesRemoved = 0;
+      
       if (uniqueClientIds.length > 0) {
-        const uniqueIds = [...new Set(uniqueClientIds.filter(id => id))];
+        console.log(`🔄 Updating ${uniqueClientIds.length} clients' services...`);
+        const bulkResult = await clientServiceManager.handleBulkDeletion(uniqueClientIds, 'equine_health');
         
-        for (const clientId of uniqueIds) {
-          try {
-            // Check if client is referenced in other services
-            const [equineCount, labCount, vaccinationCount, parasiteCount, mobileCount] = await Promise.all([
-              EquineHealth.countDocuments({ client: clientId }),
-              require('../models/Laboratory').countDocuments({ client: clientId }),
-              require('../models/Vaccination').countDocuments({ client: clientId }),
-              require('../models/ParasiteControl').countDocuments({ client: clientId }),
-              require('../models/MobileClinic').countDocuments({ client: clientId })
-            ]);
-            
-            // Remove equine_health service from client
-            const client = await Client.findById(clientId);
-            if (client) {
-              client.availableServices = client.availableServices.filter(s => s !== 'equine_health');
-              await client.save();
-              clientsUpdated++;
-              console.log(`✅ Removed 'equine_health' service from client ${clientId}`);
-            }
-            
-            // Only delete client if not referenced anywhere else
-            const totalReferences = equineCount + labCount + vaccinationCount + parasiteCount + mobileCount;
-            if (totalReferences === 0 && client) {
-              await Client.findByIdAndDelete(clientId);
-              clientsDeleted++;
-              console.log(`🗑️ Deleted orphaned client: ${clientId}`);
-            }
-          } catch (clientError) {
-            console.error(`❌ Error processing client ${clientId}:`, clientError);
+        if (bulkResult.success) {
+          clientsUpdated = bulkResult.clientsUpdated;
+          servicesRemoved = bulkResult.servicesRemoved;
+          console.log(`✅ ${bulkResult.message}`);
+          
+          if (bulkResult.errors && bulkResult.errors.length > 0) {
+            console.warn(`⚠️ ${bulkResult.errors.length} errors occurred during client updates`);
           }
         }
       }
 
       res.json({
         success: true,
-        message: `All equine health records deleted successfully${clientsUpdated > 0 ? ` and ${clientsUpdated} client services updated` : ''}${clientsDeleted > 0 ? ` and ${clientsDeleted} orphaned clients cleaned up` : ''}`,
+        message: 'All equine health records deleted successfully. Client data preserved.',
         deletedCount: equineResult.deletedCount,
         clientsUpdated: clientsUpdated,
-        clientsDeleted: clientsDeleted,
+        servicesRemoved: servicesRemoved,
         details: {
           equineHealthRecords: equineResult.deletedCount,
-          clientServicesUpdated: clientsUpdated,
-          clientRecordsDeleted: clientsDeleted
+          clientsAffected: uniqueClientIds.length,
+          clientsUpdated: clientsUpdated,
+          servicesRemovedFromClients: servicesRemoved,
+          note: 'Clients are preserved. Only their equine_health service was removed if no records remain.'
         }
       });
     } catch (error) {

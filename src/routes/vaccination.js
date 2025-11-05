@@ -10,6 +10,7 @@ const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
 const logger = require('../utils/logger');
+const clientServiceManager = require('../utils/clientServiceManager');
 const router = express.Router();
 
 /**
@@ -1266,31 +1267,44 @@ router.delete('/delete-all',
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
     // Get all unique client IDs from vaccination records before deletion
-    const uniqueClientIds = await Vaccination.distinct('client');
+    const uniqueClientIds = await Vaccination.distinct('client').then(ids => ids.filter(id => id));
     console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in vaccination records`);
     
     // Delete all vaccination records
     const vaccinationResult = await Vaccination.deleteMany({});
     console.log(`🗑️ Deleted ${vaccinationResult.deletedCount} vaccination records`);
     
-    // Delete associated clients (only those that were created from vaccination imports)
-    let clientsDeleted = 0;
+    // Update all affected clients' availableServices (NEVER delete clients)
+    let clientsUpdated = 0;
+    let servicesRemoved = 0;
+    
     if (uniqueClientIds.length > 0) {
-      const clientResult = await Client.deleteMany({ 
-        _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
-      });
-      clientsDeleted = clientResult.deletedCount;
-      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+      console.log(`🔄 Updating ${uniqueClientIds.length} clients' services...`);
+      const bulkResult = await clientServiceManager.handleBulkDeletion(uniqueClientIds, 'vaccination');
+      
+      if (bulkResult.success) {
+        clientsUpdated = bulkResult.clientsUpdated;
+        servicesRemoved = bulkResult.servicesRemoved;
+        console.log(`✅ ${bulkResult.message}`);
+        
+        if (bulkResult.errors && bulkResult.errors.length > 0) {
+          console.warn(`⚠️ ${bulkResult.errors.length} errors occurred during client updates`);
+        }
+      }
     }
     
     res.json({
       success: true,
-      message: `All vaccination records and associated clients deleted successfully`,
+      message: 'All vaccination records deleted successfully. Client data preserved.',
       deletedCount: vaccinationResult.deletedCount,
-      clientsDeleted: clientsDeleted,
+      clientsUpdated: clientsUpdated,
+      servicesRemoved: servicesRemoved,
       details: {
         vaccinationRecords: vaccinationResult.deletedCount,
-        clientRecords: clientsDeleted
+        clientsAffected: uniqueClientIds.length,
+        clientsUpdated: clientsUpdated,
+        servicesRemovedFromClients: servicesRemoved,
+        note: 'Clients are preserved. Only their vaccination service was removed if no records remain.'
       }
     });
   })
@@ -1331,11 +1345,30 @@ router.delete('/:id',
       });
     }
 
+    const clientId = record.client;
+    
+    // Delete the vaccination record
     await Vaccination.findByIdAndDelete(req.params.id);
+    
+    // Update client's availableServices (NEVER delete the client)
+    let clientUpdateResult = null;
+    if (clientId) {
+      console.log(`🔄 Updating client ${clientId} services after vaccination record deletion`);
+      clientUpdateResult = await clientServiceManager.handleRecordDeletion(clientId, 'vaccination');
+      
+      if (clientUpdateResult.success) {
+        console.log(`✅ Client update result:`, clientUpdateResult.message);
+      } else {
+        console.error(`❌ Failed to update client services:`, clientUpdateResult.message);
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Vaccination record deleted successfully'
+      message: 'Vaccination record deleted successfully',
+      clientUpdated: clientUpdateResult?.success || false,
+      serviceRemoved: clientUpdateResult?.serviceRemoved || false,
+      remainingServices: clientUpdateResult?.remainingServices || 0
     });
   })
 );

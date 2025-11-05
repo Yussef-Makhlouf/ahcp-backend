@@ -10,6 +10,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 const logger = require('../utils/logger');
+const clientServiceManager = require('../utils/clientServiceManager');
 // Import/Export functionality moved to import-export routes
 
 const router = express.Router();
@@ -1216,31 +1217,44 @@ router.delete('/delete-all',
   authorize('super_admin'),
   asyncHandler(async (req, res) => {
     // Get all unique client IDs from parasite control records before deletion
-    const uniqueClientIds = await ParasiteControl.distinct('client');
+    const uniqueClientIds = await ParasiteControl.distinct('client').then(ids => ids.filter(id => id));
     console.log(`🔍 Found ${uniqueClientIds.length} unique client IDs in parasite control records`);
     
     // Delete all parasite control records
     const parasiteResult = await ParasiteControl.deleteMany({});
     console.log(`🗑️ Deleted ${parasiteResult.deletedCount} parasite control records`);
     
-    // Delete associated clients (only those that were created from parasite control imports)
-    let clientsDeleted = 0;
+    // Update all affected clients' availableServices (NEVER delete clients)
+    let clientsUpdated = 0;
+    let servicesRemoved = 0;
+    
     if (uniqueClientIds.length > 0) {
-      const clientResult = await Client.deleteMany({ 
-        _id: { $in: uniqueClientIds.filter(id => id) } // Filter out null/undefined IDs
-      });
-      clientsDeleted = clientResult.deletedCount;
-      console.log(`🗑️ Deleted ${clientsDeleted} associated client records`);
+      console.log(`🔄 Updating ${uniqueClientIds.length} clients' services...`);
+      const bulkResult = await clientServiceManager.handleBulkDeletion(uniqueClientIds, 'parasite_control');
+      
+      if (bulkResult.success) {
+        clientsUpdated = bulkResult.clientsUpdated;
+        servicesRemoved = bulkResult.servicesRemoved;
+        console.log(`✅ ${bulkResult.message}`);
+        
+        if (bulkResult.errors && bulkResult.errors.length > 0) {
+          console.warn(`⚠️ ${bulkResult.errors.length} errors occurred during client updates`);
+        }
+      }
     }
     
     res.json({
       success: true,
-      message: `All parasite control records and associated clients deleted successfully`,
+      message: 'All parasite control records deleted successfully. Client data preserved.',
       deletedCount: parasiteResult.deletedCount,
-      clientsDeleted: clientsDeleted,
+      clientsUpdated: clientsUpdated,
+      servicesRemoved: servicesRemoved,
       details: {
         parasiteControlRecords: parasiteResult.deletedCount,
-        clientRecords: clientsDeleted
+        clientsAffected: uniqueClientIds.length,
+        clientsUpdated: clientsUpdated,
+        servicesRemovedFromClients: servicesRemoved,
+        note: 'Clients are preserved. Only their parasite_control service was removed if no records remain.'
       }
     });
   })
@@ -1281,11 +1295,30 @@ router.delete('/:id',
       });
     }
 
+    const clientId = record.client;
+    
+    // Delete the parasite control record
     await ParasiteControl.findByIdAndDelete(req.params.id);
+    
+    // Update client's availableServices (NEVER delete the client)
+    let clientUpdateResult = null;
+    if (clientId) {
+      console.log(`🔄 Updating client ${clientId} services after parasite control record deletion`);
+      clientUpdateResult = await clientServiceManager.handleRecordDeletion(clientId, 'parasite_control');
+      
+      if (clientUpdateResult.success) {
+        console.log(`✅ Client update result:`, clientUpdateResult.message);
+      } else {
+        console.error(`❌ Failed to update client services:`, clientUpdateResult.message);
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Parasite control record deleted successfully'
+      message: 'Parasite control record deleted successfully',
+      clientUpdated: clientUpdateResult?.success || false,
+      serviceRemoved: clientUpdateResult?.serviceRemoved || false,
+      remainingServices: clientUpdateResult?.remainingServices || 0
     });
   })
 );
