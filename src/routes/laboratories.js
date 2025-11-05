@@ -12,7 +12,7 @@ const { handleExport, handleTemplate, handleImport, findOrCreateClient } = requi
 const queryLogger = require('../utils/queryLogger');
 const filterBuilder = require('../utils/filterBuilder');
 
-const logger = require('../config/logger');
+const logger = require('../utils/logger');
 const clientServiceManager = require('../utils/clientServiceManager');
 const router = express.Router();
 // Configure multer for file uploads using serverless-compatible storage
