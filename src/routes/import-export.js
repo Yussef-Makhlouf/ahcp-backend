@@ -3722,8 +3722,8 @@ const processLaboratoryRow = async (row, userId, errors) => {
         'المشرف', 'مشرف'
       ]) || 'N/A',
       vehicleNo: getFieldValue(row, [
-        'vehicleNo', 'Vehicle No', 'Vehicle Number', 'VEHICLE NUMBER', 'vehicle_no',
-        'رقم المركبة', 'المركبة'
+        'vehicleNo', 'Vehicle No.', 'Vehicle Number', 'VEHICLE NUMBER', 'vehicle_no',
+        'رقم المركبة', 'المركبة' , 'vehicle number'
       ]) || 'N/A',
       causeOfSample: getFieldValue(row, [
         'causeOfSample', 'Cause of Sample', 'CAUSE OF SAMPLE', 'cause_of_sample',
