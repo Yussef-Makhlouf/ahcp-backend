@@ -134,216 +134,308 @@ class FilterBuilder {
     return Object.keys(filter).length > 0 ? filter : null;
   }
 
-  // بناء فلتر البحث النصي
+  // بناء فلتر البحث النصي المحسن
   buildTextSearchFilter(searchTerm, fields = []) {
     if (!searchTerm || !searchTerm.trim()) return null;
     
-    const searchRegex = new RegExp(searchTerm.trim(), 'i');
+    const trimmedSearch = searchTerm.trim();
+    const searchRegex = new RegExp(trimmedSearch, 'i');
+    
+    // البحث في الحقول النصية العادية
     const searchConditions = fields.map(field => ({
       [field]: searchRegex
     }));
     
+    // إضافة بحث رقمي للحقول الرقمية (serialNo, phone, nationalId)
+    // إزالة جميع الأحرف غير الرقمية للبحث الدقيق
+    const numericSearch = trimmedSearch.replace(/\D/g, '');
+    if (numericSearch) {
+      // البحث في الأرقام التسلسلية
+      const serialNoAsNumber = parseInt(numericSearch);
+      if (!isNaN(serialNoAsNumber)) {
+        searchConditions.push({ serialNo: serialNoAsNumber });
+      }
+      
+      // البحث في أرقام الهاتف والهوية
+      const numericRegex = new RegExp(numericSearch, 'i');
+      searchConditions.push(
+        { 'client.phone': numericRegex },
+        { 'client.nationalId': numericRegex },
+        { clientPhone: numericRegex },
+        { clientId: numericRegex },
+        { nationalId: numericRegex },
+        { phone: numericRegex }
+      );
+    }
+    
     return searchConditions.length > 0 ? { $or: searchConditions } : null;
+  }
+  
+  // دمج الفلاتر المتعددة بشكل ذكي باستخدام $and
+  combineFilters(filters = []) {
+    const validFilters = filters.filter(f => f && Object.keys(f).length > 0);
+    
+    if (validFilters.length === 0) return {};
+    if (validFilters.length === 1) return validFilters[0];
+    
+    // دمج الفلاتر باستخدام $and لضمان تطبيق جميع الشروط
+    return { $and: validFilters };
   }
 
   // بناء فلتر مكافحة الطفيليات
   buildParasiteControlFilter(query) {
-    const filter = {};
+    const filters = [];
+    const basicFilter = {};
     
     // فلتر التاريخ
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.date = dateFilter;
+    if (dateFilter) basicFilter.date = dateFilter;
     
     // فلتر المشرف
     if (query.supervisor) {
-      filter.supervisor = new RegExp(query.supervisor, 'i');
+      basicFilter.supervisor = new RegExp(query.supervisor, 'i');
     }
     
-    // فلتر البحث العام
+    // فلتر البحث العام - بحث شامل في جميع الحقول المهمة
     if (query.search) {
       const searchFilter = this.buildTextSearchFilter(query.search, [
-        'supervisor', 'clientName', 'clientId', 'clientVillage'
+        'supervisor', 
+        'vehicleNo',
+        'clientName', 
+        'clientVillage',
+        'client.name',
+        'client.nationalId',
+        'client.village',
+        'notes',
+        'remarks'
       ]);
-      if (searchFilter) Object.assign(filter, searchFilter);
+      if (searchFilter) filters.push(searchFilter);
     }
     
     // فلاتر المبيدات - دعم كل من insecticide.method و insecticideMethod
     const insecticideMethodFilter = this.buildMultiValueFilter(query['insecticide.method'] || query.insecticideMethod);
-    if (insecticideMethodFilter) filter['insecticide.method'] = insecticideMethodFilter;
+    if (insecticideMethodFilter) basicFilter['insecticide.method'] = insecticideMethodFilter;
     
     const insecticideCategoryFilter = this.buildMultiValueFilter(query['insecticide.category'] || query.insecticideCategory);
-    if (insecticideCategoryFilter) filter['insecticide.category'] = insecticideCategoryFilter;
+    if (insecticideCategoryFilter) basicFilter['insecticide.category'] = insecticideCategoryFilter;
     
     const insecticideStatusFilter = this.buildMultiValueFilter(query['insecticide.status'] || query.insecticideStatus);
-    if (insecticideStatusFilter) filter['insecticide.status'] = insecticideStatusFilter;
+    if (insecticideStatusFilter) basicFilter['insecticide.status'] = insecticideStatusFilter;
     
     const insecticideTypeFilter = this.buildMultiValueFilter(query['insecticide.type'] || query.insecticideType);
-    if (insecticideTypeFilter) filter['insecticide.type'] = insecticideTypeFilter;
+    if (insecticideTypeFilter) basicFilter['insecticide.type'] = insecticideTypeFilter;
     
     // فلتر الحالة الصحية للقطيع
     const herdHealthFilter = this.buildMultiValueFilter(query.herdHealthStatus);
-    if (herdHealthFilter) filter.herdHealthStatus = herdHealthFilter;
+    if (herdHealthFilter) basicFilter.herdHealthStatus = herdHealthFilter;
     
     // فلتر الامتثال للتعليمات
     const complianceFilter = this.buildMultiValueFilter(query.complyingToInstructions);
-    if (complianceFilter) filter.complyingToInstructions = complianceFilter;
+    if (complianceFilter) basicFilter.complyingToInstructions = complianceFilter;
     
     // فلتر حالة الطلب
     const requestSituationFilter = this.buildMultiValueFilter(query.parasiteControlStatus || query['request.situation']);
-    if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
+    if (requestSituationFilter) basicFilter['request.situation'] = requestSituationFilter;
     
-    return filter;
+    // دمج الفلتر الأساسي مع فلاتر البحث
+    if (Object.keys(basicFilter).length > 0) filters.push(basicFilter);
+    
+    // إرجاع الفلتر المدمج
+    return filters.length > 0 ? this.combineFilters(filters) : {};
   }
 
   // بناء فلتر التطعيمات
   buildVaccinationFilter(query) {
-    const filter = {};
+    const filters = [];
+    const basicFilter = {};
     
     // فلتر التاريخ
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.date = dateFilter;
+    if (dateFilter) basicFilter.date = dateFilter;
     
     // فلتر المشرف
     if (query.supervisor) {
-      filter.supervisor = new RegExp(query.supervisor, 'i');
+      basicFilter.supervisor = new RegExp(query.supervisor, 'i');
     }
     
-    // فلتر البحث العام
+    // فلتر البحث العام - بحث شامل في جميع الحقول المهمة
     if (query.search) {
       const searchFilter = this.buildTextSearchFilter(query.search, [
-        'supervisor', 'clientName', 'clientId', 'clientVillage'
+        'supervisor',
+        'vehicleNo',
+        'clientName',
+        'clientVillage',
+        'client.name',
+        'client.nationalId',
+        'client.village',
+        'vaccineType',
+        'notes',
+        'remarks'
       ]);
-      if (searchFilter) Object.assign(filter, searchFilter);
+      if (searchFilter) filters.push(searchFilter);
     }
     
     // فلاتر اللقاح
     const vaccineTypeFilter = this.buildMultiValueFilter(query.vaccineType || query['vaccine.type']);
-    if (vaccineTypeFilter) filter.vaccineType = vaccineTypeFilter; // استخدام vaccineType بدلاً من vaccine.type
+    if (vaccineTypeFilter) basicFilter.vaccineType = vaccineTypeFilter; // استخدام vaccineType بدلاً من vaccine.type
     
     const vaccineCategoryFilter = this.buildMultiValueFilter(query.vaccineCategory || query['vaccine.category']);
-    if (vaccineCategoryFilter) filter.vaccineCategory = vaccineCategoryFilter; // استخدام vaccineCategory بدلاً من vaccine.category
+    if (vaccineCategoryFilter) basicFilter.vaccineCategory = vaccineCategoryFilter; // استخدام vaccineCategory بدلاً من vaccine.category
     
     // فلتر الحالة الصحية للقطيع
     const herdHealthFilter = this.buildMultiValueFilter(query.herdHealthStatus);
-    if (herdHealthFilter) filter.herdHealthStatus = herdHealthFilter;
+    if (herdHealthFilter) basicFilter.herdHealthStatus = herdHealthFilter;
     
     // فلتر سهولة التعامل مع الحيوانات
     const animalsHandlingFilter = this.buildMultiValueFilter(query.animalsHandling);
-    if (animalsHandlingFilter) filter.animalsHandling = animalsHandlingFilter;
+    if (animalsHandlingFilter) basicFilter.animalsHandling = animalsHandlingFilter;
     
     // فلتر توفر العمالة
     const laboursFilter = this.buildMultiValueFilter(query.labours);
-    if (laboursFilter) filter.labours = laboursFilter;
+    if (laboursFilter) basicFilter.labours = laboursFilter;
     
     // فلتر إمكانية الوصول للموقع
     const reachableLocationFilter = this.buildMultiValueFilter(query.reachableLocation);
-    if (reachableLocationFilter) filter.reachableLocation = reachableLocationFilter;
+    if (reachableLocationFilter) basicFilter.reachableLocation = reachableLocationFilter;
     
     // فلتر حالة الطلب
     const requestSituationFilter = this.buildMultiValueFilter(query.vaccinationStatus || query['request.situation']);
-    if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
+    if (requestSituationFilter) basicFilter['request.situation'] = requestSituationFilter;
     
-    return filter;
+    // دمج الفلتر الأساسي مع فلاتر البحث
+    if (Object.keys(basicFilter).length > 0) filters.push(basicFilter);
+    
+    // إرجاع الفلتر المدمج
+    return filters.length > 0 ? this.combineFilters(filters) : {};
   }
 
   // بناء فلتر المختبرات
   buildLaboratoryFilter(query) {
-    const filter = {};
+    const filters = [];
+    const basicFilter = {};
     
     // فلتر التاريخ
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.date = dateFilter;
+    if (dateFilter) basicFilter.date = dateFilter;
     
     // فلتر الجامع
     if (query.collector) {
-      filter.collector = new RegExp(query.collector, 'i');
+      basicFilter.collector = new RegExp(query.collector, 'i');
     }
     
-    // فلتر البحث العام
+    // فلتر البحث العام - بحث شامل في جميع الحقول المهمة
     if (query.search) {
       const searchFilter = this.buildTextSearchFilter(query.search, [
-        'collector', 'clientName', 'clientId', 'sampleId'
+        'collector',
+        'clientName',
+        'client.name',
+        'client.nationalId',
+        'sampleCode',
+        'sampleNumber',
+        'farmLocation',
+        'testType',
+        'notes'
       ]);
-      if (searchFilter) Object.assign(filter, searchFilter);
+      if (searchFilter) filters.push(searchFilter);
     }
     
     // فلتر نوع العينة
     const sampleTypeFilter = this.buildMultiValueFilter(query.sampleType);
-    if (sampleTypeFilter) filter.sampleType = sampleTypeFilter;
+    if (sampleTypeFilter) basicFilter.sampleType = sampleTypeFilter;
     
     // فلتر نوع الفحص
     const testTypeFilter = this.buildMultiValueFilter(query.testType);
-    if (testTypeFilter) filter.testType = testTypeFilter;
+    if (testTypeFilter) basicFilter.testType = testTypeFilter;
     
-    return filter;
+    // فلتر نتيجة الفحص
+    const testResultFilter = this.buildMultiValueFilter(query.testResult);
+    if (testResultFilter) basicFilter.testResult = testResultFilter;
+    
+    // دمج الفلتر الأساسي مع فلاتر البحث
+    if (Object.keys(basicFilter).length > 0) filters.push(basicFilter);
+    
+    // إرجاع الفلتر المدمج
+    return filters.length > 0 ? this.combineFilters(filters) : {};
   }
 
   // بناء فلتر العيادات المتنقلة
   buildMobileClinicFilter(query) {
-    const filter = {};
+    const filters = [];
+    const basicFilter = {};
     
     // فلتر التاريخ
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.date = dateFilter;
+    if (dateFilter) basicFilter.date = dateFilter;
     
     // فلتر المشرف
     if (query.supervisor) {
-      filter.supervisor = new RegExp(query.supervisor, 'i');
+      basicFilter.supervisor = new RegExp(query.supervisor, 'i');
     }
     
-    // فلتر البحث العام
+    // فلتر البحث العام - بحث شامل في جميع الحقول المهمة
     if (query.search) {
       const searchFilter = this.buildTextSearchFilter(query.search, [
-        'supervisor', 'clientName', 'clientId', 'clientVillage', 'diagnosis', 'treatment'
+        'supervisor',
+        'vehicleNo',
+        'clientName',
+        'clientVillage',
+        'client.name',
+        'client.nationalId',
+        'client.village',
+        'diagnosis',
+        'treatment',
+        'interventionCategory',
+        'notes',
+        'remarks'
       ]);
-      if (searchFilter) Object.assign(filter, searchFilter);
+      if (searchFilter) filters.push(searchFilter);
     }
     
     // فلتر التشخيص
     const diagnosisFilter = this.buildMultiValueFilter(query.diagnosis);
-    if (diagnosisFilter) filter.diagnosis = diagnosisFilter;
+    if (diagnosisFilter) basicFilter.diagnosis = diagnosisFilter;
     
     // فلتر الأدوية
     const medicationsFilter = this.buildMultiValueFilter(query.medications);
     if (medicationsFilter) {
       // البحث في حقل medicationsUsed.name
-      filter['medicationsUsed.name'] = medicationsFilter;
+      basicFilter['medicationsUsed.name'] = medicationsFilter;
     }
     
     // فلتر فئة التدخل
     const interventionCategoryFilter = this.buildMultiValueFilter(query.interventionCategory);
     if (interventionCategoryFilter) {
-      const categoryCondition = {
+      filters.push({
         $or: [
           { interventionCategory: interventionCategoryFilter },
           { interventionCategories: interventionCategoryFilter }
         ]
-      };
-      if (filter.$and) {
-        filter.$and.push(categoryCondition);
-      } else {
-        filter.$and = [categoryCondition];
-      }
+      });
     }
     
     // فلتر يتطلب متابعة
     if (query.followUpRequired !== undefined) {
-      filter.followUpRequired = query.followUpRequired === 'true';
+      basicFilter.followUpRequired = query.followUpRequired === 'true';
     }
     
     // فلتر حالة الطلب
     const requestSituationFilter = this.buildMultiValueFilter(query.mobileClinicStatus || query['request.situation']);
-    if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
+    if (requestSituationFilter) basicFilter['request.situation'] = requestSituationFilter;
     
-    return filter;
+    // دمج الفلتر الأساسي مع فلاتر البحث
+    if (Object.keys(basicFilter).length > 0) filters.push(basicFilter);
+    
+    // إرجاع الفلتر المدمج
+    return filters.length > 0 ? this.combineFilters(filters) : {};
   }
 
   // بناء فلتر صحة الخيول
   buildEquineHealthFilter(query) {
-    const filter = {};
+    const filters = [];
+    const basicFilter = {};
 
     const dateFilter = this.buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.date = dateFilter;
+    if (dateFilter) basicFilter.date = dateFilter;
 
     const interventionFilter = this.buildMultiValueFilter(query.interventionCategory);
     if (interventionFilter) {
@@ -370,33 +462,42 @@ class FilterBuilder {
       }
 
       if (Object.keys(interventionFilter).length > 0) {
-        filter.interventionCategory = interventionFilter;
+        basicFilter.interventionCategory = interventionFilter;
         logger.info('Final intervention filter applied:', { data: interventionFilter });
       }
     }
 
     const requestSituationFilter = this.buildMultiValueFilter(query['request.situation']);
-    if (requestSituationFilter) filter['request.situation'] = requestSituationFilter;
+    if (requestSituationFilter) basicFilter['request.situation'] = requestSituationFilter;
 
     if (query.supervisor) {
-      filter.supervisor = new RegExp(query.supervisor, 'i');
+      basicFilter.supervisor = new RegExp(query.supervisor, 'i');
     }
 
+    // فلتر البحث العام - بحث شامل في جميع الحقول المهمة
     if (query.search) {
       const searchFilter = this.buildTextSearchFilter(query.search, [
-        'serialNo',
         'supervisor',
         'vehicleNo',
         'diagnosis',
+        'treatment',
         'client.name',
         'client.nationalId',
-        'client.phone'
+        'client.village',
+        'horseDetails.name',
+        'horseDetails.breed',
+        'notes',
+        'remarks'
       ]);
-      if (searchFilter) Object.assign(filter, searchFilter);
+      if (searchFilter) filters.push(searchFilter);
     }
 
-    logger.info('Final EquineHealth filter:', { data: JSON.stringify(filter, null, 2) });
-    return filter;
+    // دمج الفلتر الأساسي مع فلاتر البحث
+    if (Object.keys(basicFilter).length > 0) filters.push(basicFilter);
+    
+    const finalFilter = filters.length > 0 ? this.combineFilters(filters) : {};
+    logger.info('Final EquineHealth filter:', { data: JSON.stringify(finalFilter, null, 2) });
+    return finalFilter;
   }
 
   // بناء معاملات الصفحات
