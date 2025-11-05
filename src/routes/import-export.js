@@ -3711,7 +3711,7 @@ const processLaboratoryRow = async (row, userId, errors) => {
       ]) || 'Blood', // Accept any value, default to Blood
       sampleNumber: getFieldValue(row, [
         'sampleNumber', 'Sample Number', 'Samples Number', 'sample_number',
-        'رقم العينة', 'عدد العينات'
+        'رقم العينة', 'عدد العينات' , 'Total Samples' , 'Total Samples Number' , 'samples number'
       ]) || 'N/A',
       testType: getFieldValue(row, [
         'testType', 'Test Type', 'test_type',
