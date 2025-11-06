@@ -865,7 +865,7 @@ router.post('/forgot-password',
     await user.save();
 
     // Create reset URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL || 'https://ahcp-dashboard.vercel.app'}/reset-password/${resetToken}`;
 
     // Send email
     try {

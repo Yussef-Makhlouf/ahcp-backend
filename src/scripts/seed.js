@@ -849,8 +849,8 @@ async function seedDatabase() {
     console.log(`🔬 Laboratory Records: ${sampleLaboratory.length}`);
     console.log('');
     console.log('🚀 You can now start the server and login with these credentials');
-    console.log('📚 API Documentation: https://ahcp-backend.vercel.app/api-docs');
-    console.log('🏥 Health Check: http://https://ahcp-backend.vercel.app/health');
+    console.log('📚 API Documentation: https://ulaahcprp.cloud/api-docs');
+    console.log('🏥 Health Check: http://https://ulaahcprp.cloud/health');
     
   } catch (error) {
     console.error('❌ Error seeding database:', error);
