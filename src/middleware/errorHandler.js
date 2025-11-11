@@ -110,16 +110,6 @@ const errorHandler = (err, req, res, next) => {
     };
   }
 
-  // Rate limiting errors
-  if (err.status === 429) {
-    error = {
-      message: 'Too many requests, please try again later',
-      statusCode: 429,
-      error: 'RATE_LIMIT_EXCEEDED',
-      retryAfter: err.retryAfter
-    };
-  }
-
   // Default error
   const statusCode = error.statusCode || 500;
   const message = error.message || 'Server Error';
@@ -160,10 +150,6 @@ const errorHandler = (err, req, res, next) => {
 
   if (error.maxCount) {
     response.maxCount = error.maxCount;
-  }
-
-  if (error.retryAfter) {
-    response.retryAfter = error.retryAfter;
   }
 
   res.status(statusCode).json(response);
